@@ -1,6 +1,7 @@
 // pages/api/delete-user.ts
 
-import { createClient } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
+
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
