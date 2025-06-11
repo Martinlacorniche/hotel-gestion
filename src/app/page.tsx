@@ -247,7 +247,8 @@ const createTicket = async () => {
     priorite: newTicket.priorite,
     date_action: newTicket.dateAction,
     valide: false,
-    auteur: (user as any)?.name || 'Anonyme',
+    auteur: (user && 'name' in user) ? (user as any).name : 'Anonyme',
+
 
   };
 
