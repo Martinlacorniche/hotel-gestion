@@ -5,10 +5,12 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+  "postbuild": "netlify next",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@netlify/next": "^1.4.9",
     "@radix-ui/react-slot": "^1.2.3",
     "@supabase/supabase-js": "^2.50.0",
     "autoprefixer": "^10.4.21",
