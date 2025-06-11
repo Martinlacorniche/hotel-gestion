@@ -296,7 +296,9 @@ const handleCreateUser = async () => {
   }
 
   // 3. MAJ liste + fermeture modal
+if (authData.user) {
   setUsers((prev) => [...prev, { name, email, role, id_auth: authData.user.id }]);
+}
   setShowUserModal(false);
   setNewUser({ name: '', email: '', password: '', role: 'employe' });
 };
