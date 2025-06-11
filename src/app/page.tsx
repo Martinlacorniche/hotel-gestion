@@ -359,7 +359,12 @@ const consigneToInsert = {
     setConsignes((prev) => [...prev, ...(data || [])]);
   }
 
-  setNewConsigne({ texte: '', service: 'Réception' });
+ setNewConsigne({
+  texte: '',
+  service: 'Réception',
+  date: new Date().toISOString().split('T')[0], // ou une autre valeur par défaut
+  valide: false,
+});
   setShowConsigneModal(false);
 };
 
