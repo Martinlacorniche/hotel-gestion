@@ -241,7 +241,8 @@ const createTicket = async () => {
     priorite: newTicket.priorite,
     date_action: newTicket.dateAction,
     valide: false,
-    auteur: user?.name || 'Anonyme',
+    auteur: (user as any)?.name || 'Anonyme',
+
   };
 
   const { data, error } = await supabase.from('tickets').insert(ticketToInsert).select();
