@@ -222,9 +222,11 @@ useEffect(() => {
   const [newTaxi, setNewTaxi] = useState({
   type: 'Taxi',
   chambre: '',
-  heure: '',
   dateAction: '',
+  heure: '',
+  statut: 'Prévu' // 👈 ajoute cette ligne
 });
+
 
 
   const [showObjetModal, setShowObjetModal] = useState(false);
