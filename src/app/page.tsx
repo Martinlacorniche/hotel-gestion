@@ -17,10 +17,18 @@ import { format as formatDate } from 'date-fns';
 import { fr as frLocale } from 'date-fns/locale';
 
 
+interface CustomUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  service?: string; // si tu l’utilises
+}
 
 
 export default function HotelDashboard() {
-  const { user, logout } = useAuth();
+  const { user: rawUser, logout } = useAuth();
+const user = rawUser as CustomUser | null;
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [tickets, setTickets] = useState<any[]>([]);
