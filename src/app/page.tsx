@@ -33,7 +33,13 @@ export default function HotelDashboard() {
   const [editConsigneIndex, setEditConsigneIndex] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<'priorite' | 'date'>('priorite');
   const [showUserModal, setShowUserModal] = useState(false);
-const [newUser, setNewUser] = useState({ name: '', email: '', role: 'employe' });
+const [newUser, setNewUser] = useState<{ name: string; email: string; role: string; password: string }>({
+  name: '',
+  email: '',
+  role: '',
+  password: '',
+});
+
 const [users, setUsers] = useState<any[]>([]);
 const [editIndex, setEditIndex] = useState<number | null>(null);
 const [editObjetIndex, setEditObjetIndex] = useState<number | null>(null);
