@@ -581,7 +581,7 @@ const [nouvelleConsigne, setNouvelleConsigne] = useState({
     .sort((a, b) => {
       if (sortBy === 'priorite') {
         const order = { Haute: 3, Moyenne: 2, Basse: 1 };
-        return order[b.priorite] - order[a.priorite];
+        return order[b.priorite as keyof typeof order] - order[a.priorite as keyof typeof order];
       }
       return new Date(b.date_action).getTime() - new Date(a.date_action).getTime();
     });
