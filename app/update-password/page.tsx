@@ -1,11 +1,14 @@
+'use client'
+
 import dynamic from "next/dynamic";
+import { Suspense } from "react";
 
-export const dynamic = "force-dynamic";
-
-const ClientPage = dynamic(() => import("./client-page").then(mod => mod.default), {
-  ssr: false,
-});
+const UpdatePasswordPage = dynamic(() => import("./client-page"), { ssr: false });
 
 export default function Page() {
-  return <ClientPage />;
+  return (
+    <Suspense fallback={<div>Chargement...</div>}>
+      <UpdatePasswordPage />
+    </Suspense>
+  );
 }
