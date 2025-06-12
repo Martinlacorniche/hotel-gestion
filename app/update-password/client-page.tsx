@@ -11,13 +11,16 @@ export default function UpdatePasswordClientPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
 
   // 🎯 FIX : useEffect correctement fermé
-  useEffect(() => {
+ useEffect(() => {
   const accessToken = searchParams.get("access_token");
   const type = searchParams.get("type");
 
+  console.log("🔍 Token détecté :", accessToken, "type =", type);
+
   if (accessToken && type === "recovery") {
     (async () => {
-      const { error } = await supabase.auth.exchangeCodeForSession(accessToken);
+      const { data, error } = await supabase.auth.exchangeCodeForSession(accessToken);
+      console.log("✅ Résultat exchangeCodeForSession", data, error);
       if (error) {
         setStatus("❌ Erreur de session : " + error.message);
       }
