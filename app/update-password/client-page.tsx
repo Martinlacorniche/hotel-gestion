@@ -1,58 +1,73 @@
-"use client";
-export const dynamic = "force-dynamic";
+'use client';
 
-
-import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-
-
-export default function UpdatePasswordPage() {
-  const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("");
+export default function UpdatePasswordClientPage() {
   const searchParams = useSearchParams();
+  const [newPassword, setNewPassword] = useState("");
+  const [status, setStatus] = useState("");
+  const [isSubmitted, setIsSubmitted] = useState(false);
 
+  // 🎯 FIX : useEffect correctement fermé
   useEffect(() => {
     const accessToken = searchParams.get("access_token");
     const refreshToken = searchParams.get("refresh_token");
 
     if (accessToken && refreshToken) {
-  (async () => {
-    const { error } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
+      (async () => {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
 
-    if (error) {
-      setStatus("❌ Erreur de session : " + error.message);
-    }
-  })();
-}
+        if (error) {
+          setStatus("❌ Erreur de session : " + error.message);
+        }
+      })(); // ✅ IIFE fermée ici
+    } // ✅ if fermé ici
+  }, [searchParams]); // ✅ useEffect terminé ici
 
-  const handleSubmit = async () => {
-    const { data, error } = await supabase.auth.updateUser({ password });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+
     if (error) {
       setStatus("❌ Erreur : " + error.message);
     } else {
       setStatus("✅ Mot de passe mis à jour !");
+      setIsSubmitted(true);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-20 p-6 bg-white shadow-md rounded">
-      <h1 className="text-2xl font-bold mb-4">🔐 Réinitialiser le mot de passe</h1>
-      <input
-        type="password"
-        placeholder="Nouveau mot de passe"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        className="w-full p-2 border rounded mb-4"
-      />
-      <button onClick={handleSubmit} className="bg-indigo-600 text-white px-4 py-2 rounded">
-        Mettre à jour
-      </button>
-      {status && <p className="mt-4 text-center">{status}</p>}
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
+      <div className="bg-white p-6 rounded shadow-md w-full max-w-md text-center">
+        <h1 className="text-xl font-bold mb-4">🔐 Réinitialisation du mot de passe</h1>
+        {!isSubmitted ? (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input
+              type="password"
+              placeholder="Nouveau mot de passe"
+              className="w-full p-2 border border-gray-300 rounded"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+            />
+            <button
+              type="submit"
+              className="w-full bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700 transition"
+            >
+              🔁 Mettre à jour
+            </button>
+          </form>
+        ) : (
+          <p className="text-green-700 font-medium">{status}</p>
+        )}
+        {status && !isSubmitted && <p className="mt-4 text-sm text-red-600">{status}</p>}
+      </div>
     </div>
   );
 }
