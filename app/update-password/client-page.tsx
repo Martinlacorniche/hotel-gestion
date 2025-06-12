@@ -12,22 +12,19 @@ export default function UpdatePasswordClientPage() {
 
   // 🎯 FIX : useEffect correctement fermé
   useEffect(() => {
-    const accessToken = searchParams.get("access_token");
-    const refreshToken = searchParams.get("refresh_token");
+  const accessToken = searchParams.get("access_token");
+  const type = searchParams.get("type");
 
-    if (accessToken && refreshToken) {
-      (async () => {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
+  if (accessToken && type === "recovery") {
+    (async () => {
+      const { error } = await supabase.auth.exchangeCodeForSession(accessToken);
+      if (error) {
+        setStatus("❌ Erreur de session : " + error.message);
+      }
+    })();
+  }
+}, [searchParams]);
 
-        if (error) {
-          setStatus("❌ Erreur de session : " + error.message);
-        }
-      })(); // ✅ IIFE fermée ici
-    } // ✅ if fermé ici
-  }, [searchParams]); // ✅ useEffect terminé ici
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
