@@ -636,10 +636,12 @@ const demandesVisibles = useMemo(() => {
 }, [objetsTrouves]);
 
   useEffect(() => {
+   if (typeof window !== 'undefined' && window.location.pathname !== '/update-password') {
     if (!user) {
       router.push('/login');
     }
-  }, [user]);
+  }
+}, [user]);
 
   if (!user) return <div className="p-4 text-center">Redirection...</div>;
 

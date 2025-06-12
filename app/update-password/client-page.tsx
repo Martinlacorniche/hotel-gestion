@@ -15,11 +15,18 @@ export default function UpdatePasswordClientPage() {
     const accessToken = searchParams.get('access_token');
     const type = searchParams.get('type');
 
+    console.log('🔎 URL:', window.location.href);
+  console.log('🔐 access_token:', accessToken);
+  console.log('🔐 type:', type);
+
     if (accessToken && type === 'recovery') {
       console.log('🔑 Tentative de récupération de session avec token :', accessToken);
       supabase.auth
         .exchangeCodeForSession(accessToken)
-        .then(({ error }) => {
+        .then(({ data, error }) => {
+ console.log('🧪 Résultat exchangeCodeForSession');
+      console.log('data:', data);
+      console.log('error:', error);
           if (error) {
             console.error('Erreur exchangeCodeForSession:', error.message);
             setStatus('❌ Erreur session : ' + error.message);
