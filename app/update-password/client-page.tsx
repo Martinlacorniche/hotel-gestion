@@ -1,43 +1,55 @@
 'use client';
 
-import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function UpdatePasswordClientPage() {
   const searchParams = useSearchParams();
-  const [newPassword, setNewPassword] = useState("");
-  const [status, setStatus] = useState("");
+  const [newPassword, setNewPassword] = useState('');
+  const [status, setStatus] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  // 🎯 FIX : useEffect correctement fermé
- useEffect(() => {
-  const accessToken = searchParams.get("access_token");
-  const type = searchParams.get("type");
+  // ✅ Essayer d'établir la session dès que possible
+  useEffect(() => {
+    const accessToken = searchParams.get('access_token');
 
-  console.log("🔍 Token détecté :", accessToken, "type =", type);
+    if (accessToken) {
+      (async () => {
+        const { error } = await supabase.auth.exchangeCodeForSession(accessToken);
+        if (error) {
+          console.error('Erreur lors de l’échange de session :', error.message);
+          setStatus('❌ Erreur session : ' + error.message);
+        } else {
+          console.log('✅ Session restaurée avec access token.');
+        }
+      })();
+    }
+  }, [searchParams]);
 
-  if (accessToken && type === "recovery") {
-    (async () => {
-      const { data, error } = await supabase.auth.exchangeCodeForSession(accessToken);
-      console.log("✅ Résultat exchangeCodeForSession", data, error);
-      if (error) {
-        setStatus("❌ Erreur de session : " + error.message);
+  // ✅ Fallback : écoute si Supabase restaure une session plus tard (cas Netlify/NextJS)
+  useEffect(() => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('🔁 Événement auth :', event);
+      if (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
+        setStatus('✅ Session active.');
       }
-    })();
-  }
-}, [searchParams]);
+    });
 
+    return () => {
+      listener?.subscription.unsubscribe();
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     const { error } = await supabase.auth.updateUser({ password: newPassword });
 
     if (error) {
-      setStatus("❌ Erreur : " + error.message);
+      console.error('Erreur updateUser:', error.message);
+      setStatus('❌ Erreur : ' + error.message);
     } else {
-      setStatus("✅ Mot de passe mis à jour !");
+      setStatus('✅ Mot de passe mis à jour !');
       setIsSubmitted(true);
     }
   };
