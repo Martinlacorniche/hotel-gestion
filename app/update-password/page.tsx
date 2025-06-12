@@ -1,41 +1,48 @@
-'use client';
-
-import { useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import { useRouter } from 'next/navigation';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+"use client";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function UpdatePasswordPage() {
-  const [password, setPassword] = useState('');
-  const [message, setMessage] = useState('');
-  const router = useRouter();
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("");
+  const searchParams = useSearchParams();
 
-  const handleUpdate = async () => {
-    const { error } = await supabase.auth.updateUser({ password });
+  useEffect(() => {
+    const accessToken = searchParams.get("access_token");
+    const refreshToken = searchParams.get("refresh_token");
 
+    if (accessToken) {
+      supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken || "",
+      });
+    }
+  }, []);
+
+  const handleSubmit = async () => {
+    const { data, error } = await supabase.auth.updateUser({ password });
     if (error) {
-      setMessage(`Erreur : ${error.message}`);
+      setStatus("❌ Erreur : " + error.message);
     } else {
-      setMessage('Mot de passe mis à jour. Redirection...');
-      setTimeout(() => router.push('/'), 2000);
+      setStatus("✅ Mot de passe mis à jour !");
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
-      <div className="bg-white p-6 rounded shadow-md w-full max-w-sm">
-        <h1 className="text-xl font-bold mb-4">Nouveau mot de passe</h1>
-        <Input
-          type="password"
-          placeholder="Nouveau mot de passe"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mb-4"
-        />
-        <Button onClick={handleUpdate} className="w-full">Mettre à jour</Button>
-        {message && <p className="mt-4 text-sm text-center">{message}</p>}
-      </div>
+    <div className="max-w-md mx-auto mt-20 p-6 bg-white shadow-md rounded">
+      <h1 className="text-2xl font-bold mb-4">🔐 Réinitialiser le mot de passe</h1>
+      <input
+        type="password"
+        placeholder="Nouveau mot de passe"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        className="w-full p-2 border rounded mb-4"
+      />
+      <button onClick={handleSubmit} className="bg-indigo-600 text-white px-4 py-2 rounded">
+        Mettre à jour
+      </button>
+      {status && <p className="mt-4 text-center">{status}</p>}
     </div>
   );
 }

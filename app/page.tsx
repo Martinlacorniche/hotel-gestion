@@ -15,6 +15,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import { format as formatDate } from 'date-fns';
 import { fr as frLocale } from 'date-fns/locale';
+import Link from "next/link";
+
 
 
 interface CustomUser {
@@ -647,14 +649,25 @@ const demandesVisibles = useMemo(() => {
     <div className="p-4">
 
       <div className="flex justify-between items-center mb-4">
-        <div className="text-xl font-semibold">Bonjour, {user.name}</div>
+        <div className="text-xl font-semibold">Bonjour, {user.name}
+          <a href="/parking" target="_blank" rel="noopener noreferrer">
+  <button className="ml-4 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-sm shadow">
+    🚗 Réservation Parking
+  </button>
+</a>
+        </div>
+        
         <div className="flex items-center space-x-2">
+          
+          
           <Button variant="outline" size="icon" onClick={() => changeDay(-1)}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <div className="text-lg font-medium">
             {format(selectedDate, 'eeee d MMMM yyyy', { locale: fr })}
           </div>
+       
+
           <Button variant="outline" size="icon" onClick={() => changeDay(1)}>
             <ChevronRight className="w-4 h-4" />
           </Button>
@@ -667,7 +680,11 @@ const demandesVisibles = useMemo(() => {
   )}
   <Button variant="destructive" onClick={logout}>Déconnexion</Button>
 </div>
+
 </div>
+
+
+
 
 
 
