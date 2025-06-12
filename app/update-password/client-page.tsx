@@ -17,13 +17,18 @@ export default function UpdatePasswordPage() {
     const accessToken = searchParams.get("access_token");
     const refreshToken = searchParams.get("refresh_token");
 
-    if (accessToken) {
-      supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken || "",
-      });
+    if (accessToken && refreshToken) {
+  (async () => {
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      setStatus("❌ Erreur de session : " + error.message);
     }
-  }, []);
+  })();
+}
 
   const handleSubmit = async () => {
     const { data, error } = await supabase.auth.updateUser({ password });
