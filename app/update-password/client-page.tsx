@@ -83,9 +83,20 @@ export default function UpdatePasswordClientPage() {
               🔁 Mettre à jour
             </button>
           </form>
-        ) : (
-          <p className="text-green-700 font-medium">{status}</p>
-        )}
+       ) : (
+  <div>
+    <p className="text-green-700 font-medium">{status}</p>
+    <div className="mt-6">
+      <a
+        href="/login"
+        className="inline-block bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition"
+      >
+        🔑 Se connecter
+      </a>
+    </div>
+  </div>
+)}
+
         {status && !isSubmitted && <p className="mt-4 text-sm text-red-600">{status}</p>}
       </div>
     </div>
