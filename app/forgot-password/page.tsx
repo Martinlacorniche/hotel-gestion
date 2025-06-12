@@ -11,7 +11,7 @@ export default function ForgotPasswordPage() {
 
   const handleReset = async () => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'http://localhost:3000/update-password', // à adapter en prod
+      redirectTo: 'https://consigneshtbm.com/update-password',
     });
 
     if (error) {
