@@ -10,30 +10,30 @@ export default function UpdatePasswordClientPage() {
   const [status, setStatus] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  // ✅ Essayer d'établir la session dès que possible
+  // 🔐 Restaurer la session si access_token présent
   useEffect(() => {
     const accessToken = searchParams.get('access_token');
+    const type = searchParams.get('type');
 
-    if (accessToken) {
-      (async () => {
-        const { error } = await supabase.auth.exchangeCodeForSession(accessToken);
-        if (error) {
-          console.error('Erreur lors de l’échange de session :', error.message);
-          setStatus('❌ Erreur session : ' + error.message);
-        } else {
-          console.log('✅ Session restaurée avec access token.');
-        }
-      })();
+    if (accessToken && type === 'recovery') {
+      console.log('🔑 Tentative de récupération de session avec token :', accessToken);
+      supabase.auth
+        .exchangeCodeForSession(accessToken)
+        .then(({ error }) => {
+          if (error) {
+            console.error('Erreur exchangeCodeForSession:', error.message);
+            setStatus('❌ Erreur session : ' + error.message);
+          } else {
+            console.log('✅ Session restaurée avec succès.');
+          }
+        });
     }
   }, [searchParams]);
 
-  // ✅ Fallback : écoute si Supabase restaure une session plus tard (cas Netlify/NextJS)
+  // 🔁 Sécurité : écouter les changements de session en fallback
   useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('🔁 Événement auth :', event);
-      if (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
-        setStatus('✅ Session active.');
-      }
+      console.log('🪝 Auth event:', event, session);
     });
 
     return () => {
@@ -43,13 +43,14 @@ export default function UpdatePasswordClientPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     const { error } = await supabase.auth.updateUser({ password: newPassword });
 
     if (error) {
       console.error('Erreur updateUser:', error.message);
       setStatus('❌ Erreur : ' + error.message);
     } else {
-      setStatus('✅ Mot de passe mis à jour !');
+      setStatus('✅ Mot de passe mis à jour avec succès !');
       setIsSubmitted(true);
     }
   };
