@@ -636,8 +636,11 @@ const demandesVisibles = useMemo(() => {
 }, [objetsTrouves]);
 
   useEffect(() => {
-   if (typeof window !== 'undefined' && window.location.pathname !== '/update-password') {
-    if (!user) {
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname;
+    const isResetPage = path.includes('/update-password') || path.includes('/reset-password');
+
+    if (!user && !isResetPage) {
       router.push('/login');
     }
   }
