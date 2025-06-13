@@ -254,31 +254,50 @@ const [newObjet, setNewObjet] = useState({
 const createTicket = async () => {
   if (newTicket.titre.trim() === '') return;
 
-  const ticketToInsert = {
+  const ticketToSave = {
     titre: newTicket.titre,
     service: newTicket.service,
     priorite: newTicket.priorite,
     date_action: newTicket.dateAction,
     valide: false,
     auteur: (user && 'name' in user) ? (user as any).name : 'Anonyme',
-
-
   };
 
-  const { data, error } = await supabase.from('tickets').insert(ticketToInsert).select();
+  if (editTicketIndex !== null) {
+    const id = tickets[editTicketIndex].id;
+    const { error } = await supabase
+      .from('tickets')
+      .update(ticketToSave)
+      .eq('id', id);
 
-  if (error) {
-    console.error('Erreur création ticket :', error.message);
-    return;
+    if (error) {
+      console.error('Erreur modification ticket :', error.message);
+      return;
+    }
+
+    const updated = [...tickets];
+    updated[editTicketIndex] = { ...updated[editTicketIndex], ...ticketToSave };
+    setTickets(updated);
+    setEditTicketIndex(null);
+  } else {
+    const { data, error } = await supabase
+      .from('tickets')
+      .insert(ticketToSave)
+      .select();
+
+    if (error) {
+      console.error('Erreur création ticket :', error.message);
+      return;
+    }
+
+    setTickets((prev) => [...prev, ...(data || [])]);
   }
 
-  // Ajoute le ticket à l’état local
-  setTickets((prev) => [...prev, ...(data || [])]);
-
-  // Reset du formulaire
+  // Reset
   setNewTicket({ titre: '', service: 'Réception', dateAction: '', priorite: 'Moyenne' });
   setShowTicketModal(false);
 };
+
 
 const handleCreateUser = async () => {
   const { email, password, name, role } = newUser;
@@ -525,6 +544,7 @@ const [nouvelleConsigne, setNouvelleConsigne] = useState({
   valide: false,
 });
 
+const [editTicketIndex, setEditTicketIndex] = useState<number | null>(null);
 
 
 
@@ -786,15 +806,33 @@ const demandesVisibles = useMemo(() => {
       </span>
     </div>
 
-    <div className="flex justify-between items-center text-sm text-gray-600">
-      <div>Pour le : {formatSafeDate(t.date_action)}</div>
+    <div className="flex gap-2 justify-end mt-2">
+  <Button
+    size="sm"
+    variant="outline"
+    onClick={() => {
+      setNewTicket({
+        titre: t.titre,
+        service: t.service,
+        dateAction: t.date_action,
+        priorite: t.priorite,
+      });
+      setEditTicketIndex(idx);
+      setShowTicketModal(true);
+    }}
+  >
+    ✏️ 
+  </Button>
 
-      {!t.valide && (
-        <Button size="sm" variant="outline" onClick={() => validerTicket(idx)}>
-          Valider
-        </Button>
-      )}
-    </div>
+  <Button
+  size="sm"
+  className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+  onClick={() => validerTicket(idx)}
+>
+  Valider
+</Button>
+</div>
+
   </div>
 ))}
 
@@ -930,8 +968,16 @@ const demandesVisibles = useMemo(() => {
               <option>Haute</option>
             </select>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowTicketModal(false)}>Annuler</Button>
-              <Button onClick={createTicket}>Créer</Button>
+              <Button variant="outline" onClick={() => {
+  setShowTicketModal(false);
+  setEditTicketIndex(null);
+}}>
+  Annuler
+</Button>
+              <Button onClick={createTicket}>
+  {editTicketIndex !== null ? 'Modifier' : 'Créer'}
+</Button>
+
             </div>
           </div>
         </div>
