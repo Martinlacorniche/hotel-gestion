@@ -191,7 +191,7 @@ useEffect(() => {
     const { data, error } = await supabase
       .from('consignes')
       .select('*')
-      .order('date_creation', { ascending: true });
+      .order('date_creation', { ascending: false });
 
     if (error) {
       console.error('Erreur chargement consignes :', error.message);
@@ -736,7 +736,10 @@ const demandesVisibles = useMemo(() => {
 
 
                   <div className="text-xs text-gray-500 italic">{etiquette(c.service)}</div>
-                  <div className="font-medium whitespace-pre-wrap break-words">{c.texte}</div>
+                  <div className="font-light text-sm whitespace-pre-wrap break-words">
+  {c.texte}
+</div>
+
 
                   <div className="text-sm text-gray-600 flex justify-between items-center">
                     <div>Créée le : {formatSafeDate(c.date_creation)}</div>
@@ -798,9 +801,9 @@ const demandesVisibles = useMemo(() => {
     <div className="text-xs text-gray-500 italic">{etiquette(t.service)}</div>
 
     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
-      <div className="font-semibold text-base break-words whitespace-pre-wrap flex-1">
-        {t.titre}
-      </div>
+      <div className="font-light text-sm break-words whitespace-pre-wrap flex-1">
+  {t.titre}
+</div>
       <span className={`text-white text-xs px-2 py-1 rounded ${priorityColor(t.priorite)}`}>
         {t.priorite}
       </span>
@@ -988,7 +991,13 @@ const demandesVisibles = useMemo(() => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg space-y-4 w-full max-w-md">
             <h2 className="text-xl font-bold">Nouvelle Consigne</h2>
-            <Input placeholder="Texte de la consigne" value={newConsigne.texte} onChange={(e) => setNewConsigne({ ...newConsigne, texte: e.target.value })} />
+            <textarea
+  placeholder="Texte de la consigne"
+  value={newConsigne.texte}
+  onChange={(e) => setNewConsigne({ ...newConsigne, texte: e.target.value })}
+  rows={4}
+  className="w-full border rounded px-2 py-1"
+/>
             <select className="w-full border rounded px-2 py-1" value={newConsigne.service} onChange={(e) => setNewConsigne({ ...newConsigne, service: e.target.value })}>
               <option>Tous les services</option>
               <option>Réception</option>
