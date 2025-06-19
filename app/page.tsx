@@ -102,7 +102,7 @@ const formatSafeDate = (dateStr: string | undefined) => {
   if (!dateStr || isNaN(Date.parse(dateStr))) return 'Date invalide';
   return formatDate(new Date(dateStr), 'dd MMMM yyyy', { locale: frLocale });
 };
-
+const [objetsTrouves, setObjetsTrouves] = useState<any[]>([]);
 useEffect(() => {
   const fetchObjetsTrouves = async () => {
     const { data, error } = await supabase
@@ -208,18 +208,14 @@ useEffect(() => {
 
   const [filterService, setFilterService] = useState<string>('Tous');
 
-  const [newTicket, setNewTicket] = useState({
-    titre: '',
-    service: 'Réception',
-    dateAction: '',
-    priorite: 'Moyenne',
-  });
+  
 
   const [newConsigne, setNewConsigne] = useState({
     texte: '',
     service: 'Tous les services',
     date: '',
     valide: false,
+    utilisateur_id: null,
   });
 
   const [newTaxi, setNewTaxi] = useState({
@@ -233,7 +229,7 @@ useEffect(() => {
 
 
   const [showObjetModal, setShowObjetModal] = useState(false);
-const [objetsTrouves, setObjetsTrouves] = useState<any[]>([]);
+
 const [newObjet, setNewObjet] = useState({
   date: '',
   chambre: '',
@@ -348,7 +344,9 @@ const consigneToInsert = {
   auteur: user?.name || 'Anonyme',
   date_creation: formatDate(selectedDate, 'yyyy-MM-dd'),
   valide: false,
+  utilisateur_id: newConsigne.utilisateur_id || null,
 };
+
 
 
   if (editConsigneIndex !== null) {
@@ -510,8 +508,10 @@ const validerDemande = async (index: number) => {
 
 
 
-  const validerConsigne = async (index: number) => {
-  const id = consignes[index].id;
+  const validerConsigne = async (indexVisible: number) => {
+  const consigne = consignesVisibles[indexVisible];
+  const id = consigne.id;
+
   const { error } = await supabase
     .from('consignes')
     .update({ valide: true, date_validation: formatDate(selectedDate, 'yyyy-MM-dd') })
@@ -522,20 +522,28 @@ const validerDemande = async (index: number) => {
     return;
   }
 
+  const originalIndex = consignes.findIndex(c => c.id === id);
+  if (originalIndex === -1) return;
+
   const updated = [...consignes];
-  updated[index].valide = true;
-  updated[index].date_validation = formatDate(selectedDate, 'yyyy-MM-dd');
+  updated[originalIndex].valide = true;
+  updated[originalIndex].date_validation = formatDate(selectedDate, 'yyyy-MM-dd');
   setConsignes(updated);
 };
 
 
 
-  const modifierConsigne = (index: number) => {
-  const c = consignes[index];
-  setNewConsigne({ ...c });
-  setEditConsigneIndex(index);
+
+  const modifierConsigne = (indexVisible: number) => {
+  const consigne = consignesVisibles[indexVisible];
+  const originalIndex = consignes.findIndex(c => c.id === consigne.id);
+  if (originalIndex === -1) return;
+
+  setNewConsigne({ ...consigne });
+  setEditConsigneIndex(originalIndex); // 🔁 index réel
   setShowConsigneModal(true);
 };
+
 
 const [nouvelleConsigne, setNouvelleConsigne] = useState({
   texte: '',
@@ -674,14 +682,36 @@ const demandesVisibles = useMemo(() => {
   return (
     <div className="p-4">
 
-      <div className="flex justify-between items-center mb-4">
-        <div className="text-xl font-semibold">Bonjour, {user.name}
-          <a href="/parking" target="_blank" rel="noopener noreferrer">
-  <button className="ml-4 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-sm shadow">
-    🚗 Réservation Parking
-  </button>
+     <div className="flex items-center justify-between w-full mb-4">
+  <div className="flex items-center gap-4">
+    <span className="text-xl font-semibold">Bonjour, {user.name}</span>
+    <div className="flex gap-2 overflow-x-auto py-1">
+      <a href="/parking" target="_blank" rel="noopener noreferrer">
+        <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow">
+         <span className="text-2xl leading-none">🚗</span>
+        </Button>
+      </a>
+      <a href="/commandes" target="_blank" rel="noopener noreferrer">
+        <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow">
+          <span className="text-2xl leading-none">🛒</span>
+        </Button>
+      </a>
+      <a href="/planning" target="_blank" rel="noopener noreferrer">
+  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow flex items-center gap-2" title="Voir le planning">
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <rect x="3" y="4" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="2" fill="none"/>
+      <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" strokeWidth="2"/>
+      <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" strokeWidth="2"/>
+      <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" strokeWidth="2"/>
+    </svg>
+    Planning
+  </Button>
 </a>
-        </div>
+
+    </div>
+  </div>
+
+
         
         <div className="flex items-center space-x-2">
           
@@ -738,6 +768,12 @@ const demandesVisibles = useMemo(() => {
                   <div className="text-xs text-gray-500 italic">{etiquette(c.service)}</div>
                   <div className="font-light text-sm whitespace-pre-wrap break-words">
   {c.texte}
+  {c.utilisateur_id && (
+  <div className="text-xs text-gray-500">
+    🔒 Assignée à : {users.find(u => u.id_auth === c.utilisateur_id)?.name || 'Inconnu'}
+  </div>
+)}
+
 </div>
 
 
@@ -811,26 +847,33 @@ const demandesVisibles = useMemo(() => {
 
     <div className="flex gap-2 justify-end mt-2">
   <Button
-    size="sm"
-    variant="outline"
-    onClick={() => {
-      setNewTicket({
-        titre: t.titre,
-        service: t.service,
-        dateAction: t.date_action,
-        priorite: t.priorite,
-      });
-      setEditTicketIndex(idx);
-      setShowTicketModal(true);
-    }}
-  >
-    ✏️ 
-  </Button>
+  size="sm"
+  variant="outline"
+  onClick={() => {
+    const realIndex = tickets.findIndex(ticket => ticket.id === t.id);
+    if (realIndex === -1) return;
+
+    setNewTicket({
+      titre: t.titre,
+      service: t.service,
+      dateAction: t.date_action,
+      priorite: t.priorite,
+    });
+    setEditTicketIndex(realIndex);
+    setShowTicketModal(true);
+  }}
+>
+  ✏️ 
+</Button>
+
 
   <Button
   size="sm"
   className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-  onClick={() => validerTicket(idx)}
+  onClick={() => {
+  const realIndex = tickets.findIndex(ticket => ticket.id === t.id);
+  if (realIndex !== -1) validerTicket(realIndex);
+}}
 >
   Valider
 </Button>
@@ -889,9 +932,12 @@ const demandesVisibles = useMemo(() => {
       return;
     }
 
-    const updated = [...demandes];
-    updated[idx].statut = newStatut;
-    setDemandes(updated);
+    const realIndex = demandes.findIndex(dd => dd.id === d.id);
+if (realIndex === -1) return;
+
+const updated = [...demandes];
+updated[realIndex].statut = newStatut;
+setDemandes(updated);
   }}
 >
   <option value="À prévoir">À prévoir</option>
@@ -998,13 +1044,24 @@ const demandesVisibles = useMemo(() => {
   rows={4}
   className="w-full border rounded px-2 py-1"
 />
-            <select className="w-full border rounded px-2 py-1" value={newConsigne.service} onChange={(e) => setNewConsigne({ ...newConsigne, service: e.target.value })}>
-              <option>Tous les services</option>
-              <option>Réception</option>
-              <option>Housekeeping</option>
-              <option>F&B</option>
-              <option>Maintenance</option>
-            </select>
+            <select
+  className="w-full border rounded px-2 py-1"
+  value={newConsigne.utilisateur_id || ''}
+  onChange={(e) =>
+    setNewConsigne({
+      ...newConsigne,
+      utilisateur_id: e.target.value || null,
+    })
+  }
+>
+  <option value="">Aucun utilisateur assigné</option>
+  {users.map((u) => (
+    <option key={u.id_auth} value={u.id_auth}>
+      {u.name} ({u.email})
+    </option>
+  ))}
+</select>
+
             <div className="flex justify-end gap-2">
               <Button
   variant="outline"
@@ -1202,4 +1259,3 @@ const demandesVisibles = useMemo(() => {
 </div>
   );
 }
-"// force update" 

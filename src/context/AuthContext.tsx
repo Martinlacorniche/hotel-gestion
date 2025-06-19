@@ -2,68 +2,76 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { Session, User } from '@supabase/supabase-js';
+import { User } from '@supabase/supabase-js';
+
+interface ExtendedUser extends User {
+  role?: string;
+  name?: string;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: ExtendedUser | null;
+  isLoading: boolean;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  isLoading: true,
   logout: () => {},
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<ExtendedUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-  // Récupère la session
-  supabase.auth.getSession().then(async ({ data: { session } }) => {
-    const authUser = session?.user;
-    if (authUser) {
-      // ➕ Requête vers ta table "users"
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id_auth', authUser.id)
-        .single();
+    const loadUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const authUser = session?.user;
 
-      setUser({
-        ...authUser,
-        role: userData?.role,
-        name: userData?.name,
-      });
-    } else {
-      setUser(null);
-    }
-  });
+      if (authUser) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id_auth', authUser.id)
+          .single();
 
-  // Listener Supabase
-  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-    if (session?.user) {
-      supabase
-        .from('users')
-        .select('*')
-        .eq('id_auth', session.user.id)
-        .single()
-        .then(({ data: userData }) => {
-          setUser({
-            ...session.user,
-            role: userData?.role,
-            name: userData?.name,
+        setUser(userData ? {
+          ...authUser,
+          role: userData.role,
+          name: userData.name,
+        } : null);
+      } else {
+        setUser(null);
+      }
+
+      setIsLoading(false);
+    };
+
+    loadUser();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        supabase
+          .from('users')
+          .select('*')
+          .eq('id_auth', session.user.id)
+          .single()
+          .then(({ data: userData }) => {
+            setUser(userData ? {
+              ...session.user,
+              role: userData.role,
+              name: userData.name,
+            } : null);
           });
-        });
-    } else {
-      setUser(null);
-    }
-  });
+      } else {
+        setUser(null);
+      }
+    });
 
-  return () => {
-    listener.subscription.unsubscribe();
-  };
-}, []);
-
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
   const logout = async () => {
     await supabase.auth.signOut();
@@ -71,7 +79,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, logout }}>
       {children}
     </AuthContext.Provider>
   );
