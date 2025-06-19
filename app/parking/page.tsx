@@ -178,27 +178,12 @@ export default function ParkingPage() {
                   const reservation = reservations.find(r => r.parking_id === p.id && isWithinInterval(day, { start: parseISO(r.start_date), end: parseISO(r.end_date) }));
                   return (
                     <td
-
                       key={day.toISOString()}
                       className={`border px-2 py-1 cursor-pointer ${reservation ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-800'}`}
                       onClick={() => reservation && setPopupReservation(reservation)}
                     >
                       {reservation ? "🚫" : "✅"}
                     </td>
-
-  key={day.toISOString()}
-  className={`border px-2 py-1 cursor-pointer ${reservation ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-800'}`}
-  title={
-    reservation
-      ? `Client : ${reservation.client_name}\nDu ${reservation.start_date} au ${reservation.end_date}`
-      : ''
-  }
-  onClick={() => reservation && setPopupReservation(reservation)}
->
-  {reservation ? "🚫" : "✅"}
-</td>
-
-
                   );
                 })}
               </tr>
