@@ -39,6 +39,12 @@ const user = rawUser as CustomUser | null;
   const [consignesLoading, setConsignesLoading] = useState(false);
   const [taxis, setTaxis] = useState<any[]>([]);
   const [showTicketModal, setShowTicketModal] = useState(false);
+  const [newTicket, setNewTicket] = useState({
+  titre: '',
+  service: 'Réception',
+  dateAction: '',
+  priorite: 'Moyenne',
+});
   const [showConsigneModal, setShowConsigneModal] = useState(false);
   const [showTaxiModal, setShowTaxiModal] = useState(false);
   const [editConsigneIndex, setEditConsigneIndex] = useState<number | null>(null);
