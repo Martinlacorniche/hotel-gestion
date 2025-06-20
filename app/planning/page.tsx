@@ -37,6 +37,7 @@ const SHIFT_OPTIONS = [
   { label: "Maladie", value: "Maladie", color: "bg-red-100 text-red-800" },
   { label: "Injustifié", value: "Injustifié", color: "bg-orange-100 text-orange-900" },
   { label: "Repos", value: "Repos", color: "bg-gray-200 text-gray-400" },
+  { label: "Les Voiles", value: "Les Voiles", color: "bg-White-200 text-black-400" },
 ];
 
 const getShiftColor = (shift) => SHIFT_OPTIONS.find(opt => opt.value === shift)?.color || '';
