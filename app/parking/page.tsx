@@ -178,12 +178,28 @@ export default function ParkingPage() {
                   const reservation = reservations.find(r => r.parking_id === p.id && isWithinInterval(day, { start: parseISO(r.start_date), end: parseISO(r.end_date) }));
                   return (
                     <td
-                      key={day.toISOString()}
-                      className={`border px-2 py-1 cursor-pointer ${reservation ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-800'}`}
-                      onClick={() => reservation && setPopupReservation(reservation)}
-                    >
-                      {reservation ? "🚫" : "✅"}
-                    </td>
+  key={day.toISOString()}
+  className={`border px-2 py-1 cursor-pointer relative ${reservation ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-800'}`}
+  onClick={() => reservation && setPopupReservation(reservation)}
+  onMouseEnter={e => {
+    if (reservation) {
+      const tooltip = document.createElement('div');
+      tooltip.className = "tooltip-resa absolute left-1/2 top-full z-50 bg-white border border-gray-300 px-4 py-2 rounded-xl shadow text-xs text-gray-900 whitespace-pre-line";
+      tooltip.style.transform = "translate(-50%, 8px)";
+      tooltip.innerText = 
+        `Client : ${reservation.client_name}\nDu : ${reservation.start_date}\nAu : ${reservation.end_date}`;
+      tooltip.id = "parking-tooltip";
+      e.currentTarget.appendChild(tooltip);
+    }
+  }}
+  onMouseLeave={e => {
+    const tooltip = e.currentTarget.querySelector("#parking-tooltip");
+    if (tooltip) tooltip.remove();
+  }}
+>
+  {reservation ? "🚫" : "✅"}
+</td>
+
                   );
                 })}
               </tr>
