@@ -412,18 +412,52 @@ useEffect(() => {
   loadInitialData();
 }, [user]);
 
-const moveRow = (index, direction) => {
+const moveRow = async (index, direction) => {
   const newRows = [...rows];
   const targetIndex = direction === 'up' ? index - 1 : index + 1;
 
   if (targetIndex < 0 || targetIndex >= newRows.length) return;
 
+  // Échange les lignes dans l'état local
   const temp = newRows[index];
   newRows[index] = newRows[targetIndex];
   newRows[targetIndex] = temp;
 
   setRows(newRows);
+
+  // Met à jour TOUS les ordres en BDD (employés ET services)
+  const updates = [];
+  let ordre = 0;
+  for (const row of newRows) {
+    if (row.id_auth) {
+      // Employé
+      updates.push(
+        supabase
+          .from('planning_config')
+          .update({ ordre })
+          .eq('user_id', row.id_auth)
+      );
+      ordre++;
+    } else if (row.id) {
+      // Service
+      updates.push(
+        supabase
+          .from('planning_config')
+          .update({ ordre })
+          .eq('service_id', row.id)
+      );
+      ordre++;
+    }
+  }
+
+  await Promise.all(updates);
+
+  // Recharge les données depuis la BDD
+  await loadInitialData();
 };
+
+
+
 
 
 const loadInitialData = async () => {
@@ -720,11 +754,24 @@ const loadInitialData = async () => {
 </div>
 
                     {isAdmin && isUnlocked && (
-                      <div className="flex flex-col gap-1">
-                        <button onClick={() => moveRow(index, 'up')} className="text-xs hover:text-black text-gray-500"><ArrowUp className="w-4 h-4" /></button>
-                        <button onClick={() => moveRow(index, 'down')} className="text-xs hover:text-black text-gray-500"><ArrowDown className="w-4 h-4" /></button>
-                      </div>
-                    )}
+  <div className="flex flex-col gap-1">
+    <button
+      className="text-xs hover:text-black text-gray-500"
+      onClick={async () => await moveRow(index, 'up')}
+      title="Monter"
+    >
+      <ArrowUp className="w-4 h-4" />
+    </button>
+    <button
+      className="text-xs hover:text-black text-gray-500"
+      onClick={async () => await moveRow(index, 'down')}
+      title="Descendre"
+    >
+      <ArrowDown className="w-4 h-4" />
+    </button>
+  </div>
+)}
+
                   </div>
                 </td>
                 {weekDates.map(date => {

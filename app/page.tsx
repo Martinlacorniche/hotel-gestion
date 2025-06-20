@@ -330,6 +330,24 @@ const handleCreateUser = async () => {
     return;
   }
 
+  const { data: configs } = await supabase.from('planning_config').select('ordre');
+  const maxOrdre = configs && configs.length
+    ? Math.max(...configs.map(cfg => cfg.ordre || 0))
+    : 0;
+
+  await supabase.from('planning_config').insert([
+    {
+      user_id: authData.user.id,
+      ordre: maxOrdre + 1, // positionne en dernier par défaut
+    },
+  ]);
+
+  // 4. MAJ liste + fermeture modal
+  setUsers((prev) => [...prev, { name, email, role, id_auth: authData.user.id }]);
+  setShowUserModal(false);
+  setNewUser({ name: '', email: '', password: '', role: 'employe' });
+
+
   // 3. MAJ liste + fermeture modal
 if (authData.user) {
   const userId = authData.user.id;
