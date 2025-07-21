@@ -49,7 +49,16 @@ const getEntry = (entries = [], userId, date) => {
 
 export default function PlanningPage() {
   const { user, isLoading } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
+  
+
   const router = useRouter();
+  const [hotels, setHotels] = useState([]);
+const [selectedHotelId, setSelectedHotelId] = useState(user?.hotel_id || '');
+const [currentHotel, setCurrentHotel] = useState(null);
+const hotelId = isAdmin ? selectedHotelId : user?.hotel_id;
+
 
   const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [rows, setRows] = useState([]);
@@ -114,6 +123,7 @@ const handleSendCpRequest = async () => {
     commentaire: cpComment,
     status: 'pending',
     created_at: new Date().toISOString(),
+    hotel_id: hotelId,
   }]);
   setIsSendingCp(false);
   if (error) {
@@ -228,7 +238,6 @@ const targetWeekEnd = targetWeekStart ? addDays(targetWeekStart, 6) : null;
 
 
 
-  const isAdmin = user?.role === 'admin';
   const quarterHours = ['00', '15', '30', '45'];
 
   const handleShiftDrop = async (targetUserId, targetDate) => {
@@ -263,6 +272,7 @@ const targetWeekEnd = targetWeekStart ? addDays(targetWeekStart, 6) : null;
     shift: sourceEntry.shift,
     start_time: sourceEntry.start_time,
     end_time: sourceEntry.end_time,
+    hotel_id: hotelId,
   };
 
   await supabase.from('planning_entries')
@@ -314,6 +324,7 @@ const handleDuplicateWeek = async () => {
           shift: entry.shift,
           start_time: entry.start_time,
           end_time: entry.end_time,
+          hotel_id: hotelId,
         };
       })
     );
@@ -400,6 +411,30 @@ const getWorkingDays = (userId) => {
   return [...new Set(daysWorked)].length;
 };
 
+useEffect(() => {
+  if (isAdmin) {
+    supabase.from('hotels').select('id, nom').then(({ data }) => {
+      setHotels(data || []);
+      // Si pas encore sélectionné, on met le premier hôtel de la liste
+      if (!selectedHotelId && data && data.length > 0) {
+        setSelectedHotelId(data[0].id);
+      }
+    });
+  }
+}, [isAdmin]);
+
+useEffect(() => {
+  if (selectedHotelId) {
+    supabase.from('hotels').select('id, nom').eq('id', selectedHotelId).single()
+      .then(({ data }) => setCurrentHotel(data));
+  }
+}, [selectedHotelId]);
+
+useEffect(() => {
+  if (hotelId) loadInitialData();
+  // eslint-disable-next-line
+}, [hotelId]);
+
 
 useEffect(() => {
   if (isAdmin) {
@@ -463,10 +498,11 @@ const moveRow = async (index, direction) => {
 
 const loadInitialData = async () => {
   const [usersRes, configRes, entriesRes, cpRes, defaultShiftsRes] = await Promise.all([
-    supabase.from('users').select('*'),
-    supabase.from('planning_config').select('*'),
-    supabase.from('planning_entries').select('*'),
-    supabase.from('cp_requests').select('*').eq('status', 'pending'),
+    supabase.from('users').select('*').eq('hotel_id', hotelId),
+supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
+supabase.from('planning_entries').select('*').eq('hotel_id', hotelId),
+supabase.from('cp_requests').select('*').eq('status', 'pending').eq('hotel_id', hotelId),
+
     supabase.from('default_shift_hours').select('*')
   ]);
 
@@ -534,6 +570,7 @@ const loadInitialData = async () => {
     shift: shiftInput,
     start_time: startTime,
     end_time: endTime,
+    hotel_id: hotelId,
   };
 
   const existing = planningEntries.find(p => p.user_id === userId && p.date === date);
@@ -580,7 +617,25 @@ const loadInitialData = async () => {
 
   return (
     <div className="bg-white rounded-2xl shadow-2xl px-6 py-10 max-w-7xl mx-auto mt-10">
-      <h1 className="text-3xl font-bold mb-8 tracking-tight text-indigo-500">Planning La Corniche</h1>
+      {isAdmin && hotels.length > 0 && (
+  <div className="mb-6 flex items-center gap-2">
+    <label htmlFor="select-hotel" className="font-semibold text-gray-700">Hôtel :</label>
+    <select
+      id="select-hotel"
+      value={selectedHotelId}
+      onChange={e => setSelectedHotelId(e.target.value)}
+      className="border rounded px-3 py-2"
+    >
+      {hotels.map(h => (
+        <option key={h.id} value={h.id}>{h.nom}</option>
+      ))}
+    </select>
+  </div>
+)}
+<h1 className="text-3xl font-bold mb-8 tracking-tight text-indigo-500">
+  Planning {currentHotel?.nom || ''}
+</h1>
+
 
       {user?.role !== 'admin' && (
   <button

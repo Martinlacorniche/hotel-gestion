@@ -5,8 +5,16 @@ import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-
+import { useAuth } from '@/context/AuthContext'; // adapte le chemin si besoin
 export default function PageCommandes() {
+ 
+
+  const { user } = useAuth(); // ← C'est CA qui te donne l'user courant !
+  const isAdmin = user?.role === 'admin';
+  const [hotels, setHotels] = useState([]);
+  const [selectedHotelId, setSelectedHotelId] = useState(user?.hotel_id || '');
+  const [currentHotel, setCurrentHotel] = useState(null);
+  const hotelId = isAdmin ? selectedHotelId : user?.hotel_id;
   const [commandes, setCommandes] = useState([]);
   const [lignes, setLignes] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -17,12 +25,39 @@ export default function PageCommandes() {
   const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
+  if (isAdmin) {
+    supabase.from('hotels').select('id, nom').then(({ data }) => {
+      setHotels(data || []);
+      if (!selectedHotelId && data && data.length > 0) {
+        setSelectedHotelId(data[0].id);
+      }
+    });
+  }
+  // eslint-disable-next-line
+}, [isAdmin]);
+
+useEffect(() => {
+  if (hotelId) fetchCommandes();
+  // eslint-disable-next-line
+}, [hotelId]);
+
+useEffect(() => {
+  if (selectedHotelId) {
+    supabase.from('hotels').select('id, nom').eq('id', selectedHotelId).single()
+      .then(({ data }) => setCurrentHotel(data));
+  }
+}, [selectedHotelId]);
+
+
+  useEffect(() => {
     fetchCommandes();
     fetchLignes();
   }, []);
 
   async function fetchCommandes() {
-    const { data, error } = await supabase.from('commandes').select('*').order('date_creation', { ascending: false });
+    const { data, error } = await supabase.from('commandes').select('*')
+    .eq('hotel_id', hotelId)
+    .order('date_creation', { ascending: false });
     if (!error) setCommandes(data);
   }
 
@@ -51,6 +86,7 @@ export default function PageCommandes() {
       fournisseur: newCommande.fournisseur,
       urgence: newCommande.urgence,
       statut: 'en attente',
+      hotel_id: hotelId,
     });
     if (!error) {
       setShowModal(false);
@@ -79,6 +115,22 @@ export default function PageCommandes() {
 
   return (
     <div className="p-6">
+      {isAdmin && hotels.length > 0 && (
+  <div className="mb-6 flex items-center gap-2">
+    <label htmlFor="select-hotel" className="font-semibold text-gray-700">Hôtel :</label>
+    <select
+      id="select-hotel"
+      value={selectedHotelId}
+      onChange={e => setSelectedHotelId(e.target.value)}
+      className="border rounded px-3 py-2"
+    >
+      {hotels.map(h => (
+        <option key={h.id} value={h.id}>{h.nom}</option>
+      ))}
+    </select>
+  </div>
+)}
+
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">🛒 Besoins d'un truc ?</h1>
         <Button className="bg-indigo-600 hover:bg-indigo-700 text-white shadow" onClick={() => setShowModal(true)}>➕ Nouvelle commande</Button>
@@ -93,8 +145,12 @@ export default function PageCommandes() {
 
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {commandes.filter(c => showArchived || c.statut !== 'reçue').map(commande => (
-          <div key={commande.id} className={`rounded-lg shadow p-4 w-full h-[300px] overflow-hidden relative flex flex-col justify-between transition-colors duration-200
-            ${commande.statut === 'commandée' ? 'bg-green-100 border border-green-300' : commande.statut === 'reçue' ? 'bg-gray-200 border border-gray-300' : 'bg-yellow-100 border border-yellow-300'}`}>
+          <div
+  key={commande.id}
+  className={`rounded-lg shadow p-4 w-full min-h-[180px] max-h-[500px] overflow-auto relative flex flex-col justify-between transition-colors duration-200
+    ${commande.statut === 'commandée' ? 'bg-green-100 border border-green-300' : commande.statut === 'reçue' ? 'bg-gray-200 border border-gray-300' : 'bg-yellow-100 border border-yellow-300'}`}
+>
+
             <div>
               <h2 className="font-bold text-lg truncate">{commande.fournisseur}</h2>
               {commande.urgence && <div className="text-red-600 text-sm">⚠️ Urgence</div>}
@@ -102,7 +158,7 @@ export default function PageCommandes() {
               <ul className="space-y-1 overflow-y-auto max-h-[160px] pr-2">
                 {lignes.filter(l => l.commande_id === commande.id).map(ligne => (
                   <li key={ligne.id} className="text-sm flex justify-between items-center">
-                    <div className="truncate">
+                    <div className="break-words whitespace-pre-line">
                       <strong>{ligne.produit}</strong> - {ligne.quantite} {ligne.unite}
                       {ligne.commentaire && <span className="text-xs text-gray-500 ml-1">({ligne.commentaire})</span>}
                     </div>

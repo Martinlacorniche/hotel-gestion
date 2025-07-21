@@ -32,6 +32,12 @@ interface CustomUser {
 export default function HotelDashboard() {
   const { user: rawUser, logout } = useAuth();
 const user = rawUser as CustomUser | null;
+const isAdmin = user?.role === 'admin';
+const [hotels, setHotels] = useState([]);
+const [selectedHotelId, setSelectedHotelId] = useState(user?.hotel_id || '');
+const [currentHotel, setCurrentHotel] = useState(null);
+const hotelId = isAdmin ? selectedHotelId : user?.hotel_id;
+
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [tickets, setTickets] = useState<any[]>([]);
@@ -110,10 +116,30 @@ const formatSafeDate = (dateStr: string | undefined) => {
 };
 const [objetsTrouves, setObjetsTrouves] = useState<any[]>([]);
 useEffect(() => {
+  if (isAdmin) {
+    supabase.from('hotels').select('id, nom, has_parking').then(({ data }) => {
+      setHotels(data || []);
+      if (!selectedHotelId && data && data.length > 0) {
+        setSelectedHotelId(data[0].id);
+      }
+    });
+  }
+}, [isAdmin]);
+
+useEffect(() => {
+  if (hotelId) {
+    supabase.from('hotels').select('id, nom, has_parking').eq('id', hotelId).single()
+      .then(({ data }) => setCurrentHotel(data));
+  }
+}, [hotelId]);
+
+
+useEffect(() => {
   const fetchObjetsTrouves = async () => {
     const { data, error } = await supabase
       .from('objets_trouves')
       .select('*')
+      .eq('hotel_id', hotelId)
       .order('date', { ascending: false });
 
     if (error) {
@@ -123,12 +149,16 @@ useEffect(() => {
     }
   };
 
-  fetchObjetsTrouves();
-  }, []);
+  if (hotelId) fetchObjetsTrouves();
+}, [hotelId]);
 
 useEffect(() => {
   const fetchUsers = async () => {
-    const { data, error } = await supabase.from('users').select('*');
+    if (!hotelId) return;
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('hotel_id', hotelId);
     if (error) {
       console.error('Erreur chargement utilisateurs :', error.message);
     } else {
@@ -136,35 +166,29 @@ useEffect(() => {
     }
   };
 
-  fetchUsers();
+  if (hotelId) fetchUsers();
+}, [hotelId]);
 
- const formatSafeDate = (dateStr: string | undefined) => {
-  if (!dateStr || isNaN(Date.parse(dateStr))) return 'Date invalide';
-  return formatDate(new Date(dateStr), 'dd MMMM yyyy', { locale: frLocale });
-};
-
-
-
-
- const fetchTickets = async () => {
+useEffect(() => {
+  const fetchTickets = async () => {
     setTicketsLoading(true);
-
     const { data, error } = await supabase
       .from('tickets')
       .select('*')
+      .eq('hotel_id', hotelId)
       .order('date_action', { ascending: true });
-
     if (error) {
       console.error('Erreur chargement tickets :', error.message);
     } else {
       setTickets(data || []);
     }
-
     setTicketsLoading(false);
   };
 
-  fetchTickets();
-}, []);
+  if (hotelId) fetchTickets();
+}, [hotelId]);
+
+
 
 useEffect(() => {
   let isMounted = true;
@@ -173,6 +197,7 @@ useEffect(() => {
     const { data, error } = await supabase
       .from('demandes')
       .select('*')
+      .eq('hotel_id', hotelId)
       .order('heure', { ascending: true });
 
     if (error) {
@@ -182,12 +207,13 @@ useEffect(() => {
     }
   };
 
-  fetchDemandes();
+  if (hotelId) fetchDemandes();
 
   return () => {
     isMounted = false;
   };
-}, []);
+}, [hotelId]);
+
 
 
 
@@ -197,6 +223,7 @@ useEffect(() => {
     const { data, error } = await supabase
       .from('consignes')
       .select('*')
+      .eq('hotel_id', hotelId)
       .order('date_creation', { ascending: false });
 
     if (error) {
@@ -208,8 +235,9 @@ useEffect(() => {
     setConsignesLoading(false);
   };
 
-  fetchConsignes();
-}, []);
+  if (hotelId) fetchConsignes();
+}, [hotelId]);
+
 
 
   const [filterService, setFilterService] = useState<string>('Tous');
@@ -263,6 +291,7 @@ const createTicket = async () => {
     date_action: newTicket.dateAction,
     valide: false,
     auteur: (user && 'name' in user) ? (user as any).name : 'Anonyme',
+    hotel_id: hotelId,
   };
 
   if (editTicketIndex !== null) {
@@ -322,6 +351,7 @@ const handleCreateUser = async () => {
       name,
       role,
       id_auth: authData.user.id,
+      hotel_id: hotelId,
     },
   ]);
 
@@ -364,11 +394,11 @@ if (authData.user) {
 
 const consigneToInsert = {
   texte: newConsigne.texte,
-  service: newConsigne.service,
   auteur: user?.name || 'Anonyme',
   date_creation: formatDate(selectedDate, 'yyyy-MM-dd'),
   valide: false,
   utilisateur_id: newConsigne.utilisateur_id || null,
+  hotel_id: hotelId,
 };
 
 
@@ -407,7 +437,6 @@ const consigneToInsert = {
 
  setNewConsigne({
   texte: '',
-  service: 'Réception',
   date: new Date().toISOString().split('T')[0], // ou une autre valeur par défaut
   valide: false,
 });
@@ -424,6 +453,7 @@ const createDemande = async () => {
   heure: newTaxi.heure,
   date: newTaxi.dateAction,
   valide: false,
+  hotel_id: hotelId,
 };
 
   if (editDemandeIndex !== null) {
@@ -511,7 +541,7 @@ const validerDemande = async (index: number) => {
   } else {
     const { data, error } = await supabase
       .from('objets_trouves')
-      .insert({ ...newObjet, createdAt: new Date().toISOString() })
+      .insert({ ...newObjet, createdAt: new Date().toISOString(), hotel_id: hotelId })
       .select();
 
     if (error) {
@@ -572,7 +602,6 @@ const validerDemande = async (index: number) => {
 const [nouvelleConsigne, setNouvelleConsigne] = useState({
   texte: '',
   date: format(new Date(), 'yyyy-MM-dd'),
-  service: user?.service || '',
   valide: false,
 });
 
@@ -709,12 +738,30 @@ const demandesVisibles = useMemo(() => {
      <div className="flex items-center justify-between w-full mb-4">
   <div className="flex items-center gap-4">
     <span className="text-xl font-semibold">Bonjour, {user.name}</span>
+    {isAdmin && hotels.length > 0 && (
+  <div className="ml-4 flex items-center gap-2">
+    <label htmlFor="select-hotel" className="font-semibold text-gray-700">Hôtel :</label>
+    <select
+      id="select-hotel"
+      value={selectedHotelId}
+      onChange={e => setSelectedHotelId(e.target.value)}
+      className="border rounded px-3 py-2"
+    >
+      {hotels.map(h => (
+        <option key={h.id} value={h.id}>{h.nom}</option>
+      ))}
+    </select>
+  </div>
+)}
+
     <div className="flex gap-2 overflow-x-auto py-1">
-      <a href="/parking" target="_blank" rel="noopener noreferrer">
-        <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow">
-         <span className="text-2xl leading-none">🚗</span>
-        </Button>
-      </a>
+      {currentHotel?.has_parking && (
+  <a href="/parking" target="_blank" rel="noopener noreferrer">
+    <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow">
+      <span className="text-2xl leading-none">🚗</span>
+    </Button>
+  </a>
+)}
       <a href="/commandes" target="_blank" rel="noopener noreferrer">
         <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow">
           <span className="text-2xl leading-none">🛒</span>
@@ -789,7 +836,7 @@ const demandesVisibles = useMemo(() => {
 >
 
 
-                  <div className="text-xs text-gray-500 italic">{etiquette(c.service)}</div>
+                  
                   <div className="font-light text-sm whitespace-pre-wrap break-words">
   {c.texte}
   {c.utilisateur_id && (

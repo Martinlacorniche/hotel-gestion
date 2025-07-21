@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { Input } from '@/components/ui/input';
@@ -11,10 +11,31 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState('employe');
+  const [hotelId, setHotelId] = useState('');
+  const [hotels, setHotels] = useState<{ id: string; nom: string }[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const router = useRouter();
 
+  // 1. Charger la liste des hôtels
+  useEffect(() => {
+    const fetchHotels = async () => {
+      const { data, error } = await supabase.from('hotels').select('id, nom');
+      if (error) {
+        setErrorMsg("Erreur chargement des hôtels");
+      } else {
+        setHotels(data || []);
+      }
+    };
+    fetchHotels();
+  }, []);
+
   const handleRegister = async () => {
+    setErrorMsg('');
+    if (!hotelId) {
+      setErrorMsg("Merci de choisir un hôtel");
+      return;
+    }
+
     // 1. Créer le compte Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
@@ -26,13 +47,14 @@ export default function RegisterPage() {
       return;
     }
 
-    // 2. Ajouter l'utilisateur dans la table personnalisée
+    // 2. Ajouter l'utilisateur dans la table personnalisée avec hotel_id
     const { error: insertError } = await supabase.from('users').insert([
       {
         email,
         name,
         role,
         id_auth: authData.user.id,
+        hotel_id: hotelId,
       },
     ]);
 
@@ -54,6 +76,19 @@ export default function RegisterPage() {
         <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full border rounded px-2 py-2 mb-4">
           <option value="employe">Employé</option>
           <option value="admin">Admin</option>
+        </select>
+        {/* Select Hôtel */}
+        <select
+          value={hotelId}
+          onChange={(e) => setHotelId(e.target.value)}
+          className="w-full border rounded px-2 py-2 mb-4"
+        >
+          <option value="">Sélectionnez un hôtel</option>
+          {hotels.map((hotel) => (
+            <option key={hotel.id} value={hotel.id}>
+              {hotel.nom}
+            </option>
+          ))}
         </select>
         {errorMsg && <p className="text-red-500 text-sm mb-4">{errorMsg}</p>}
         <Button onClick={handleRegister} className="w-full">S'inscrire</Button>
