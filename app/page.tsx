@@ -30,13 +30,28 @@ interface CustomUser {
 
 
 export default function HotelDashboard() {
-  const { user: rawUser, logout } = useAuth();
+  const { user: rawUser, logout, isLoading } = useAuth();
 const user = rawUser as CustomUser | null;
+
 const isAdmin = user?.role === 'admin';
 const [hotels, setHotels] = useState([]);
-const [selectedHotelId, setSelectedHotelId] = useState(user?.hotel_id || '');
+const [selectedHotelId, setSelectedHotelId] = useState(() => {
+  if (typeof window !== 'undefined') {
+    const fromStorage = window.localStorage.getItem('selectedHotelId');
+    if (fromStorage) return fromStorage;
+  }
+  if (user && user.hotel_id) return user.hotel_id;
+  return '';
+});
+useEffect(() => {
+  if (selectedHotelId && typeof window !== 'undefined') {
+    window.localStorage.setItem('selectedHotelId', selectedHotelId);
+  }
+}, [selectedHotelId]);
+
 const [currentHotel, setCurrentHotel] = useState(null);
-const hotelId = isAdmin ? selectedHotelId : user?.hotel_id;
+const hotelId = selectedHotelId || user?.hotel_id;
+
 
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -56,11 +71,18 @@ const hotelId = isAdmin ? selectedHotelId : user?.hotel_id;
   const [editConsigneIndex, setEditConsigneIndex] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<'priorite' | 'date'>('priorite');
   const [showUserModal, setShowUserModal] = useState(false);
-const [newUser, setNewUser] = useState<{ name: string; email: string; role: string; password: string }>({
+const [newUser, setNewUser] = useState<{
+  name: string;
+  email: string;
+  role: string;
+  password: string;
+  hotel_id?: string; // <--- AJOUTE ICI
+}>({
   name: '',
   email: '',
-  role: '',
+  role: 'employe',
   password: '',
+  hotel_id: selectedHotelId || hotels[0]?.id || '', // Valeur initiale (optionnel)
 });
 
 const [users, setUsers] = useState<any[]>([]);
@@ -100,6 +122,7 @@ const deleteObjet = async (id: string) => {
     .from('objets_trouves')
     .delete()
     .eq('id', id);
+    
 
   if (error) {
     console.error('Erreur suppression objet trouvé :', error.message);
@@ -115,16 +138,21 @@ const formatSafeDate = (dateStr: string | undefined) => {
   return formatDate(new Date(dateStr), 'dd MMMM yyyy', { locale: frLocale });
 };
 const [objetsTrouves, setObjetsTrouves] = useState<any[]>([]);
+
+
+
+
+
 useEffect(() => {
-  if (isAdmin) {
-    supabase.from('hotels').select('id, nom, has_parking').then(({ data }) => {
-      setHotels(data || []);
-      if (!selectedHotelId && data && data.length > 0) {
-        setSelectedHotelId(data[0].id);
-      }
-    });
-  }
-}, [isAdmin]);
+  supabase.from('hotels').select('id, nom, has_parking').then(({ data }) => {
+    setHotels(data || []);
+    // NE TOUCHE PAS selectedHotelId ici !
+    // Le setSelectedHotelId ne doit JAMAIS être ici
+  });
+}, []);
+
+
+
 
 useEffect(() => {
   if (hotelId) {
@@ -335,28 +363,40 @@ const handleCreateUser = async () => {
 
   // 1. Crée l'utilisateur dans Supabase Auth
   const { data: authData, error: authError } = await supabase.auth.signUp({
-    email,
-    password,
-  });
+  email,
+  password,
+  options: {
+    data: {
+      name,
+      role,
+      hotel_id: newUser.hotel_id,
+    }
+  }
+});
 
   if (authError || !authData.user) {
     console.error("Erreur création utilisateur Auth :", authError?.message);
+    alert("Erreur création utilisateur Auth : " + (authError?.message ?? ''));
     return;
   }
+  if (!newUser.hotel_id) {
+  alert('Merci de sélectionner un hôtel.');
+  return;
+}
+
 
   // 2. Enregistre dans la table "users"
-  const { error: insertError } = await supabase.from('users').insert([
-    {
-      email,
-      name,
-      role,
-      id_auth: authData.user.id,
-      hotel_id: hotelId,
-    },
-  ]);
+  const { error: insertError } = await supabase.from('users').insert([{
+    email,
+    name,
+    role,
+    id_auth: authData.user.id,
+    hotel_id: newUser.hotel_id,
+  }]);
 
   if (insertError) {
     console.error("Erreur insertion table users :", insertError.message);
+    alert("Erreur insertion table users : " + insertError.message);
     return;
   }
 
@@ -365,28 +405,21 @@ const handleCreateUser = async () => {
     ? Math.max(...configs.map(cfg => cfg.ordre || 0))
     : 0;
 
-  await supabase.from('planning_config').insert([
-    {
-      user_id: authData.user.id,
-      ordre: maxOrdre + 1, // positionne en dernier par défaut
-    },
-  ]);
+  await supabase.from('planning_config').insert([{
+  user_id: authData.user.id,
+  hotel_id: newUser.hotel_id, // <-- impératif ici !
+  ordre: maxOrdre + 1,
+}]);
+
 
   // 4. MAJ liste + fermeture modal
-  setUsers((prev) => [...prev, { name, email, role, id_auth: authData.user.id }]);
+  setUsers((prev) => [...prev, { name, email, role, id_auth: authData.user.id, hotel_id: newUser.hotel_id }]);
   setShowUserModal(false);
-  setNewUser({ name: '', email: '', password: '', role: 'employe' });
-
-
-  // 3. MAJ liste + fermeture modal
-if (authData.user) {
-  const userId = authData.user.id;
-  setUsers((prev) => [...prev, { name, email, role, id_auth: userId }]);
-}
-
-  setShowUserModal(false);
-  setNewUser({ name: '', email: '', password: '', role: 'employe' });
+  setNewUser({ name: '', email: '', password: '', role: 'employe', hotel_id: hotels[0]?.id || '', });
 };
+
+
+ 
 
 
  const createConsigne = async () => {
@@ -717,6 +750,7 @@ const demandesVisibles = useMemo(() => {
 }, [objetsTrouves]);
 
   useEffect(() => {
+    if (isLoading) return;
   if (typeof window !== 'undefined') {
     const path = window.location.pathname;
     const isResetPage = path.includes('/update-password') || path.includes('/reset-password');
@@ -725,7 +759,7 @@ const demandesVisibles = useMemo(() => {
       router.push('/login');
     }
   }
-}, [user]);
+}, [user, isLoading]);
 
   if (!user) return <div className="p-4 text-center">Redirection...</div>;
 
@@ -738,7 +772,7 @@ const demandesVisibles = useMemo(() => {
      <div className="flex items-center justify-between w-full mb-4">
   <div className="flex items-center gap-4">
     <span className="text-xl font-semibold">Bonjour, {user.name}</span>
-    {isAdmin && hotels.length > 0 && (
+    {hotels.length > 0 && (
   <div className="ml-4 flex items-center gap-2">
     <label htmlFor="select-hotel" className="font-semibold text-gray-700">Hôtel :</label>
     <select
@@ -753,6 +787,7 @@ const demandesVisibles = useMemo(() => {
     </select>
   </div>
 )}
+
 
     <div className="flex gap-2 overflow-x-auto py-1">
       {currentHotel?.has_parking && (
@@ -981,44 +1016,50 @@ const demandesVisibles = useMemo(() => {
                 {demandesVisibles.map((d, idx) => (
   <div
     key={idx}
-    className={`border p-2 rounded-md flex justify-between items-center ${
-      d.valide ? 'bg-gray-200 text-gray-500' : 'bg-white'
-    }`}
+    className={`border p-2 rounded-md flex justify-between items-center
+      ${
+        d.statut === 'À prévoir'
+          ? 'bg-orange-300'
+          : d.statut === 'Prévu' || d.statut === 'Fait'
+            ? 'bg-green-200'
+            : 'bg-white'
+      }
+    `}
   >
     <span className="text-xs">{d.type} - #{d.chambre} à {d.heure?.slice(0, 5)}</span>
     <div className="flex items-center gap-2">
       <select
-  className="text-sm border rounded px-2 py-1"
-  value={d.statut || 'À prévoir'}
-  onChange={async (e) => {
-    const newStatut = e.target.value;
+        className="text-sm border rounded px-2 py-1"
+        value={d.statut || 'À prévoir'}
+        onChange={async (e) => {
+          const newStatut = e.target.value;
 
-    const { error } = await supabase
-      .from('demandes')
-      .update({ statut: newStatut })
-      .eq('id', d.id);
+          const { error } = await supabase
+            .from('demandes')
+            .update({ statut: newStatut })
+            .eq('id', d.id);
 
-    if (error) {
-      console.error('Erreur modification statut :', error.message);
-      return;
-    }
+          if (error) {
+            console.error('Erreur modification statut :', error.message);
+            return;
+          }
 
-    const realIndex = demandes.findIndex(dd => dd.id === d.id);
-if (realIndex === -1) return;
+          const realIndex = demandes.findIndex(dd => dd.id === d.id);
+          if (realIndex === -1) return;
 
-const updated = [...demandes];
-updated[realIndex].statut = newStatut;
-setDemandes(updated);
-  }}
->
-  <option value="À prévoir">À prévoir</option>
-  <option value="Prévu">Prévu</option>
-  <option value="Fait">Fait</option>
-</select>
-
+          const updated = [...demandes];
+          updated[realIndex].statut = newStatut;
+          setDemandes(updated);
+        }}
+      >
+        <option value="À prévoir">À prévoir</option>
+        <option value="Prévu">Prévu</option>
+        <option value="Fait">Fait</option>
+      </select>
     </div>
   </div>
 ))}
+
 
               </div>
             </CardContent>
@@ -1283,6 +1324,21 @@ setDemandes(updated);
         <option value="employe">Employé</option>
         <option value="admin">Admin</option>
       </select>
+      {isAdmin && hotels.length > 0 && (
+  <select
+    className="w-full border rounded px-2 py-2 mb-4"
+    value={newUser.hotel_id || ''}
+    onChange={(e) => setNewUser({ ...newUser, hotel_id: e.target.value })}
+  >
+    <option value="">Sélectionner un hôtel</option>
+    {hotels.map((h) => (
+      <option key={h.id} value={h.id}>
+        {h.nom}
+      </option>
+    ))}
+  </select>
+)}
+
 
       <div className="flex justify-end space-x-2">
         <Button variant="outline" onClick={() => setShowUserModal(false)}>Annuler</Button>
@@ -1298,30 +1354,64 @@ setDemandes(updated);
     <h2 className="text-lg font-bold mb-2">👥 Utilisateurs</h2>
     <div className="space-y-2">
       {users.map((u, idx) => (
-        <div key={idx} className="border p-3 rounded-md flex justify-between items-center bg-white">
-          <div>
-            <div className="font-semibold">{u.name}</div>
-            <div className="text-sm text-gray-500">{u.email} - {u.role}</div>
-          </div>
-          <Button
-  size="sm"
-  variant="destructive"
-  onClick={async () => {
-    const userToDelete = users[idx];
-    const { error } = await supabase.from('users').delete().eq('id_auth', userToDelete.id_auth);
-    if (error) {
-      console.error('Erreur suppression utilisateur :', error.message);
-    } else {
-      const updated = users.filter((u) => u.id_auth !== userToDelete.id_auth);
-      setUsers(updated);
-    }
-  }}
->
-  Supprimer
-</Button>
+  <div key={idx} className="border p-3 rounded-md flex justify-between items-center bg-white">
+    <div>
+      <div className="font-semibold">{u.name}</div>
+      <div className="text-sm text-gray-500">{u.email} - {u.role}</div>
+    </div>
 
-        </div>
-      ))}
+    <div className="flex items-center gap-2">
+      <select
+        className="border rounded px-2 py-1"
+        value={u.hotel_id || ""}
+        onChange={async (e) => {
+          const newHotelId = e.target.value;
+          // MAJ dans Supabase
+          const { error } = await supabase
+            .from('users')
+            .update({ hotel_id: newHotelId })
+            .eq('id_auth', u.id_auth);
+
+          if (error) {
+            alert("Erreur lors du changement d'hôtel : " + error.message);
+            return;
+          }
+
+          // MAJ locale de la liste
+          setUsers((prev) =>
+            prev.map((user, i) =>
+              i === idx ? { ...user, hotel_id: newHotelId } : user
+            )
+          );
+        }}
+      >
+        {hotels.map((h) => (
+          <option value={h.id} key={h.id}>
+            {h.nom}
+          </option>
+        ))}
+      </select>
+
+      <Button
+        size="sm"
+        variant="destructive"
+        onClick={async () => {
+          const userToDelete = users[idx];
+          const { error } = await supabase.from('users').delete().eq('id_auth', userToDelete.id_auth);
+          if (error) {
+            console.error('Erreur suppression utilisateur :', error.message);
+          } else {
+            const updated = users.filter((u) => u.id_auth !== userToDelete.id_auth);
+            setUsers(updated);
+          }
+        }}
+      >
+        Supprimer
+      </Button>
+    </div>
+  </div>
+))}
+
     </div>
   </div>
 )}

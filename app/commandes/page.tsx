@@ -10,11 +10,25 @@ export default function PageCommandes() {
  
 
   const { user } = useAuth(); // ← C'est CA qui te donne l'user courant !
+  const [selectedHotelId, setSelectedHotelId] = useState(() => {
+  if (typeof window !== "undefined") {
+    const fromStorage = window.localStorage.getItem('selectedHotelId');
+    if (fromStorage) return fromStorage;
+  }
+  if (user && user.hotel_id) return user.hotel_id;
+  return '';
+});
+useEffect(() => {
+  if (selectedHotelId && typeof window !== "undefined") {
+    window.localStorage.setItem('selectedHotelId', selectedHotelId);
+  }
+}, [selectedHotelId]);
+
   const isAdmin = user?.role === 'admin';
   const [hotels, setHotels] = useState([]);
-  const [selectedHotelId, setSelectedHotelId] = useState(user?.hotel_id || '');
   const [currentHotel, setCurrentHotel] = useState(null);
-  const hotelId = isAdmin ? selectedHotelId : user?.hotel_id;
+  const hotelId = selectedHotelId || user?.hotel_id;
+
   const [commandes, setCommandes] = useState([]);
   const [lignes, setLignes] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -25,16 +39,11 @@ export default function PageCommandes() {
   const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
-  if (isAdmin) {
-    supabase.from('hotels').select('id, nom').then(({ data }) => {
-      setHotels(data || []);
-      if (!selectedHotelId && data && data.length > 0) {
-        setSelectedHotelId(data[0].id);
-      }
-    });
-  }
-  // eslint-disable-next-line
-}, [isAdmin]);
+  supabase.from('hotels').select('id, nom').then(({ data }) => {
+    setHotels(data || []);
+  });
+}, []);
+
 
 useEffect(() => {
   if (hotelId) fetchCommandes();
@@ -115,7 +124,7 @@ useEffect(() => {
 
   return (
     <div className="p-6">
-      {isAdmin && hotels.length > 0 && (
+      {hotels.length > 0 && (
   <div className="mb-6 flex items-center gap-2">
     <label htmlFor="select-hotel" className="font-semibold text-gray-700">Hôtel :</label>
     <select
@@ -131,8 +140,9 @@ useEffect(() => {
   </div>
 )}
 
+
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">🛒 Besoins d'un truc ?</h1>
+        <h1 className="text-2xl font-bold">🛒 Besoin d'un truc ?</h1>
         <Button className="bg-indigo-600 hover:bg-indigo-700 text-white shadow" onClick={() => setShowModal(true)}>➕ Nouvelle commande</Button>
       </div>
 

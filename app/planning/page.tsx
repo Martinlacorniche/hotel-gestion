@@ -55,10 +55,22 @@ export default function PlanningPage() {
 
   const router = useRouter();
   const [hotels, setHotels] = useState([]);
-const [selectedHotelId, setSelectedHotelId] = useState(user?.hotel_id || '');
+const [selectedHotelId, setSelectedHotelId] = useState(() => {
+  if (typeof window !== "undefined") {
+    const fromStorage = window.localStorage.getItem('selectedHotelId');
+    if (fromStorage) return fromStorage;
+  }
+  if (user && user.hotel_id) return user.hotel_id;
+  return '';
+});
 const [currentHotel, setCurrentHotel] = useState(null);
-const hotelId = isAdmin ? selectedHotelId : user?.hotel_id;
-
+const hotelId = selectedHotelId || user?.hotel_id || '';
+// Persiste le choix à chaque changement
+useEffect(() => {
+  if (selectedHotelId && typeof window !== "undefined") {
+    window.localStorage.setItem('selectedHotelId', selectedHotelId);
+  }
+}, [selectedHotelId]);
 
   const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [rows, setRows] = useState([]);
@@ -86,12 +98,15 @@ const [isSendingCp, setIsSendingCp] = useState(false);
   const [cutMode, setCutMode] = useState(false);
 
   const loadCpRequests = async () => {
+  if (!hotelId || typeof hotelId !== "string" || hotelId.length < 10) return;
   const { data, error } = await supabase
     .from('cp_requests')
     .select('*')
+    .eq('hotel_id', hotelId)
     .order('created_at', { ascending: false });
   setCpRequests(data || []);
 };
+
 
   // Pour accepter une demande (change juste le statut)
 const handleAcceptCp = async (req) => {
@@ -111,10 +126,11 @@ const handleDeleteCp = async (id) => {
   loadCpRequests();
 };
 const handleSendCpRequest = async () => {
-  if (!cpStartDate || !cpEndDate) {
+  if (!cpStartDate || !cpEndDate || !hotelId) { // ← rajoute hotelId ici si pas déjà fait
     alert('Merci de renseigner les deux dates.');
     return;
   }
+  
   setIsSendingCp(true);
   const { error } = await supabase.from('cp_requests').insert([{
     user_id: user.id_auth,
@@ -241,7 +257,7 @@ const targetWeekEnd = targetWeekStart ? addDays(targetWeekStart, 6) : null;
   const quarterHours = ['00', '15', '30', '45'];
 
   const handleShiftDrop = async (targetUserId, targetDate) => {
-  if (!isAdmin || !draggedShift) return;
+  if (!isAdmin || !draggedShift || !hotelId) return;
 
   const { userId: sourceUserId, date: sourceDate } = draggedShift;
 
@@ -285,14 +301,19 @@ const targetWeekEnd = targetWeekStart ? addDays(targetWeekStart, 6) : null;
       .eq('date', sourceDate);
   }
 
-  const { data: updatedEntries } = await supabase.from('planning_entries').select('*');
-  setPlanningEntries(updatedEntries);
+  const { data: updatedEntries } = await supabase
+  .from('planning_entries')
+  .select('*')
+  .eq('hotel_id', hotelId);
+setPlanningEntries(updatedEntries || []);
+
+
 
   setDraggedShift(null);
 };
 
 const handleDuplicateWeek = async () => {
-  if (!duplicationSource || !targetStartDate || !duplicationTargetIds.length) return;
+  if (!duplicationSource || !targetStartDate || !duplicationTargetIds.length || !hotelId) return;
 
   const sourceStart = currentWeekStart;
   const sourceEnd = addDays(currentWeekStart, 6);
@@ -306,7 +327,7 @@ const handleDuplicateWeek = async () => {
     })
   );
 
-  console.log("shiftsToCopy dates : ", shiftsToCopy.map(e => e.date + ' (' + new Date(e.date).toLocaleDateString('fr-FR', { weekday: 'long' }) + ')'));
+ 
 
   let allEntries = [];
   for (const targetId of duplicationTargetIds) {
@@ -315,9 +336,7 @@ const handleDuplicateWeek = async () => {
         const originalDate = new Date(entry.date);
         const jsDay = originalDate.getDay();
         const newDate = addDays(targetStart, jsDay);
-        console.log(
-          `[DEBUG] Source: ${entry.date} (${originalDate.toLocaleDateString('fr-FR', { weekday: 'long' })})  =>  Cible: ${newDate.toISOString().slice(0,10)} (${newDate.toLocaleDateString('fr-FR', { weekday: 'long' })})`
-        );
+       
         return {
           user_id: targetId,
           date: newDate.toISOString().slice(0, 10),
@@ -338,8 +357,12 @@ const handleDuplicateWeek = async () => {
     alert("Erreur pendant la duplication.");
     console.error(error);
   } else {
-    const { data: updated } = await supabase.from('planning_entries').select('*');
-    setPlanningEntries(updated);
+    const { data: updated } = await supabase
+  .from('planning_entries')
+  .select('*')
+  .eq('hotel_id', hotelId);
+setPlanningEntries(updated || []);
+
     setSuccessMessage('✅ Duplication réussie');
     closeDuplicationModal();
     setTimeout(() => setSuccessMessage(''), 3000);
@@ -412,7 +435,6 @@ const getWorkingDays = (userId) => {
 };
 
 useEffect(() => {
-  if (isAdmin) {
     supabase.from('hotels').select('id, nom').then(({ data }) => {
       setHotels(data || []);
       // Si pas encore sélectionné, on met le premier hôtel de la liste
@@ -420,7 +442,7 @@ useEffect(() => {
         setSelectedHotelId(data[0].id);
       }
     });
-  }
+  
 }, [isAdmin]);
 
 useEffect(() => {
@@ -459,32 +481,38 @@ const moveRow = async (index, direction) => {
   newRows[index] = newRows[targetIndex];
   newRows[targetIndex] = temp;
 
+  
   setRows(newRows);
 
   // Met à jour TOUS les ordres en BDD (employés ET services)
   const updates = [];
   let ordre = 0;
   for (const row of newRows) {
-    if (row.id_auth) {
-      // Employé
-      updates.push(
-        supabase
-          .from('planning_config')
-          .update({ ordre })
-          .eq('user_id', row.id_auth)
-      );
-      ordre++;
-    } else if (row.id) {
-      // Service
-      updates.push(
-        supabase
-          .from('planning_config')
-          .update({ ordre })
-          .eq('service_id', row.id)
-      );
-      ordre++;
-    }
-  }
+  if (row.id_auth) {
+  // Employé
+  console.log('Update service', {service_id: row.id, hotelId, ordre});
+  updates.push(
+    supabase
+      .from('planning_config')
+      .update({ ordre })
+      .eq('user_id', row.id_auth)
+      .eq('hotel_id', hotelId)
+  );
+  ordre++;
+} else if (row.id) {
+  // Service (attention : service_id ET hotel_id)
+  updates.push(
+    supabase
+      .from('planning_config')
+      .update({ ordre })
+      .eq('service_id', row.id)
+      .eq('hotel_id', hotelId)
+  );
+  ordre++;
+}
+
+}
+
 
   await Promise.all(updates);
 
@@ -497,6 +525,7 @@ const moveRow = async (index, direction) => {
 
 
 const loadInitialData = async () => {
+  if (!hotelId || typeof hotelId !== "string" || hotelId.length < 10) return; 
   const [usersRes, configRes, entriesRes, cpRes, defaultShiftsRes] = await Promise.all([
     supabase.from('users').select('*').eq('hotel_id', hotelId),
 supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
@@ -517,10 +546,17 @@ supabase.from('cp_requests').select('*').eq('status', 'pending').eq('hotel_id', 
     return { ...u, ordre: conf?.ordre ?? 9999 };
   });
 
-  const existingServiceRows = configData.filter(c => c.service_id);
-  const serviceRows = SERVICE_ROWS.map((srv, i) => {
-    const conf = existingServiceRows.find(s => s.service_id === srv.id);
-    return { ...srv, ordre: conf?.ordre ?? i };
+  const serviceRows = configData
+  .filter(c => c.service_id && c.hotel_id === hotelId)
+  .map((conf, i) => {
+    // Retrouve le nom/couleur depuis SERVICE_ROWS statique si besoin
+    const srvStatic = SERVICE_ROWS.find(s => s.id === conf.service_id);
+    return {
+      ...srvStatic,
+      ...conf,
+      id: conf.service_id,
+      ordre: conf.ordre ?? i
+    };
   });
 
   const allRows = [...serviceRows, ...usersWithOrder].sort((a, b) => a.ordre - b.ordre);
@@ -546,10 +582,15 @@ supabase.from('cp_requests').select('*').eq('status', 'pending').eq('hotel_id', 
   }, [shiftInput]);
 
   const handleDeleteShift = async (entryId) => {
+    if (!hotelId || typeof hotelId !== "string" || hotelId.length < 10) return;
   await supabase.from('planning_entries').delete().eq('id', entryId);
   // Recharge le planning après suppression
-  const { data: updatedEntries } = await supabase.from('planning_entries').select('*');
-  setPlanningEntries(updatedEntries);
+  const { data: updatedEntries } = await supabase
+  .from('planning_entries')
+  .select('*')
+  .eq('hotel_id', hotelId);
+setPlanningEntries(updatedEntries || []);
+
 };
 
 
@@ -561,7 +602,7 @@ supabase.from('cp_requests').select('*').eq('status', 'pending').eq('hotel_id', 
   };
 
   const saveShift = async () => {
-  if (!editingCell) return;
+  if (!editingCell || !hotelId) return;
   const { userId, date } = editingCell;
 
   const payload = {
@@ -590,8 +631,12 @@ supabase.from('cp_requests').select('*').eq('status', 'pending').eq('hotel_id', 
   await Promise.all([upsertShift, defaultUpdate]);
 
   // Recharge uniquement les shifts (pas besoin de tout recharger)
-  const { data: updatedEntries } = await supabase.from('planning_entries').select('*');
-  setPlanningEntries(updatedEntries || []);
+  const { data: updatedEntries } = await supabase
+  .from('planning_entries')
+  .select('*')
+  .eq('hotel_id', hotelId);
+setPlanningEntries(updatedEntries || []);
+
 
   // Met à jour localement les horaires par défaut (optionnel mais utile)
   if (useAsDefault && shiftInput) {
@@ -617,7 +662,7 @@ supabase.from('cp_requests').select('*').eq('status', 'pending').eq('hotel_id', 
 
   return (
     <div className="bg-white rounded-2xl shadow-2xl px-6 py-10 max-w-7xl mx-auto mt-10">
-      {isAdmin && hotels.length > 0 && (
+      {hotels.length > 0 && (
   <div className="mb-6 flex items-center gap-2">
     <label htmlFor="select-hotel" className="font-semibold text-gray-700">Hôtel :</label>
     <select
@@ -632,6 +677,7 @@ supabase.from('cp_requests').select('*').eq('status', 'pending').eq('hotel_id', 
     </select>
   </div>
 )}
+
 <h1 className="text-3xl font-bold mb-8 tracking-tight text-indigo-500">
   Planning {currentHotel?.nom || ''}
 </h1>
@@ -1134,6 +1180,7 @@ supabase.from('cp_requests').select('*').eq('status', 'pending').eq('hotel_id', 
 )}
 </div>
 );
-} 
+}
+
     
 
