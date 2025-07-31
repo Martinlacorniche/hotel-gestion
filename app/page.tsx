@@ -813,6 +813,15 @@ const demandesVisibles = useMemo(() => {
     Planning
   </Button>
 </a>
+<a href={`/trousseau?hotel_id=${hotelId}`} target="_blank" rel="noopener noreferrer">
+  <Button
+    className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow"
+    title="Voir le trousseau"
+  >
+    <span className="text-2xl leading-none">🔑</span>
+  </Button>
+</a>
+
 
     </div>
   </div>
