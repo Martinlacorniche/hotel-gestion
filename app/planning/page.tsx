@@ -4,12 +4,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import { addDays, format, startOfWeek, isWithinInterval, differenceInCalendarDays } from 'date-fns';
-
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import { useRouter } from 'next/navigation';
 import { Lock, Unlock, ArrowDown, ArrowUp, Plus } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { fr } from 'date-fns/locale';
+import toast from 'react-hot-toast';
+
 
 
 
@@ -72,7 +75,13 @@ useEffect(() => {
   }
 }, [selectedHotelId]);
 
-  const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+  const monday = startOfWeek(new Date(), { weekStartsOn: 1 });
+  monday.setHours(0,0,0,0);
+  return monday;
+});
+
+
   const [rows, setRows] = useState([]);
   const [users, setUsers] = useState([]);
   const [planningEntries, setPlanningEntries] = useState([]);
@@ -92,6 +101,9 @@ const [isSendingCp, setIsSendingCp] = useState(false);
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [useAsDefault, setUseAsDefault] = useState(false);
   const [defaultHours, setDefaultHours] = useState({});
+const [nbWeeksSource, setNbWeeksSource] = useState(1);
+const [nbWeeksTarget, setNbWeeksTarget] = useState(1);
+
 
   const [draggedShift, setDraggedShift] = useState(null);
 
@@ -149,7 +161,8 @@ const handleSendCpRequest = async () => {
     setCpStartDate('');
     setCpEndDate('');
     setCpComment('');
-    alert('Demande de congé envoyée !');
+    toast.success("📩 Demande de congé envoyée !");
+
   }
 };
 
@@ -166,46 +179,73 @@ const openDuplicationModal = (user) => {
 };
 
 const exportPDF = () => {
-  const doc = new jsPDF();
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const month = currentWeekStart.getMonth();
   const year = currentWeekStart.getFullYear();
 
-  // Calcule les bornes du mois
   const start = new Date(year, month, 1);
   const end = new Date(year, month + 1, 0);
 
-  // Filtre les shifts du mois affiché
   const entriesForMonth = planningEntries.filter(entry => {
     const entryDate = new Date(entry.date);
     return entryDate >= start && entryDate <= end;
   });
 
-  // Fonctions de tri
-  const isWorked = (type) => !['Repos', 'CP', 'Maladie', 'Injustifié'].includes(type);
-  const isCp = (type) => type === 'CP';
-  const isMaladie = (type) => type === 'Maladie';
-  const isInjustifie = (type) => type === 'Injustifié';
+  // Couleurs associées aux shifts (mêmes que dans ton planning)
+  const shiftColors = {
+    'Réception matin': [173, 216, 230], // bleu clair
+    'Réception soir': [135, 206, 250], // indigo foncé
+    'Night': [200, 200, 200], // gris
+    'Présence': [238, 130, 238], // violet
+    'Housekeeping Chambre': [144, 238, 144], // vert clair
+    'Housekeeping Communs': [0, 128, 0], // vert foncé
+    'Petit Déjeuner': [255, 255, 102], // jaune
+    'Extra': [216, 191, 216], // mauve
+    'CP': [255, 182, 193], // rose
+    'Maladie': [255, 99, 71], // rouge clair
+    'Injustifié': [255, 165, 0], // orange
+    'Repos': [220, 220, 220], // gris clair
+    'Les Voiles': [0, 0, 0], // noir
+  };
 
-  // Regroupe par salarié
+  const abbreviateShift = (shift) => {
+    switch (shift) {
+      case 'Réception matin': return 'RM';
+      case 'Réception soir': return 'RS';
+      case 'Night': return 'N';
+      case 'Présence': return 'P';
+      case 'Housekeeping Chambre': return 'HC';
+      case 'Housekeeping Communs': return 'HCo';
+      case 'Petit Déjeuner': return 'PD';
+      case 'Extra': return 'E';
+      case 'CP': return 'CP';
+      case 'Maladie': return 'M';
+      case 'Injustifié': return 'I';
+      case 'Repos': return 'R';
+      case 'Les Voiles': return 'LV';
+      default: return '';
+    }
+  };
+
+  // PAGE 1 - Récapitulatif
   const userStats = users.map(user => {
     const entries = entriesForMonth.filter(e => e.user_id === user.id_auth);
-
     let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0;
 
     for (const entry of entries) {
-      if (isWorked(entry.shift)) {
+      if (!['Repos', 'CP', 'Maladie', 'Injustifié'].includes(entry.shift)) {
         workedDays++;
         if (entry.start_time && entry.end_time) {
           const [sh, sm] = entry.start_time.split(":").map(Number);
           const [eh, em] = entry.end_time.split(":").map(Number);
           let minutes = (eh * 60 + em) - (sh * 60 + sm);
-          if (minutes < 0) minutes += 24 * 60; // Shift nuit
+          if (minutes < 0) minutes += 24 * 60;
           workedHours += minutes / 60;
         }
       }
-      if (isCp(entry.shift)) cp++;
-      if (isMaladie(entry.shift)) maladie++;
-      if (isInjustifie(entry.shift)) injustifie++;
+      if (entry.shift === 'CP') cp++;
+      if (entry.shift === 'Maladie') maladie++;
+      if (entry.shift === 'Injustifié') injustifie++;
     }
 
     return {
@@ -218,32 +258,57 @@ const exportPDF = () => {
     };
   });
 
-  // Génère le PDF
-  doc.text(`Récapitulatif du mois de ${month + 1}/${year}`, 14, 15);
-  autoTable(doc,{
-    startY: 22,
-    head: [[
-      "Salarié",
-      "Jours travaillés",
-      "Heures travaillées",
-      "CP",
-      "Maladie",
-      "Injustifié"
-    ]],
-    body: userStats.map(u => [
-      u.nom,
-      u.workedDays,
-      u.workedHours,
-      u.cp,
-      u.maladie,
-      u.injustifie
-    ]),
+  doc.setFontSize(14);
+  doc.text(`Récapitulatif du mois ${month + 1}/${year}`, 40, 40);
+  autoTable(doc, {
+    startY: 60,
+    head: [["Salarié", "Jours", "Heures", "CP", "Maladie", "Injust." ]],
+    body: userStats.map(u => [u.nom, u.workedDays, u.workedHours, u.cp, u.maladie, u.injustifie]),
     theme: "grid",
     styles: { fontSize: 10 },
-    headStyles: { fillColor: [245, 85, 85] }
+    headStyles: { fillColor: [245, 85, 85] },
   });
-  doc.save(`recap-heures-${month + 1}-${year}.pdf`);
+
+  // PAGE 2 - Planning avec couleurs
+  doc.addPage('a4', 'landscape');
+  const daysInMonth = Array.from({ length: end.getDate() }, (_, i) => i + 1);
+
+  const planningTable = users.map(user => {
+    const row = [user.name || user.email];
+    for (let d = 1; d <= daysInMonth.length; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const entry = entriesForMonth.find(e => e.user_id === user.id_auth && e.date === dateStr);
+      row.push(entry ? abbreviateShift(entry.shift) : '');
+    }
+    return row;
+  });
+
+  const headRow = ["Salarié", ...daysInMonth.map(d => String(d))];
+  doc.setFontSize(12);
+  doc.text(`Planning détaillé - ${month + 1}/${year}`, 40, 40);
+  autoTable(doc, {
+    startY: 60,
+    head: [headRow],
+    body: planningTable,
+    theme: "grid",
+    styles: { fontSize: 7, cellWidth: 'wrap' },
+    headStyles: { fillColor: [66, 133, 244] },
+    didParseCell: function (data) {
+      if (data.section === 'body' && data.column.index > 0) {
+        const shiftName = data.cell.raw;
+        const fullShiftName = Object.keys(shiftColors).find(key => abbreviateShift(key) === shiftName);
+        if (fullShiftName && shiftColors[fullShiftName]) {
+          data.cell.styles.fillColor = shiftColors[fullShiftName];
+        }
+      }
+    }
+  });
+
+  doc.save(`planning-${month + 1}-${year}.pdf`);
 };
+
+
+
 
 const closeDuplicationModal = () => {
   setIsDuplicationModalOpen(false);
@@ -312,41 +377,54 @@ setPlanningEntries(updatedEntries || []);
   setDraggedShift(null);
 };
 
-const handleDuplicateWeek = async () => {
+const handleDuplicateMultiWeeks = async () => {
   if (!duplicationSource || !targetStartDate || !duplicationTargetIds.length || !hotelId) return;
 
-  const sourceStart = currentWeekStart;
-  const sourceEnd = addDays(currentWeekStart, 6);
-  const targetStart = startOfWeek(targetStartDate, { weekStartsOn: 1 });
-
-  const shiftsToCopy = planningEntries.filter((entry) =>
-    entry.user_id === duplicationSource.id_auth &&
-    isWithinInterval(new Date(entry.date), {
-      start: sourceStart,
-      end: sourceEnd,
-    })
-  );
-
- 
-
   let allEntries = [];
-  for (const targetId of duplicationTargetIds) {
-    allEntries = allEntries.concat(
-      shiftsToCopy.map((entry) => {
-        const originalDate = new Date(entry.date);
-        const jsDay = originalDate.getDay();
-        const newDate = addDays(targetStart, jsDay);
-       
-        return {
-          user_id: targetId,
-          date: newDate.toISOString().slice(0, 10),
-          shift: entry.shift,
-          start_time: entry.start_time,
-          end_time: entry.end_time,
-          hotel_id: hotelId,
-        };
-      })
-    );
+
+  for (let t = 0; t < nbWeeksTarget; t++) {
+    // Calcul semaine source correspondante (en cycle)
+    const sourceIndex = t % nbWeeksSource;
+    const sourceWeekStart = addDays(startOfWeek(currentWeekStart, { weekStartsOn: 1 }), sourceIndex * 7);
+    sourceWeekStart.setHours(12, 0, 0, 0);
+    const sourceWeekEnd = addDays(sourceWeekStart, 6);
+    sourceWeekEnd.setHours(23, 59, 59, 999);
+
+    // Semaine destination
+    const targetWeekStart = addDays(startOfWeek(targetStartDate, { weekStartsOn: 1 }), t * 7);
+    targetWeekStart.setHours(12, 0, 0, 0);
+
+    // Filtrer shifts source
+    const shiftsToCopy = planningEntries.filter((entry) => {
+      const d = new Date(entry.date);
+      d.setHours(12, 0, 0, 0);
+      return (
+        entry.user_id === duplicationSource.id_auth &&
+        d >= sourceWeekStart &&
+        d <= sourceWeekEnd
+      );
+    });
+
+    // Dupliquer
+    for (const targetId of duplicationTargetIds) {
+      allEntries = allEntries.concat(
+        shiftsToCopy.map((entry) => {
+          const originalDate = new Date(entry.date);
+          originalDate.setHours(12, 0, 0, 0);
+          const dayDiff = differenceInCalendarDays(originalDate, sourceWeekStart);
+          const newDate = addDays(targetWeekStart, dayDiff);
+
+          return {
+            user_id: targetId,
+            date: newDate.toISOString().slice(0, 10),
+            shift: entry.shift,
+            start_time: entry.start_time,
+            end_time: entry.end_time,
+            hotel_id: hotelId,
+          };
+        })
+      );
+    }
   }
 
   const { error } = await supabase
@@ -354,24 +432,39 @@ const handleDuplicateWeek = async () => {
     .upsert(allEntries, { onConflict: ['user_id', 'date'] });
 
   if (error) {
-    alert("Erreur pendant la duplication.");
+    toast.error("❌ Erreur pendant la duplication");
     console.error(error);
   } else {
     const { data: updated } = await supabase
-  .from('planning_entries')
-  .select('*')
-  .eq('hotel_id', hotelId);
-setPlanningEntries(updated || []);
+      .from('planning_entries')
+      .select('*')
+      .eq('hotel_id', hotelId);
+    setPlanningEntries(updated || []);
 
-    setSuccessMessage('✅ Duplication réussie');
+    toast.success(`✅ Duplication terminée (${nbWeeksSource} semaines source → ${nbWeeksTarget} cibles)`);
     closeDuplicationModal();
-    setTimeout(() => setSuccessMessage(''), 3000);
   }
 };
 
 
 
+
+
+
 const [successMessage, setSuccessMessage] = useState('');
+const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+const goToPreviousWeek = () => {
+  const monday = startOfWeek(addDays(currentWeekStart, -7), { weekStartsOn: 1 });
+  monday.setHours(0, 0, 0, 0);
+  setCurrentWeekStart(monday);
+};
+
+const goToNextWeek = () => {
+  const monday = startOfWeek(addDays(currentWeekStart, 7), { weekStartsOn: 1 });
+  monday.setHours(0, 0, 0, 0);
+  setCurrentWeekStart(monday);
+};
+
 
   const weekDates = useMemo(() => (
     Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i))
@@ -701,16 +794,40 @@ setPlanningEntries(updatedEntries || []);
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
   <button
     className="rounded-xl bg-white shadow px-4 py-2 text-gray-700 hover:bg-indigo-100 hover:text-indigo-700 transition font-semibold flex items-center gap-2"
-    onClick={() => setCurrentWeekStart(prev => addDays(prev, -7))}
+    onClick={goToPreviousWeek}
+
   >
     <span className="text-lg">◀</span> Semaine précédente
   </button>
-  <div className="text-xl font-semibold tracking-tight bg-indigo-50 px-4 py-2 rounded-full shadow">
+  <div className="relative">
+  <button
+    onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+    className="text-xl font-semibold tracking-tight bg-indigo-50 px-4 py-2 rounded-full shadow hover:bg-indigo-100 transition"
+  >
     Semaine du {format(currentWeekStart, 'dd/MM/yyyy')}
-  </div>
+  </button>
+  {isDatePickerOpen && (
+    <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-white border rounded-lg shadow-lg z-50">
+      <DatePicker
+        inline
+        selected={currentWeekStart}
+        onChange={(date) => {
+  const monday = startOfWeek(date, { weekStartsOn: 1 });
+  monday.setHours(0,0,0,0);
+  setCurrentWeekStart(monday);
+}}
+
+        locale={fr}
+        calendarStartDay={1}
+      />
+    </div>
+  )}
+</div>
+
   <button
     className="rounded-xl bg-white shadow px-4 py-2 text-gray-700 hover:bg-indigo-100 hover:text-indigo-700 transition font-semibold flex items-center gap-2"
-    onClick={() => setCurrentWeekStart(prev => addDays(prev, 7))}
+    onClick={goToNextWeek}
+
   >
     Semaine suivante <span className="text-lg">▶</span>
   </button>
@@ -1119,6 +1236,28 @@ setPlanningEntries(updatedEntries || []);
     </div>
   )}
 </div>
+<div className="mb-4">
+  <label className="block text-sm font-medium mb-1">Nombre de semaines source à copier</label>
+  <input
+    type="number"
+    min="1"
+    className="w-full border rounded px-2 py-1"
+    value={nbWeeksSource}
+    onChange={e => setNbWeeksSource(parseInt(e.target.value, 10) || 1)}
+  />
+</div>
+
+<div className="mb-4">
+  <label className="block text-sm font-medium mb-1">Nombre de semaines cible</label>
+  <input
+    type="number"
+    min="1"
+    className="w-full border rounded px-2 py-1"
+    value={nbWeeksTarget}
+    onChange={e => setNbWeeksTarget(parseInt(e.target.value, 10) || 1)}
+  />
+</div>
+
 
 
       {/* BOUTONS */}
@@ -1130,7 +1269,7 @@ setPlanningEntries(updatedEntries || []);
   Annuler
 </button>
         <button
-  onClick={handleDuplicateWeek}
+  onClick={handleDuplicateMultiWeeks}
   className="px-4 py-2 text-sm rounded-xl bg-indigo-600 text-white shadow hover:bg-indigo-700 font-semibold"
 >
   Dupliquer
