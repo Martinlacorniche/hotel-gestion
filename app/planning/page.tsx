@@ -757,18 +757,18 @@ setPlanningEntries(updatedEntries || []);
     <div className="bg-white rounded-2xl shadow-2xl px-6 py-10 max-w-7xl mx-auto mt-10">
       {hotels.length > 0 && (
   <div className="mb-6 flex items-center gap-2">
-    <label htmlFor="select-hotel" className="font-semibold text-gray-700">Hôtel :</label>
-    <select
-      id="select-hotel"
-      value={selectedHotelId}
-      onChange={e => setSelectedHotelId(e.target.value)}
-      className="border rounded px-3 py-2"
-    >
-      {hotels.map(h => (
-        <option key={h.id} value={h.id}>{h.nom}</option>
-      ))}
-    </select>
-  </div>
+  <label htmlFor="select-hotel" className="font-semibold text-gray-700"> Hôtel :</label>
+  <select
+    id="select-hotel"
+    value={selectedHotelId}
+    onChange={e => setSelectedHotelId(e.target.value)}
+    className="border border-gray-300 rounded-lg px-3 py-2 shadow-sm focus:ring-2 focus:ring-[#88C9B9] focus:border-[#88C9B9] transition-colors"
+  >
+    {hotels.map(h => (
+      <option key={h.id} value={h.id}>{h.nom}</option>
+    ))}
+  </select>
+</div>
 )}
 
 <h1 className="text-3xl font-bold mb-8 tracking-tight text-indigo-500">

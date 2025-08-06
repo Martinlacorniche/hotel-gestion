@@ -126,18 +126,18 @@ useEffect(() => {
     <div className="p-6">
       {hotels.length > 0 && (
   <div className="mb-6 flex items-center gap-2">
-    <label htmlFor="select-hotel" className="font-semibold text-gray-700">Hôtel :</label>
-    <select
-      id="select-hotel"
-      value={selectedHotelId}
-      onChange={e => setSelectedHotelId(e.target.value)}
-      className="border rounded px-3 py-2"
-    >
-      {hotels.map(h => (
-        <option key={h.id} value={h.id}>{h.nom}</option>
-      ))}
-    </select>
-  </div>
+  <label htmlFor="select-hotel" className="font-semibold text-gray-700"> Hôtel :</label>
+  <select
+    id="select-hotel"
+    value={selectedHotelId}
+    onChange={e => setSelectedHotelId(e.target.value)}
+    className="border border-gray-300 rounded-lg px-3 py-2 shadow-sm focus:ring-2 focus:ring-[#88C9B9] focus:border-[#88C9B9] transition-colors"
+  >
+    {hotels.map(h => (
+      <option key={h.id} value={h.id}>{h.nom}</option>
+    ))}
+  </select>
+</div>
 )}
 
 

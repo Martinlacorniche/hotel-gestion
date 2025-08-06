@@ -10,7 +10,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, PlusCircle, Filter } from 'lucide-react';
+import { ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car, NotebookText, ShoppingCart, KeyRound, UserPlus, LogOut } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import { format as formatDate } from 'date-fns';
@@ -63,9 +63,11 @@ const hotelId = selectedHotelId || user?.hotel_id;
   const [newTicket, setNewTicket] = useState({
   titre: '',
   service: 'Réception',
-  dateAction: '',
+  dateAction: formatDate(new Date(), 'yyyy-MM-dd'),
   priorite: 'Moyenne',
+  date_fin: ''   // ✅ nouveau champ
 });
+
   const [showConsigneModal, setShowConsigneModal] = useState(false);
   const [showTaxiModal, setShowTaxiModal] = useState(false);
   const [editConsigneIndex, setEditConsigneIndex] = useState<number | null>(null);
@@ -84,7 +86,7 @@ const [newUser, setNewUser] = useState<{
   password: '',
   hotel_id: selectedHotelId || hotels[0]?.id || '', // Valeur initiale (optionnel)
 });
-
+const [showUsersList, setShowUsersList] = useState(false);
 const [users, setUsers] = useState<any[]>([]);
 const [editIndex, setEditIndex] = useState<number | null>(null);
 const [editObjetIndex, setEditObjetIndex] = useState<number | null>(null);
@@ -273,12 +275,14 @@ useEffect(() => {
   
 
   const [newConsigne, setNewConsigne] = useState({
-    texte: '',
-    service: 'Tous les services',
-    date: '',
-    valide: false,
-    utilisateur_id: null,
-  });
+  texte: '',
+  service: 'Tous les services',
+  date: '',
+  valide: false,
+  utilisateur_id: null,
+  date_fin: ''   // ✅ nouveau champ
+});
+
 
   const [newTaxi, setNewTaxi] = useState({
   type: 'Taxi',
@@ -313,14 +317,16 @@ const createTicket = async () => {
   if (newTicket.titre.trim() === '') return;
 
   const ticketToSave = {
-    titre: newTicket.titre,
-    service: newTicket.service,
-    priorite: newTicket.priorite,
-    date_action: newTicket.dateAction,
-    valide: false,
-    auteur: (user && 'name' in user) ? (user as any).name : 'Anonyme',
-    hotel_id: hotelId,
-  };
+  titre: newTicket.titre,
+  service: newTicket.service,
+  priorite: newTicket.priorite,
+  date_action: newTicket.dateAction,
+  date_fin: newTicket.date_fin || null,   // ✅ nouveau champ
+  valide: false,
+  auteur: (user && 'name' in user) ? (user as any).name : 'Anonyme',
+  hotel_id: hotelId,
+};
+
 
   if (editTicketIndex !== null) {
     const id = tickets[editTicketIndex].id;
@@ -353,7 +359,14 @@ const createTicket = async () => {
   }
 
   // Reset
-  setNewTicket({ titre: '', service: 'Réception', dateAction: '', priorite: 'Moyenne' });
+  setNewTicket({
+  titre: '',
+  service: 'Réception',
+  dateAction: formatDate(selectedDate, 'yyyy-MM-dd'),
+  priorite: 'Moyenne',
+  date_fin: ''
+});
+
   setShowTicketModal(false);
 };
 
@@ -429,10 +442,12 @@ const consigneToInsert = {
   texte: newConsigne.texte,
   auteur: user?.name || 'Anonyme',
   date_creation: formatDate(selectedDate, 'yyyy-MM-dd'),
+  date_fin: newConsigne.date_fin || null,   // ✅ nouveau champ
   valide: false,
   utilisateur_id: newConsigne.utilisateur_id || null,
   hotel_id: hotelId,
 };
+
 
 
 
@@ -470,9 +485,12 @@ const consigneToInsert = {
 
  setNewConsigne({
   texte: '',
-  date: new Date().toISOString().split('T')[0], // ou une autre valeur par défaut
+  date: new Date().toISOString().split('T')[0],
   valide: false,
+  utilisateur_id: null,
+  date_fin: ''
 });
+
   setShowConsigneModal(false);
 };
 
@@ -684,13 +702,17 @@ const [editTicketIndex, setEditTicketIndex] = useState<number | null>(null);
   return tickets
     .filter((t) => {
       const actionDate = t.date_action ? new Date(t.date_action) : null;
+      const endDate = t.date_fin ? new Date(t.date_fin) : actionDate; // ✅ nouvelle logique
       const validationDate = t.date_validation ? new Date(t.date_validation) : null;
       const current = new Date(formatDate(selectedDate, 'yyyy-MM-dd'));
 
       if (!actionDate || isNaN(actionDate.getTime())) return false;
       if (current < actionDate) return false;
+      if (current > endDate) return false;
+
+      // logique validation
       if (!t.valide) return true;
-      if (validationDate && current >= actionDate && current <= validationDate) return true;
+      if (validationDate && current <= validationDate) return true;
 
       return false;
     })
@@ -704,6 +726,7 @@ const [editTicketIndex, setEditTicketIndex] = useState<number | null>(null);
     });
 }, [tickets, sortBy, filterService, selectedDate]);
 
+
 const demandesVisibles = useMemo(() => {
   const selected = formatDate(selectedDate, 'yyyy-MM-dd');
   return demandes.filter((d) => d.date === selected);
@@ -716,17 +739,22 @@ const demandesVisibles = useMemo(() => {
  const consignesVisibles = useMemo(() => {
   return consignes.filter((c) => {
     const creationDate = c.date_creation ? new Date(c.date_creation) : null;
+    const endDate = c.date_fin ? new Date(c.date_fin) : creationDate; // ✅ nouvelle logique
     const validationDate = c.date_validation ? new Date(c.date_validation) : null;
     const current = new Date(formatDate(selectedDate, 'yyyy-MM-dd'));
 
     if (!creationDate || isNaN(creationDate.getTime())) return false;
     if (current < creationDate) return false;
+    if (current > endDate) return false;
+
+    // logique validation
     if (!c.valide) return true;
-    if (validationDate && current >= creationDate && current <= validationDate) return true;
+    if (validationDate && current <= validationDate) return true;
 
     return false;
   });
 }, [consignes, selectedDate]);
+
 
 
 
@@ -774,56 +802,61 @@ const demandesVisibles = useMemo(() => {
     <span className="text-xl font-semibold">Bonjour, {user.name}</span>
     {hotels.length > 0 && (
   <div className="ml-4 flex items-center gap-2">
-    <label htmlFor="select-hotel" className="font-semibold text-gray-700">Hôtel :</label>
-    <select
-      id="select-hotel"
-      value={selectedHotelId}
-      onChange={e => setSelectedHotelId(e.target.value)}
-      className="border rounded px-3 py-2"
-    >
-      {hotels.map(h => (
-        <option key={h.id} value={h.id}>{h.nom}</option>
-      ))}
-    </select>
-  </div>
+  <label htmlFor="select-hotel" className="font-semibold text-gray-700"> Hôtel :</label>
+  <select
+    id="select-hotel"
+    value={selectedHotelId}
+    onChange={e => setSelectedHotelId(e.target.value)}
+    className="border border-gray-300 rounded-lg px-3 py-2 shadow-sm focus:ring-2 focus:ring-[#88C9B9] focus:border-[#88C9B9] transition-colors"
+  >
+    {hotels.map(h => (
+      <option key={h.id} value={h.id}>{h.nom}</option>
+    ))}
+  </select>
+</div>
 )}
 
 
     <div className="flex gap-2 overflow-x-auto py-1">
-      {currentHotel?.has_parking && (
-  <a href="/parking" target="_blank" rel="noopener noreferrer">
-    <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow">
-      <span className="text-2xl leading-none">🚗</span>
+  {/* Planning en premier */}
+  <a href="/planning" target="_blank" rel="noopener noreferrer">
+    <Button
+      className="bg-[#88C9B9] hover:bg-[#6FB9A6] text-white text-sm shadow flex items-center justify-center"
+      title="Voir le planning"
+    >
+      <CalendarDays className="w-5 h-5" />
     </Button>
   </a>
-)}
-      <a href="/commandes" target="_blank" rel="noopener noreferrer">
-        <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow">
-          <span className="text-2xl leading-none">🛒</span>
-        </Button>
-      </a>
-      <a href="/planning" target="_blank" rel="noopener noreferrer">
-  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow flex items-center gap-2" title="Voir le planning">
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <rect x="3" y="4" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="2" fill="none"/>
-      <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" strokeWidth="2"/>
-      <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" strokeWidth="2"/>
-      <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" strokeWidth="2"/>
-    </svg>
-    Planning
+
+  {/* Parking */}
+  {currentHotel?.has_parking && (
+    <a href="/parking" target="_blank" rel="noopener noreferrer">
+      <Button className="bg-[#88C9B9] hover:bg-[#6FB9A6] text-white text-sm shadow flex items-center justify-center" title="Parking">
+        <Car className="w-5 h-5" />
+      </Button>
+    </a>
+  )}
+
+  {/* Commandes */}
+  <a href="/commandes" target="_blank" rel="noopener noreferrer">
+    <Button className="bg-[#88C9B9] hover:bg-[#6FB9A6] text-white text-sm shadow flex items-center justify-center" title="Commandes">
+      <ShoppingCart className="w-5 h-5" />
+    </Button>
+  </a>
+
+  {/* Trousseau */}
+  <a href={`/trousseau?hotel_id=${hotelId}`} target="_blank" rel="noopener noreferrer">
+    <Button className="bg-[#88C9B9] hover:bg-[#6FB9A6] text-white text-sm shadow flex items-center justify-center" title="Trousseau">
+      <KeyRound className="w-5 h-5" />
+    </Button>
+  </a>
+
+  <a href={`/repertoire?hotel_id=${hotelId}`} target="_blank" rel="noopener noreferrer">
+  <Button className="bg-[#88C9B9] hover:bg-[#6FB9A6] text-white text-sm shadow flex items-center justify-center" title="Répertoire">
+    <NotebookText className="w-5 h-5" />
   </Button>
 </a>
-<a href={`/trousseau?hotel_id=${hotelId}`} target="_blank" rel="noopener noreferrer">
-  <Button
-    className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm shadow"
-    title="Voir le trousseau"
-  >
-    <span className="text-2xl leading-none">🔑</span>
-  </Button>
-</a>
-
-
-    </div>
+</div>
   </div>
 
 
@@ -843,13 +876,16 @@ const demandesVisibles = useMemo(() => {
             <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
-        <div className="flex items-center gap-1">
+        {/* Boutons à droite */}
+<div className="flex items-center gap-1">
   {user?.role === 'admin' && (
-    <Button variant="destructive" onClick={() => setShowUserModal(true)}>
-      Créer un utilisateur
+    <Button variant="destructive" title="Créer un utilisateur" onClick={() => setShowUserModal(true)}>
+      <UserPlus className="w-5 h-5" />
     </Button>
   )}
-  <Button variant="destructive" onClick={logout}>Déconnexion</Button>
+  <Button variant="destructive" title="Déconnexion" onClick={logout}>
+    <LogOut className="w-5 h-5" />
+  </Button>
 </div>
 
 </div>
@@ -913,7 +949,17 @@ const demandesVisibles = useMemo(() => {
           <CardContent className="p-4 space-y-3">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold flex items-center gap-2">🎟️ Tickets</h2>
-              <button className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md flex items-center gap-2 shadow-sm" onClick={() => setShowTicketModal(true)}>
+              <button className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md flex items-center gap-2 shadow-sm" onClick={() => {
+  setNewTicket({
+    titre: '',
+    service: 'Réception',
+    dateAction: formatDate(selectedDate, 'yyyy-MM-dd'), // ✅ prend la date du calendrier
+    priorite: 'Moyenne',
+    date_fin: ''
+  });
+  setEditTicketIndex(null);
+  setShowTicketModal(true);
+}}>
                 <PlusCircle className="w-4 h-4" /> Ajouter
               </button>
             </div>
@@ -969,11 +1015,13 @@ const demandesVisibles = useMemo(() => {
     if (realIndex === -1) return;
 
     setNewTicket({
-      titre: t.titre,
-      service: t.service,
-      dateAction: t.date_action,
-      priorite: t.priorite,
-    });
+  titre: t.titre,
+  service: t.service,
+  dateAction: t.date_action,
+  priorite: t.priorite,
+  date_fin: t.date_fin || ''
+});
+
     setEditTicketIndex(realIndex);
     setShowTicketModal(true);
   }}
@@ -1137,6 +1185,28 @@ const demandesVisibles = useMemo(() => {
               <option>Moyenne</option>
               <option>Haute</option>
             </select>
+            <label className="flex items-center gap-2 text-sm">
+  <input
+    type="checkbox"
+    checked={!!newTicket.date_fin}
+    onChange={(e) =>
+      setNewTicket({
+        ...newTicket,
+        date_fin: e.target.checked ? formatDate(selectedDate, 'yyyy-MM-dd') : ''
+      })
+    }
+  />
+  Répéter jusqu'au :
+</label>
+
+{newTicket.date_fin && (
+  <Input
+    type="date"
+    value={newTicket.date_fin}
+    onChange={(e) => setNewTicket({ ...newTicket, date_fin: e.target.value })}
+  />
+)}
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => {
   setShowTicketModal(false);
@@ -1175,6 +1245,8 @@ const demandesVisibles = useMemo(() => {
     })
   }
 >
+  
+
   <option value="">Aucun utilisateur assigné</option>
   {users.map((u) => (
     <option key={u.id_auth} value={u.id_auth}>
@@ -1182,6 +1254,27 @@ const demandesVisibles = useMemo(() => {
     </option>
   ))}
 </select>
+<label className="flex items-center gap-2 text-sm mt-2">
+  <input
+    type="checkbox"
+    checked={!!newConsigne.date_fin}
+    onChange={(e) =>
+      setNewConsigne({
+        ...newConsigne,
+        date_fin: e.target.checked ? formatDate(selectedDate, 'yyyy-MM-dd') : ''
+      })
+    }
+  />
+  Répéter jusqu'au :
+</label>
+
+{newConsigne.date_fin && (
+  <Input
+    type="date"
+    value={newConsigne.date_fin}
+    onChange={(e) => setNewConsigne({ ...newConsigne, date_fin: e.target.value })}
+  />
+)}
 
             <div className="flex justify-end gap-2">
               <Button
@@ -1360,70 +1453,79 @@ const demandesVisibles = useMemo(() => {
 
 {user.role === 'admin' && (
   <div className="mt-6">
-    <h2 className="text-lg font-bold mb-2">👥 Utilisateurs</h2>
-    <div className="space-y-2">
-      {users.map((u, idx) => (
-  <div key={idx} className="border p-3 rounded-md flex justify-between items-center bg-white">
-    <div>
-      <div className="font-semibold">{u.name}</div>
-      <div className="text-sm text-gray-500">{u.email} - {u.role}</div>
+    <div className="flex items-center justify-between mb-2">
+      <h2 className="text-lg font-bold">👥 Utilisateurs</h2>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={showUsersList}
+          onChange={() => setShowUsersList(!showUsersList)}
+        />
+        Afficher
+      </label>
     </div>
 
-    <div className="flex items-center gap-2">
-      <select
-        className="border rounded px-2 py-1"
-        value={u.hotel_id || ""}
-        onChange={async (e) => {
-          const newHotelId = e.target.value;
-          // MAJ dans Supabase
-          const { error } = await supabase
-            .from('users')
-            .update({ hotel_id: newHotelId })
-            .eq('id_auth', u.id_auth);
+    {showUsersList && (
+      <div className="space-y-2">
+        {users.map((u, idx) => (
+          <div key={idx} className="border p-3 rounded-md flex justify-between items-center bg-white">
+            <div>
+              <div className="font-semibold">{u.name}</div>
+              <div className="text-sm text-gray-500">{u.email} - {u.role}</div>
+            </div>
 
-          if (error) {
-            alert("Erreur lors du changement d'hôtel : " + error.message);
-            return;
-          }
+            <div className="flex items-center gap-2">
+              <select
+                className="border rounded px-2 py-1"
+                value={u.hotel_id || ""}
+                onChange={async (e) => {
+                  const newHotelId = e.target.value;
+                  const { error } = await supabase
+                    .from('users')
+                    .update({ hotel_id: newHotelId })
+                    .eq('id_auth', u.id_auth);
 
-          // MAJ locale de la liste
-          setUsers((prev) =>
-            prev.map((user, i) =>
-              i === idx ? { ...user, hotel_id: newHotelId } : user
-            )
-          );
-        }}
-      >
-        {hotels.map((h) => (
-          <option value={h.id} key={h.id}>
-            {h.nom}
-          </option>
+                  if (error) {
+                    alert("Erreur lors du changement d'hôtel : " + error.message);
+                    return;
+                  }
+
+                  setUsers((prev) =>
+                    prev.map((user, i) =>
+                      i === idx ? { ...user, hotel_id: newHotelId } : user
+                    )
+                  );
+                }}
+              >
+                {hotels.map((h) => (
+                  <option value={h.id} key={h.id}>{h.nom}</option>
+                ))}
+              </select>
+
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={async () => {
+                  const userToDelete = users[idx];
+                  const { error } = await supabase.from('users').delete().eq('id_auth', userToDelete.id_auth);
+                  if (error) {
+                    console.error('Erreur suppression utilisateur :', error.message);
+                  } else {
+                    const updated = users.filter((u) => u.id_auth !== userToDelete.id_auth);
+                    setUsers(updated);
+                  }
+                }}
+              >
+                Supprimer
+              </Button>
+            </div>
+          </div>
         ))}
-      </select>
-
-      <Button
-        size="sm"
-        variant="destructive"
-        onClick={async () => {
-          const userToDelete = users[idx];
-          const { error } = await supabase.from('users').delete().eq('id_auth', userToDelete.id_auth);
-          if (error) {
-            console.error('Erreur suppression utilisateur :', error.message);
-          } else {
-            const updated = users.filter((u) => u.id_auth !== userToDelete.id_auth);
-            setUsers(updated);
-          }
-        }}
-      >
-        Supprimer
-      </Button>
-    </div>
-  </div>
-))}
-
-    </div>
+      </div>
+    )}
   </div>
 )}
+
 
     
 </div>
