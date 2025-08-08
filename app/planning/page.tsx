@@ -555,7 +555,13 @@ const goToNextWeek = () => {
   const weekDates = useMemo(() => (
     Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i))
   ), [currentWeekStart]);
-const visibleRequests = showAllCp ? cpRequests : cpRequests.filter(r => r.status === 'pending');
+const visibleRequests = showAllCp
+  ? cpRequests.filter(r => new Date(r.end_date) >= new Date(new Date().setHours(0, 0, 0, 0)))
+  : cpRequests.filter(r =>
+      r.status === 'pending' &&
+      new Date(r.end_date) >= new Date(new Date().setHours(0, 0, 0, 0))
+    );
+
 
   const calculateDuration = (start, end) => {
   if (!start || !end) return '0h00';
@@ -1477,8 +1483,12 @@ setPlanningEntries(updatedEntries || []);
 
       <ul className="space-y-2 text-sm">
         {cpRequests
-          .filter(r => r.user_id === user.id_auth || r.user_id === user.id)
-          .map(r => (
+  .filter(r =>
+    (r.user_id === user.id_auth || r.user_id === user.id) &&
+    new Date(r.end_date) >= new Date(new Date().setHours(0, 0, 0, 0))
+  )
+  .map(r => (
+
             <li key={r.id} className="border rounded p-2 bg-gray-50 flex justify-between items-center">
               <span>
                 {format(new Date(r.start_date), 'dd-MM-yyyy')} → {format(new Date(r.end_date), 'dd-MM-yyyy')}
