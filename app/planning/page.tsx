@@ -45,6 +45,7 @@ const SHIFT_OPTIONS = [
 
 const getShiftColor = (shift) => SHIFT_OPTIONS.find(opt => opt.value === shift)?.color || '';
 
+
 const getEntry = (entries = [], userId, date) => {
   if (!Array.isArray(entries)) return null;
   return entries.find(p => p.user_id === userId && p.date === format(date, 'yyyy-MM-dd'));
@@ -53,8 +54,38 @@ const getEntry = (entries = [], userId, date) => {
 export default function PlanningPage() {
   const { user, isLoading } = useAuth();
   const isAdmin = user?.role === 'admin';
+const [showMyCpModal, setShowMyCpModal] = useState(false);
+const [hasSeenMyCpNotif, setHasSeenMyCpNotif] = useState(false);
 
+  const handleSendCpRequest = async () => {
+  if (!user || !cpStartDate || !cpEndDate || !hotelId) return;
   
+
+
+  setIsSendingCp(true);
+
+  const { error } = await supabase.from('cp_requests').insert({
+    user_id: user.id_auth || user.id,
+    start_date: cpStartDate,
+    end_date: cpEndDate,
+    commentaire: cpComment,
+    status: 'pending',
+    hotel_id: hotelId,
+  });
+
+  setIsSendingCp(false);
+
+  if (!error) {
+    setSuccessMessage("Demande envoyée ✅");
+    setShowCpModal(false);
+    setCpComment('');
+    // recharge pour voir la demande apparaître
+    loadCpRequests();
+  } else {
+    alert("Erreur lors de l'envoi : " + error.message);
+  }
+};
+
 
   const router = useRouter();
   const [hotels, setHotels] = useState([]);
@@ -87,6 +118,7 @@ useEffect(() => {
   const [planningEntries, setPlanningEntries] = useState([]);
   const [cpRequests, setCpRequests] = useState([]);
   const [showCpAdminModal, setShowCpAdminModal] = useState(false);
+  const [showAllCp, setShowAllCp] = useState(false);
 const [showCpModal, setShowCpModal] = useState(false);
 const [cpStartDate, setCpStartDate] = useState('');
 const [cpEndDate, setCpEndDate] = useState('');
@@ -106,6 +138,37 @@ const [nbWeeksTarget, setNbWeeksTarget] = useState(1);
 
 
   const [draggedShift, setDraggedShift] = useState(null);
+const handleDeleteCp = async (id) => {
+  const confirmDelete = confirm("Supprimer cette demande ?");
+  if (!confirmDelete) return;
+
+  const { error } = await supabase
+    .from('cp_requests')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    alert("Erreur lors de la suppression : " + error.message);
+  } else {
+    loadCpRequests();
+  }
+};
+
+const handleRefuseCp = async (req) => {
+  const confirmRefuse = confirm("Refuser cette demande de CP ?");
+  if (!confirmRefuse) return;
+
+  const { error } = await supabase
+    .from('cp_requests')
+    .update({ status: 'refused' })
+    .eq('id', req.id);
+
+  if (error) {
+    alert("Erreur lors du refus : " + error.message);
+  } else {
+    loadCpRequests();
+  }
+};
 
   const [cutMode, setCutMode] = useState(false);
 
@@ -122,49 +185,68 @@ const [nbWeeksTarget, setNbWeeksTarget] = useState(1);
 
   // Pour accepter une demande (change juste le statut)
 const handleAcceptCp = async (req) => {
-  await supabase.from('cp_requests').update({ status: 'approved' }).eq('id', req.id);
-  loadCpRequests(); // recharge la liste après modification
-};
+  const start = new Date(req.start_date);
+  const end = new Date(req.end_date);
+  const userId = req.user_id;
 
-// Pour refuser une demande (change juste le statut)
-const handleRefuseCp = async (req) => {
-  await supabase.from('cp_requests').update({ status: 'refused' }).eq('id', req.id);
-  loadCpRequests();
-};
+  const confirmApprove = confirm(`Tu valides ce CP du ${req.start_date} au ${req.end_date} ?`);
+  if (!confirmApprove) return;
 
-// Pour supprimer une demande (supprime la ligne)
-const handleDeleteCp = async (id) => {
-  await supabase.from('cp_requests').delete().eq('id', id);
-  loadCpRequests();
-};
-const handleSendCpRequest = async () => {
-  if (!cpStartDate || !cpEndDate || !hotelId) { // ← rajoute hotelId ici si pas déjà fait
-    alert('Merci de renseigner les deux dates.');
-    return;
+  // Récupérer les shifts existants pour l'utilisateur
+  const { data: existing } = await supabase
+    .from('planning_entries')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('hotel_id', hotelId);
+
+  const entriesToInsert = [];
+
+
+const daysCount = differenceInCalendarDays(end, start) + 1;
+
+for (let i = 0; i < daysCount; i++) {
+  const d = addDays(start, i);
+  const dateStr = format(d, 'yyyy-MM-dd');
+
+  const alreadyExists = existing?.find(e => e.date === dateStr);
+
+  if (alreadyExists) {
+    const replace = confirm(`Un shift existe déjà pour ${dateStr}. Le remplacer ?`);
+    if (!replace) continue;
+
+    await supabase.from('planning_entries').delete().eq('id', alreadyExists.id);
   }
-  
-  setIsSendingCp(true);
-  const { error } = await supabase.from('cp_requests').insert([{
-    user_id: user.id_auth,
-    start_date: cpStartDate,
-    end_date: cpEndDate,
-    commentaire: cpComment,
-    status: 'pending',
-    created_at: new Date().toISOString(),
+
+  entriesToInsert.push({
+    user_id: userId,
+    date: dateStr,
+    shift: 'CP',
+    start_time: '00:00',
+    end_time: '00:00',
     hotel_id: hotelId,
-  }]);
-  setIsSendingCp(false);
-  if (error) {
-    alert("Erreur lors de l'envoi. Réessaye.");
-  } else {
-    setShowCpModal(false);
-    setCpStartDate('');
-    setCpEndDate('');
-    setCpComment('');
-    toast.success("📩 Demande de congé envoyée !");
+  });
+}
 
+
+  // Insertion des shifts CP
+  if (entriesToInsert.length > 0) {
+    await supabase.from('planning_entries').insert(entriesToInsert);
   }
+
+  // Mise à jour de la demande en "approved"
+  await supabase.from('cp_requests').update({ status: 'approved' }).eq('id', req.id);
+
+  // Recharge données
+  await loadCpRequests();
+
+  const { data: updated } = await supabase
+    .from('planning_entries')
+    .select('*')
+    .eq('hotel_id', hotelId);
+  setPlanningEntries(updated || []);
 };
+
+
 
 
   const [duplicationSource, setDuplicationSource] = useState(null); // salarié cliqué
@@ -190,6 +272,8 @@ const exportPDF = () => {
     const entryDate = new Date(entry.date);
     return entryDate >= start && entryDate <= end;
   });
+
+  
 
   // Couleurs associées aux shifts (mêmes que dans ton planning)
   const shiftColors = {
@@ -282,6 +366,8 @@ const exportPDF = () => {
     }
     return row;
   });
+
+  
 
   const headRow = ["Salarié", ...daysInMonth.map(d => String(d))];
   doc.setFontSize(12);
@@ -469,6 +555,7 @@ const goToNextWeek = () => {
   const weekDates = useMemo(() => (
     Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i))
   ), [currentWeekStart]);
+const visibleRequests = showAllCp ? cpRequests : cpRequests.filter(r => r.status === 'pending');
 
   const calculateDuration = (start, end) => {
   if (!start || !end) return '0h00';
@@ -623,7 +710,8 @@ const loadInitialData = async () => {
     supabase.from('users').select('*').eq('hotel_id', hotelId),
 supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
 supabase.from('planning_entries').select('*').eq('hotel_id', hotelId),
-supabase.from('cp_requests').select('*').eq('status', 'pending').eq('hotel_id', hotelId),
+supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
+
 
     supabase.from('default_shift_hours').select('*')
   ]);
@@ -756,40 +844,81 @@ setPlanningEntries(updatedEntries || []);
   return (
     <div className="bg-white rounded-2xl shadow-2xl px-6 py-10 max-w-7xl mx-auto mt-10">
       {hotels.length > 0 && (
-  <div className="mb-6 flex items-center gap-2">
-  <label htmlFor="select-hotel" className="font-semibold text-gray-700"> Hôtel :</label>
-  <select
-    id="select-hotel"
-    value={selectedHotelId}
-    onChange={e => setSelectedHotelId(e.target.value)}
-    className="border border-gray-300 rounded-lg px-3 py-2 shadow-sm focus:ring-2 focus:ring-[#88C9B9] focus:border-[#88C9B9] transition-colors"
-  >
-    {hotels.map(h => (
-      <option key={h.id} value={h.id}>{h.nom}</option>
-    ))}
-  </select>
-</div>
+  <div className="mb-6 flex items-center gap-4">
+    <span className="font-semibold text-gray-700">Hôtel :</span>
+    <div className="flex gap-2 flex-wrap">
+      {hotels.map((h) => (
+        <button
+          key={h.id}
+          onClick={() => setSelectedHotelId(h.id)}
+          className={`px-4 py-2 rounded-lg shadow font-semibold border ${
+            h.id === selectedHotelId
+              ? 'bg-[#88C9B9] text-white border-[#88C9B9]'
+              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+          }`}
+        >
+          {h.nom}
+        </button>
+      ))}
+    </div>
+  </div>
 )}
+
 
 <h1 className="text-3xl font-bold mb-8 tracking-tight text-indigo-500">
   Planning {currentHotel?.nom || ''}
 </h1>
 
 
-      {user?.role !== 'admin' && (
-  <button
-    className="bg-yellow-100 hover:bg-yellow-200 text-yellow-900 rounded-xl px-4 py-2 font-semibold shadow mb-6"
-    onClick={() => setShowCpModal(true)}
-  >
-    Demander un CP
-  </button>
+{user?.role !== 'admin' && (
+  <div className="mb-6 flex flex-wrap items-center gap-4">
+    <button
+      className="bg-yellow-100 hover:bg-yellow-200 text-yellow-900 rounded-xl px-4 py-2 font-semibold shadow"
+      onClick={() => {
+        setShowCpModal(true);
+      }}
+    >
+      Demander un CP
+    </button>
+
+    <div className="relative">
+      <button
+        className="bg-yellow-100 hover:bg-yellow-200 text-yellow-900 rounded-xl px-4 py-2 font-semibold shadow"
+
+        onClick={() => {
+  setShowMyCpModal(true);
+  setHasSeenMyCpNotif(true);
+}}
+
+      >
+        Mes demandes
+      </button>
+
+      {!hasSeenMyCpNotif && cpRequests.some(r =>
+  (r.user_id === user.id_auth || r.user_id === user.id) &&
+  (r.status === 'approved' || r.status === 'refused')
+) && (
+  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+    !
+  </span>
 )}
+
+    </div>
+  </div>
+)}
+
+
+
+
+
 
       {successMessage && (
   <div className="mb-4 text-green-600 font-medium text-sm">
     {successMessage}
   </div>
 )}
+
+
 
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
   <button
@@ -870,27 +999,40 @@ setPlanningEntries(updatedEntries || []);
     className="relative bg-yellow-100 hover:bg-yellow-200 text-yellow-900 rounded-xl px-4 py-2 font-semibold shadow flex items-center gap-2"
   >
     Demandes de CP
-    {cpRequests.length > 0 && (
-      <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
-        {cpRequests.length}
-      </span>
-    )}
+    {cpRequests.filter(r => r.status === 'pending').length > 0 && (
+  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+    {cpRequests.filter(r => r.status === 'pending').length}
+  </span>
+)}
+
   </button>
 )}
 {showCpAdminModal && (
   <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
     <div className="bg-white rounded-2xl p-8 shadow-2xl w-full max-w-xl space-y-6 border">
       <h2 className="text-2xl font-bold mb-4 text-yellow-900">Demandes de congé payés</h2>
-      {cpRequests.length === 0 ? (
+      <div className="flex items-center justify-between">
+  <label className="text-sm flex items-center gap-2">
+    <input
+      type="checkbox"
+      checked={showAllCp}
+      onChange={() => setShowAllCp(!showAllCp)}
+    />
+    Tout afficher
+  </label>
+</div>
+
+
+      {visibleRequests.length === 0 ? (
         <div className="text-gray-500">Aucune demande en attente</div>
       ) : (
         <div className="max-h-96 overflow-y-auto space-y-2">
-          {cpRequests.map(req => (
+          {visibleRequests.map(req => (
             <div key={req.id} className="border p-4 rounded-xl flex flex-col gap-2 bg-yellow-50">
               <div>
                 <span className="font-bold">{users.find(u => u.id_auth === req.user_id)?.name || 'Utilisateur'}</span>
               </div>
-              <div>Du <span className="font-semibold">{req.start_date}</span> au <span className="font-semibold">{req.end_date}</span></div>
+              <div>Du <span className="font-semibold">{format(new Date(req.start_date), 'dd-MM-yyyy')}</span> au <span className="font-semibold">{format(new Date(req.end_date), 'dd-MM-yyyy')}</span></div>
               {req.commentaire && <div className="italic">{req.commentaire}</div>}
               <div>
                 Statut : <span className="font-bold">
@@ -1278,24 +1420,27 @@ setPlanningEntries(updatedEntries || []);
     </div>
   </div>
 )}
+
 {showCpModal && (
   <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
     <div className="bg-white rounded-2xl p-8 shadow-2xl w-full max-w-md space-y-6 border">
       <h2 className="text-2xl font-bold mb-4 text-yellow-900">Demande de congé payé</h2>
       <label className="block mb-2 font-semibold">Premier jour d'absence</label>
       <input
-        type="date"
-        className="w-full border px-3 py-2 rounded mb-4"
-        value={cpStartDate}
-        onChange={e => setCpStartDate(e.target.value)}
-      />
+  type="date"
+  min={format(new Date(), 'yyyy-MM-dd')}
+  className="w-full border px-3 py-2 rounded mb-4"
+  value={cpStartDate}
+  onChange={(e) => setCpStartDate(e.target.value)}
+/>
       <label className="block mb-2 font-semibold">Dernier jour d'absence</label>
       <input
-        type="date"
-        className="w-full border px-3 py-2 rounded mb-4"
-        value={cpEndDate}
-        onChange={e => setCpEndDate(e.target.value)}
-      />
+  type="date"
+  min={cpStartDate || format(new Date(), 'yyyy-MM-dd')}
+  className="w-full border px-3 py-2 rounded mb-4"
+  value={cpEndDate}
+  onChange={(e) => setCpEndDate(e.target.value)}
+/>
       <label className="block mb-2 font-semibold">Commentaire (optionnel)</label>
       <textarea
         className="w-full border px-3 py-2 rounded mb-4"
@@ -1317,6 +1462,48 @@ setPlanningEntries(updatedEntries || []);
     </div>
   </div>
 )}
+{showMyCpModal && (
+  <div className="fixed inset-0 z-50 bg-black bg-opacity-30 flex items-center justify-center">
+    <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-bold">📋 Mes demandes de congé</h2>
+        <button
+  className="text-sm text-gray-500 hover:text-black transition"
+  onClick={() => setShowMyCpModal(false)}
+>
+  Fermer ✖
+</button>
+      </div>
+
+      <ul className="space-y-2 text-sm">
+        {cpRequests
+          .filter(r => r.user_id === user.id_auth || r.user_id === user.id)
+          .map(r => (
+            <li key={r.id} className="border rounded p-2 bg-gray-50 flex justify-between items-center">
+              <span>
+                {format(new Date(r.start_date), 'dd-MM-yyyy')} → {format(new Date(r.end_date), 'dd-MM-yyyy')}
+                {r.commentaire && (
+                  <span className="text-xs text-gray-500 italic ml-2">
+                    ({r.commentaire})
+                  </span>
+                )}
+              </span>
+              <span className={`text-sm font-semibold ${
+                r.status === 'approved' ? 'text-green-600' :
+                r.status === 'refused' ? 'text-red-600' :
+                'text-yellow-600'
+              }`}>
+                {r.status === 'approved' ? '✔ Acceptée' :
+                 r.status === 'refused' ? '✖ Refusée' :
+                 '⏳ En attente'}
+              </span>
+            </li>
+          ))}
+      </ul>
+    </div>
+  </div>
+)}
+
 </div>
 );
 }

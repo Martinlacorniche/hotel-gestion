@@ -699,32 +699,27 @@ const [editTicketIndex, setEditTicketIndex] = useState<number | null>(null);
   };
 
   const ticketsVisibles = useMemo(() => {
-  return tickets
+  const visibles = tickets
     .filter((t) => {
       const actionDate = t.date_action ? new Date(t.date_action) : null;
-      const endDate = t.date_fin ? new Date(t.date_fin) : actionDate; // ✅ nouvelle logique
+      const endDate = t.date_fin ? new Date(t.date_fin) : actionDate;
       const validationDate = t.date_validation ? new Date(t.date_validation) : null;
       const current = new Date(formatDate(selectedDate, 'yyyy-MM-dd'));
 
       if (!actionDate || isNaN(actionDate.getTime())) return false;
-      if (current < actionDate) return false;
-      if (current > endDate) return false;
-
-      // logique validation
+      if (current < actionDate || current > endDate) return false;
       if (!t.valide) return true;
-      if (validationDate && current <= validationDate) return true;
-
-      return false;
+      return validationDate && current <= validationDate;
     })
-    .filter((t) => filterService === 'Tous' || t.service === filterService)
-    .sort((a, b) => {
-      if (sortBy === 'priorite') {
-        const order = { Haute: 3, Moyenne: 2, Basse: 1 };
-        return order[b.priorite as keyof typeof order] - order[a.priorite as keyof typeof order];
-      }
-      return new Date(b.date_action).getTime() - new Date(a.date_action).getTime();
-    });
+    .filter((t) => filterService === 'Tous' || t.service === filterService);
+
+  return visibles.sort((a, b) => {
+    // Priorité : non validé d'abord, puis par date décroissante
+    if (a.valide !== b.valide) return a.valide ? 1 : -1;
+    return new Date(b.date_action).getTime() - new Date(a.date_action).getTime();
+  });
 }, [tickets, sortBy, filterService, selectedDate]);
+
 
 
 const demandesVisibles = useMemo(() => {
@@ -737,23 +732,24 @@ const demandesVisibles = useMemo(() => {
 
 
  const consignesVisibles = useMemo(() => {
-  return consignes.filter((c) => {
+  const visibles = consignes.filter((c) => {
     const creationDate = c.date_creation ? new Date(c.date_creation) : null;
-    const endDate = c.date_fin ? new Date(c.date_fin) : creationDate; // ✅ nouvelle logique
+    const endDate = c.date_fin ? new Date(c.date_fin) : creationDate;
     const validationDate = c.date_validation ? new Date(c.date_validation) : null;
     const current = new Date(formatDate(selectedDate, 'yyyy-MM-dd'));
 
     if (!creationDate || isNaN(creationDate.getTime())) return false;
-    if (current < creationDate) return false;
-    if (current > endDate) return false;
-
-    // logique validation
+    if (current < creationDate || current > endDate) return false;
     if (!c.valide) return true;
-    if (validationDate && current <= validationDate) return true;
+    return validationDate && current <= validationDate;
+  });
 
-    return false;
+  return visibles.sort((a, b) => {
+    if (a.valide !== b.valide) return a.valide ? 1 : -1;
+    return new Date(b.date_creation).getTime() - new Date(a.date_creation).getTime();
   });
 }, [consignes, selectedDate]);
+
 
 
 
@@ -803,16 +799,19 @@ const demandesVisibles = useMemo(() => {
     {hotels.length > 0 && (
   <div className="ml-4 flex items-center gap-2">
   <label htmlFor="select-hotel" className="font-semibold text-gray-700"> Hôtel :</label>
-  <select
-    id="select-hotel"
-    value={selectedHotelId}
-    onChange={e => setSelectedHotelId(e.target.value)}
-    className="border border-gray-300 rounded-lg px-3 py-2 shadow-sm focus:ring-2 focus:ring-[#88C9B9] focus:border-[#88C9B9] transition-colors"
-  >
-    {hotels.map(h => (
-      <option key={h.id} value={h.id}>{h.nom}</option>
-    ))}
-  </select>
+  <div className="flex gap-2">
+  {hotels.map((h) => (
+    <Button
+      key={h.id}
+      variant={h.id === selectedHotelId ? "default" : "outline"}
+      className={h.id === selectedHotelId ? "bg-[#88C9B9] text-white" : ""}
+      onClick={() => setSelectedHotelId(h.id)}
+    >
+      {h.nom}
+    </Button>
+  ))}
+</div>
+
 </div>
 )}
 
@@ -1063,7 +1062,18 @@ const demandesVisibles = useMemo(() => {
               <div className="flex justify-between items-center mb-2">
                 <h2 className="text-lg font-bold">🚖 Taxis / Réveils</h2>
                 <button
-  onClick={() => setShowTaxiModal(true)}
+  onClick={() => {
+  setNewTaxi({
+    type: 'Taxi',
+    chambre: '',
+    heure: '',
+    statut: 'Prévu',
+    dateAction: formatDate(selectedDate, 'yyyy-MM-dd'),
+  });
+  setEditDemandeIndex(null);
+  setShowTaxiModal(true);
+}}
+
   className="bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-2 rounded-md flex items-center gap-2 shadow-sm"
 >
   <PlusCircle className="w-4 h-4" /> Ajouter
