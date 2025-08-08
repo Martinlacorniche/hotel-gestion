@@ -900,7 +900,7 @@ const demandesVisibles = useMemo(() => {
         <Card>
           <CardContent className="p-4">
             <div className="flex justify-between items-center mb-2">
-              <h2 className="text-lg font-bold">📌 Consignes</h2>
+              <h2 className="text-lg font-bold">📌 Passage de Consignes</h2>
               <button onClick={() => setShowConsigneModal(true)} className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md flex items-center gap-2 shadow-sm">
                 <PlusCircle className="w-4 h-4" /> Ajouter
               </button>
@@ -949,7 +949,7 @@ const demandesVisibles = useMemo(() => {
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold flex items-center gap-2">🎟️ Tickets</h2>
+              <h2 className="text-lg font-bold flex items-center gap-2">🎟️ To Do</h2>
               <button className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md flex items-center gap-2 shadow-sm" onClick={() => {
   setNewTicket({
     titre: '',
@@ -1183,7 +1183,7 @@ const demandesVisibles = useMemo(() => {
       {showTicketModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg space-y-4 w-full max-w-md">
-            <h2 className="text-xl font-bold">Nouveau Ticket</h2>
+            <h2 className="text-xl font-bold">Nouvelle tache</h2>
             <Input placeholder="Titre" value={newTicket.titre} onChange={(e) => setNewTicket({ ...newTicket, titre: e.target.value })} />
             <Input type="date" value={newTicket.dateAction} onChange={(e) => setNewTicket({ ...newTicket, dateAction: e.target.value })} />
             <select className="w-full border rounded px-2 py-1" value={newTicket.service} onChange={(e) => setNewTicket({ ...newTicket, service: e.target.value })}>
