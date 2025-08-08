@@ -254,7 +254,8 @@ useEffect(() => {
       .from('consignes')
       .select('*')
       .eq('hotel_id', hotelId)
-      .order('date_creation', { ascending: false });
+      .order('created_at', { ascending: false })
+
 
     if (error) {
       console.error('Erreur chargement consignes :', error.message);
@@ -441,12 +442,12 @@ const handleCreateUser = async () => {
 const consigneToInsert = {
   texte: newConsigne.texte,
   auteur: user?.name || 'Anonyme',
-  date_creation: formatDate(selectedDate, 'yyyy-MM-dd'),
-  date_fin: newConsigne.date_fin || null,   // ✅ nouveau champ
+  date_fin: newConsigne.date_fin || null,
   valide: false,
   utilisateur_id: newConsigne.utilisateur_id || null,
   hotel_id: hotelId,
 };
+
 
 
 
@@ -746,7 +747,7 @@ const demandesVisibles = useMemo(() => {
 
   return visibles.sort((a, b) => {
     if (a.valide !== b.valide) return a.valide ? 1 : -1;
-    return new Date(b.date_creation).getTime() - new Date(a.date_creation).getTime();
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 }, [consignes, selectedDate]);
 
@@ -928,7 +929,8 @@ const demandesVisibles = useMemo(() => {
 
 
                   <div className="text-sm text-gray-600 flex justify-between items-center">
-                    <div>Créée le : {formatSafeDate(c.date_creation)}</div>
+                    <div>Créée le : {formatSafeDate(c.created_at)}</div>
+
                     <div className="flex gap-2">
                       <button onClick={() => modifierConsigne(idx)} className="text-sm" title="Modifier">✏️</button>
                       {!c.valide && (

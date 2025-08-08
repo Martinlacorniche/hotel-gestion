@@ -46,13 +46,7 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             className="w-full p-2 pr-10 border border-gray-300 rounded-md"
           />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-800"
-          >
-            {showPassword ? "🙈" : "👁️"}
-          </button>
+          
         </div>
 
         {errorMsg && <p className="text-red-500 text-sm mb-2">{errorMsg}</p>}
