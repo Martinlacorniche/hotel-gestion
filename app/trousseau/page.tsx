@@ -21,6 +21,12 @@ export default function TrousseauPage() {
   const [currentHotel, setCurrentHotel] = useState(null);
 
   useEffect(() => {
+  const hotelName = currentHotel?.nom ? ` — ${currentHotel.nom}` : '';
+  document.title = `Trousseau${hotelName}`; // adapte “Planning” -> “Parking”, “Commandes”, ...
+}, [currentHotel]);
+
+
+  useEffect(() => {
     if (selectedHotelId && typeof window !== "undefined") {
       window.localStorage.setItem('selectedHotelId', selectedHotelId);
     }

@@ -99,6 +99,12 @@ const [selectedHotelId, setSelectedHotelId] = useState(() => {
 });
 const [currentHotel, setCurrentHotel] = useState(null);
 const hotelId = selectedHotelId || user?.hotel_id || '';
+
+useEffect(() => {
+  const hotelName = currentHotel?.nom ? ` — ${currentHotel.nom}` : '';
+  document.title = `Planning${hotelName}`; // adapte “Planning” -> “Parking”, “Commandes”, ...
+}, [currentHotel]);
+
 // Persiste le choix à chaque changement
 useEffect(() => {
   if (selectedHotelId && typeof window !== "undefined") {
@@ -183,68 +189,92 @@ const handleRefuseCp = async (req) => {
 };
 
 
-  // Pour accepter une demande (change juste le statut)
+// Remplace la fonction existante handleAcceptCp par celle-ci
 const handleAcceptCp = async (req) => {
   const start = new Date(req.start_date);
   const end = new Date(req.end_date);
   const userId = req.user_id;
 
-  const confirmApprove = confirm(`Tu valides ce CP du ${req.start_date} au ${req.end_date} ?`);
-  if (!confirmApprove) return;
+  const ok = confirm(`Tu valides ce CP du ${req.start_date} au ${req.end_date} ?`);
+  if (!ok) return;
 
-  // Récupérer les shifts existants pour l'utilisateur
-  const { data: existing } = await supabase
+  // 1) Récupérer tous les shifts existants de l'utilisateur sur la plage
+  const { data: existing, error: exErr } = await supabase
     .from('planning_entries')
-    .select('*')
+    .select('id,date')
     .eq('user_id', userId)
     .eq('hotel_id', hotelId);
-
-  const entriesToInsert = [];
-
-
-const daysCount = differenceInCalendarDays(end, start) + 1;
-
-for (let i = 0; i < daysCount; i++) {
-  const d = addDays(start, i);
-  const dateStr = format(d, 'yyyy-MM-dd');
-
-  const alreadyExists = existing?.find(e => e.date === dateStr);
-
-  if (alreadyExists) {
-    const replace = confirm(`Un shift existe déjà pour ${dateStr}. Le remplacer ?`);
-    if (!replace) continue;
-
-    await supabase.from('planning_entries').delete().eq('id', alreadyExists.id);
+  if (exErr) {
+    alert("Erreur lecture planning : " + exErr.message);
+    return;
   }
 
-  entriesToInsert.push({
+  // 2) Construire la liste des dates à traiter
+  const daysCount = differenceInCalendarDays(end, start) + 1;
+  const allDates = Array.from({ length: daysCount }, (_, i) =>
+    format(addDays(start, i), 'yyyy-MM-dd')
+  );
+
+  const existingByDate = new Map((existing || []).map(e => [e.date, e.id]));
+  const conflictingDates = allDates.filter(d => existingByDate.has(d));
+  const freeDates       = allDates.filter(d => !existingByDate.has(d));
+
+  // 3) Si conflits, une seule alerte récap
+  let replaceConflicts = true;
+  if (conflictingDates.length > 0) {
+    replaceConflicts = confirm(
+      `Un shift existe déjà pour ${conflictingDates.length} jour(s):\n` +
+      conflictingDates.join('\n') +
+      `\n\nVoulez-vous les remplacer ?`
+    );
+  }
+
+  // 4) Préparer suppression (si on remplace)
+  if (replaceConflicts && conflictingDates.length > 0) {
+    const idsToDelete = conflictingDates.map(d => existingByDate.get(d));
+    const { error: delErr } = await supabase
+      .from('planning_entries')
+      .delete()
+      .in('id', idsToDelete);
+    if (delErr) {
+      alert("Erreur suppression anciens shifts : " + delErr.message);
+      return;
+    }
+  }
+
+  // 5) Préparer les insertions : jours libres + (éventuels) jours conflictuels
+  const datesToInsert = replaceConflicts ? allDates : freeDates;
+  const entriesToInsert = datesToInsert.map(dateStr => ({
     user_id: userId,
     date: dateStr,
     shift: 'CP',
     start_time: '00:00',
     end_time: '00:00',
     hotel_id: hotelId,
-  });
-}
+  }));
 
-
-  // Insertion des shifts CP
   if (entriesToInsert.length > 0) {
-    await supabase.from('planning_entries').insert(entriesToInsert);
+    const { error: insErr } = await supabase
+      .from('planning_entries')
+      .insert(entriesToInsert);
+    if (insErr) {
+      alert("Erreur insertion CP : " + insErr.message);
+      return;
+    }
   }
 
-  // Mise à jour de la demande en "approved"
+  // 6) Marquer la demande comme approved
   await supabase.from('cp_requests').update({ status: 'approved' }).eq('id', req.id);
 
-  // Recharge données
+  // 7) Rechargement local
   await loadCpRequests();
-
   const { data: updated } = await supabase
     .from('planning_entries')
     .select('*')
     .eq('hotel_id', hotelId);
   setPlanningEntries(updated || []);
 };
+
 
 
 

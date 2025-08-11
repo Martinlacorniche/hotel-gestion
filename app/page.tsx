@@ -10,7 +10,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car, NotebookText, ShoppingCart, KeyRound, UserPlus, LogOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car, NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import { format as formatDate } from 'date-fns';
@@ -163,6 +163,10 @@ useEffect(() => {
   }
 }, [hotelId]);
 
+useEffect(() => {
+  const name = currentHotel?.nom?.trim();
+  document.title = name ? `Accueil — ${name}` : 'Accueil';
+}, [currentHotel]);
 
 useEffect(() => {
   const fetchObjetsTrouves = async () => {
@@ -856,6 +860,15 @@ const demandesVisibles = useMemo(() => {
     <NotebookText className="w-5 h-5" />
   </Button>
 </a>
+<a href={`/process?hotel_id=${hotelId}`} target="_blank" rel="noopener noreferrer">
+    <Button
+      className="bg-[#88C9B9] hover:bg-[#6FB9A6] text-white text-sm shadow flex items-center justify-center"
+      title="Process"
+    >
+      <Settings className="w-5 h-5" />
+    </Button>
+  </a>
+
 </div>
   </div>
 

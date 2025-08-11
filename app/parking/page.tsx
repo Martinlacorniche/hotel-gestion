@@ -16,10 +16,16 @@ export default function ParkingPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [popupReservation, setPopupReservation] = useState(null);
 
+
+
   useEffect(() => {
     fetchParkings();
     fetchReservations();
   }, []);
+
+  useEffect(() => {
+  document.title = 'Parking';
+}, []);
 
   async function fetchParkings() {
     const { data, error } = await supabase.from("parkings").select("*");

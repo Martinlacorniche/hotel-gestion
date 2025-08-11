@@ -18,6 +18,9 @@ export default function PageCommandes() {
   if (user && user.hotel_id) return user.hotel_id;
   return '';
 });
+
+
+
 useEffect(() => {
   if (selectedHotelId && typeof window !== "undefined") {
     window.localStorage.setItem('selectedHotelId', selectedHotelId);
@@ -44,6 +47,10 @@ useEffect(() => {
   });
 }, []);
 
+useEffect(() => {
+  const hotelName = currentHotel?.nom ? ` — ${currentHotel.nom}` : '';
+  document.title = `Commandes${hotelName}`; // adapte “Planning” -> “Parking”, “Commandes”, ...
+}, [currentHotel]);
 
 useEffect(() => {
   if (hotelId) fetchCommandes();
