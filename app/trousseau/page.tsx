@@ -38,12 +38,14 @@ export default function TrousseauPage() {
   const [showModal, setShowModal] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const [copiedField, setCopiedField] = useState(null);
 
   const [newEntry, setNewEntry] = useState({
     outil: '',
     identifiant: '',
     mot_de_passe: '',
     commentaire: '',
+    url: '',
   });
 
   // Chargement hôtels
@@ -75,65 +77,83 @@ export default function TrousseauPage() {
   }
 
   async function createOrUpdateEntry() {
-    setErrorMsg('');
+  setErrorMsg('');
 
-    if (!newEntry.outil || !newEntry.identifiant || !newEntry.mot_de_passe) {
-      setErrorMsg("Tous les champs sauf commentaire sont obligatoires.");
+  if (!newEntry.outil || !newEntry.identifiant || !newEntry.mot_de_passe) {
+    setErrorMsg("Tous les champs sauf commentaire sont obligatoires.");
+    return;
+  }
+
+  if (!editingId) {
+    // Vérif doublon
+    const { data: existing } = await supabase
+      .from('trousseau')
+      .select('id')
+      .eq('hotel_id', selectedHotelId)
+      .eq('outil', newEntry.outil)
+      .eq('identifiant', newEntry.identifiant)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      setErrorMsg("Cet identifiant pour cet outil existe déjà.");
       return;
     }
 
-    if (!editingId) {
-      // Vérif doublon
-      const { data: existing } = await supabase
-        .from('trousseau')
-        .select('id')
-        .eq('hotel_id', selectedHotelId)
-        .eq('outil', newEntry.outil)
-        .eq('identifiant', newEntry.identifiant)
-        .limit(1);
+    // INSERT (url peut être null)
+    const { error } = await supabase.from('trousseau').insert({
+      outil: newEntry.outil,
+      identifiant: newEntry.identifiant,
+      mot_de_passe: newEntry.mot_de_passe,
+      commentaire: newEntry.commentaire,
+      url: normalizeUrl(newEntry.url), // null si vide
+      hotel_id: selectedHotelId,
+    });
 
-      if (existing && existing.length > 0) {
-        setErrorMsg("Cet identifiant pour cet outil existe déjà.");
-        return;
-      }
-
-      const { error } = await supabase.from('trousseau').insert({
-        ...newEntry,
-        hotel_id: selectedHotelId,
-      });
-      if (error) {
-        setErrorMsg("Erreur lors de l'ajout.");
-        return;
-      }
-    } else {
-      // Edition
-      const { error } = await supabase
-        .from('trousseau')
-        .update({
-          outil: newEntry.outil,
-          identifiant: newEntry.identifiant,
-          mot_de_passe: newEntry.mot_de_passe,
-          commentaire: newEntry.commentaire,
-        })
-        .eq('id', editingId);
-
-      if (error) {
-        setErrorMsg("Erreur lors de la mise à jour.");
-        return;
-      }
+    if (error) {
+      setErrorMsg("Erreur lors de l'ajout.");
+      return;
     }
+  } else {
+    // UPDATE (url peut être null)
+    const { error } = await supabase
+      .from('trousseau')
+      .update({
+        outil: newEntry.outil,
+        identifiant: newEntry.identifiant,
+        mot_de_passe: newEntry.mot_de_passe,
+        commentaire: newEntry.commentaire,
+        url: normalizeUrl(newEntry.url), // null si vide
+      })
+      .eq('id', editingId);
 
-    setShowModal(false);
-    setEditingId(null);
-    setNewEntry({ outil: '', identifiant: '', mot_de_passe: '', commentaire: '' });
-    fetchTrousseau();
+    if (error) {
+      setErrorMsg("Erreur lors de la mise à jour.");
+      return;
+    }
   }
+
+  setShowModal(false);
+  setEditingId(null);
+  setNewEntry({ outil: '', identifiant: '', mot_de_passe: '', commentaire: '', url: '' });
+  fetchTrousseau();
+}
+
+
 
   async function deleteEntry(id) {
     if (!confirm("Supprimer cette entrée ?")) return;
     await supabase.from('trousseau').delete().eq('id', id);
     fetchTrousseau();
   }
+
+  function normalizeUrl(u) {
+  const s = (u || '').trim();
+  if (!s) return null; // <= IMPORTANT: null si vide
+  const hasScheme = /^https?:\/\//i.test(s);
+  return hasScheme ? s : `https://${s}`;
+}
+
+
 
   function editEntry(entry) {
     setEditingId(entry.id);
@@ -142,13 +162,16 @@ export default function TrousseauPage() {
       identifiant: entry.identifiant,
       mot_de_passe: entry.mot_de_passe,
       commentaire: entry.commentaire || '',
+      url: entry.url || '',
     });
     setShowModal(true);
   }
 
-  function copyToClipboard(text) {
-    navigator.clipboard.writeText(text);
-  }
+  function copyToClipboard(text, fieldId) {
+  navigator.clipboard.writeText(text);
+  setCopiedField(fieldId);
+  setTimeout(() => setCopiedField(null), 1500);
+}
 
   const filtered = trousseau.filter(item =>
     item.outil.toLowerCase().includes(search.toLowerCase()) ||
@@ -217,17 +240,48 @@ export default function TrousseauPage() {
           <tbody>
             {filtered.map(item => (
               <tr key={item.id} className="hover:bg-gray-50">
-                <td className="border px-3 py-2">{item.outil}</td>
+                <td className="border px-3 py-2">
+  <div className="flex items-center gap-2">
+    <span>{item.outil}</span>
+    {item.url && (
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 hover:text-blue-800"
+
+        title="Ouvrir le lien"
+      >
+        🌐
+      </a>
+    )}
+  </div>
+</td>
+
                 <td className="border px-3 py-2">
                   <div className="flex items-center gap-2">
                     <span className="truncate">{item.identifiant}</span>
-                    <Button size="sm" variant="outline" onClick={() => copyToClipboard(item.identifiant)}>📋</Button>
+                    <Button
+  size="sm"
+  variant="outline"
+  onClick={() => copyToClipboard(item.identifiant, `id-${item.id}`)}
+>
+  {copiedField === `id-${item.id}` ? '✅' : '📋'}
+</Button>
+
                   </div>
                 </td>
                 <td className="border px-3 py-2">
                   <div className="flex items-center gap-2">
                     <span className="truncate">{item.mot_de_passe}</span>
-                    <Button size="sm" variant="outline" onClick={() => copyToClipboard(item.mot_de_passe)}>📋</Button>
+                    <Button
+  size="sm"
+  variant="outline"
+  onClick={() => copyToClipboard(item.mot_de_passe, `pass-${item.id}`)}
+>
+  {copiedField === `pass-${item.id}` ? '✅' : '📋'}
+</Button>
+
                   </div>
                 </td>
                 <td className="border px-3 py-2">{item.commentaire}</td>
@@ -275,6 +329,13 @@ export default function TrousseauPage() {
           <Input placeholder="Identifiant" value={newEntry.identifiant} onChange={(e) => setNewEntry({ ...newEntry, identifiant: e.target.value })} className="mb-2" />
           <Input placeholder="Mot de passe" value={newEntry.mot_de_passe} onChange={(e) => setNewEntry({ ...newEntry, mot_de_passe: e.target.value })} className="mb-2" />
           <Input placeholder="Commentaire (optionnel)" value={newEntry.commentaire} onChange={(e) => setNewEntry({ ...newEntry, commentaire: e.target.value })} className="mb-4" />
+          <Input
+  placeholder="Lien (optionnel, ex: https://exemple.com)"
+  value={newEntry.url}
+  onChange={(e) => setNewEntry({ ...newEntry, url: e.target.value })}
+  className="mb-4"
+/>
+
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowModal(false)}>Annuler</Button>
             <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={createOrUpdateEntry}>
