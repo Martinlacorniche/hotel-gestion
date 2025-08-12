@@ -1110,10 +1110,11 @@ setPlanningEntries(updatedEntries || []);
   </div>
 )}
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-white rounded-2xl shadow-xl overflow-hidden">
-          <thead>
-  <tr className="bg-gray-50">
+      <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
+
+        <table className="min-w-full bg-white rounded-2xl shadow-xl">
+          <thead className="sticky top-0 z-20 bg-gray-50">
+  <tr>
     <th className="px-4 py-3 text-left font-bold text-gray-700 text-base">Salarié</th>
     {weekDates.map(date => (
       <th
@@ -1125,6 +1126,7 @@ setPlanningEntries(updatedEntries || []);
     ))}
   </tr>
 </thead>
+
 
           <tbody>
             {rows.map((row, index) => (
