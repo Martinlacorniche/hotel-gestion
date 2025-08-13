@@ -15,6 +15,11 @@ export default function ParkingPage() {
   const [editingId, setEditingId] = useState(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [popupReservation, setPopupReservation] = useState(null);
+  const [hoverTip, setHoverTip] = useState(null as null | {
+  left: number; top: number;
+  content: { client: string; start: string; end: string; }
+});
+
 
 
 
@@ -115,10 +120,47 @@ export default function ParkingPage() {
     setEditingId(null);
   }
 
+  function showTip(e: React.MouseEvent<HTMLTableCellElement>, r: any) {
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+  // Taille estimée du tooltip (pour éviter qu'il sorte de l'écran).
+  const TIP_W = 220;
+  const TIP_H = 80;
+  const MARGIN = 8;
+
+  // Choix haut/bas selon l'espace dispo
+  const spaceAbove = rect.top;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const placeAbove = spaceAbove > spaceBelow;
+
+  let top = placeAbove ? rect.top - TIP_H - MARGIN : rect.bottom + MARGIN;
+  // Position horizontale centrée sur la cellule
+  let left = rect.left + rect.width / 2;
+
+  // Clamp horizontal pour ne jamais déborder
+  const minLeft = TIP_W / 2 + MARGIN;
+  const maxLeft = window.innerWidth - TIP_W / 2 - MARGIN;
+  left = Math.max(minLeft, Math.min(maxLeft, left));
+
+  // Clamp vertical de sécurité
+  top = Math.max(MARGIN, Math.min(window.innerHeight - TIP_H - MARGIN, top));
+
+  setHoverTip({
+    left,
+    top,
+    content: { client: r.client_name, start: r.start_date, end: r.end_date }
+  });
+}
+
+function hideTip() {
+  setHoverTip(null);
+}
+
   const monthDays = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) });
 
   return (
-    <div className="max-w-6xl mx-auto p-6 bg-gray-50 rounded-xl shadow-md">
+    <div className="max-w-6xl mx-auto p-6 bg-gray-50 rounded-xl shadow-md overflow-visible relative z-10">
+
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
         <h1 className="text-3xl font-extrabold text-indigo-700">🚗 Réservation Parking</h1>
         <div className="bg-indigo-100 text-indigo-800 p-3 rounded-lg shadow text-sm mt-3 sm:mt-0">
@@ -166,53 +208,59 @@ export default function ParkingPage() {
         <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="text-indigo-600 hover:underline">Mois suivant ➡</button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="table-auto w-full text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="border px-3 py-2">Place</th>
-              {monthDays.map((day) => (
-                <th key={day.toISOString()} className="border px-3 py-2 whitespace-nowrap">{format(day, 'd')}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {parkings.map(p => (
-              <tr key={p.id} className="text-center">
-                <td className="border px-2 py-1 font-medium bg-gray-50">{p.name}</td>
-                {monthDays.map(day => {
-                  const reservation = reservations.find(r => r.parking_id === p.id && isWithinInterval(day, { start: parseISO(r.start_date), end: parseISO(r.end_date) }));
-                  return (
-                    <td
+     <div className="relative z-20 overflow-x-auto overflow-y-visible rounded-lg border border-gray-200">
+
+  <table className="table-auto w-full text-sm">
+    <thead className="bg-gray-100 sticky top-0 z-20">
+      <tr>
+        <th className="border px-3 py-2 sticky left-0 bg-gray-100 z-30">Place</th>
+        {monthDays.map((day) => (
+          <th key={day.toISOString()} className="border px-3 py-2 whitespace-nowrap">
+            {format(day, 'd')}
+          </th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      {parkings.map(p => (
+        <tr key={p.id} className="text-center">
+          <td className="border px-2 py-1 font-medium bg-gray-50 sticky left-0 z-10">
+            {p.name}
+          </td>
+
+          {monthDays.map(day => {
+            const r = reservations.find(r =>
+              r.parking_id === p.id &&
+              isWithinInterval(day, { start: parseISO(r.start_date), end: parseISO(r.end_date) })
+            );
+            const isStart = r && isSameDay(day, parseISO(r.start_date));
+            const isEnd   = r && isSameDay(day, parseISO(r.end_date));
+
+            return (
+              <td
   key={day.toISOString()}
-  className={`border px-2 py-1 cursor-pointer relative ${reservation ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-800'}`}
-  onClick={() => reservation && setPopupReservation(reservation)}
-  onMouseEnter={e => {
-    if (reservation) {
-      const tooltip = document.createElement('div');
-      tooltip.className = "tooltip-resa absolute left-1/2 top-full z-50 bg-white border border-gray-300 px-4 py-2 rounded-xl shadow text-xs text-gray-900 whitespace-pre-line";
-      tooltip.style.transform = "translate(-50%, 8px)";
-      tooltip.innerText = 
-        `Client : ${reservation.client_name}\nDu : ${reservation.start_date}\nAu : ${reservation.end_date}`;
-      tooltip.id = "parking-tooltip";
-      e.currentTarget.appendChild(tooltip);
-    }
-  }}
-  onMouseLeave={e => {
-    const tooltip = e.currentTarget.querySelector("#parking-tooltip");
-    if (tooltip) tooltip.remove();
-  }}
+  onClick={() => r && setPopupReservation(r)}
+  onMouseEnter={(e) => r && showTip(e, r)}
+  onMouseLeave={hideTip}
+  className={[
+    "border px-2 py-1 cursor-pointer select-none align-middle",
+    r ? "bg-red-100 text-red-800" : "bg-green-50 text-green-800",
+    r && isStart ? "rounded-l-full" : "",
+    r && isEnd ? "rounded-r-full" : ""
+  ].join(" ")}
 >
-  {reservation ? "🚫" : "✅"}
+  {r ? "🚫" : "✅"}
 </td>
 
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            );
+          })}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
+
 
       {popupReservation && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
@@ -230,6 +278,20 @@ export default function ParkingPage() {
           </div>
         </div>
       )}
+      {hoverTip && (
+  <div
+    className="fixed z-[99999] pointer-events-none"
+    style={{ left: hoverTip.left, top: hoverTip.top, transform: 'translateX(-50%)' }}
+    role="tooltip"
+  >
+    <div className="bg-white border border-gray-300 px-3 py-2 rounded-xl shadow-xl text-xs text-gray-900 whitespace-pre-line">
+      <div className="font-semibold">{hoverTip.content.client}</div>
+      <div>Du {hoverTip.content.start}</div>
+      <div>Au {hoverTip.content.end}</div>
+    </div>
+  </div>
+)}
+
     </div>
   );
 }

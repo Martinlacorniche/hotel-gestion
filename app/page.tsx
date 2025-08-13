@@ -450,6 +450,7 @@ const consigneToInsert = {
   valide: false,
   utilisateur_id: newConsigne.utilisateur_id || null,
   hotel_id: hotelId,
+  date_creation: formatDate(selectedDate, 'yyyy-MM-dd'),
 };
 
 
