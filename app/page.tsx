@@ -32,8 +32,12 @@ interface CustomUser {
 export default function HotelDashboard() {
   const { user: rawUser, logout, isLoading } = useAuth();
 const user = rawUser as CustomUser | null;
+const [showValidatedConsignes, setShowValidatedConsignes] = useState(false);
+
 
 const isAdmin = user?.role === 'admin';
+const [showUserDropdown, setShowUserDropdown] = useState(false);
+
 const [hotels, setHotels] = useState([]);
 const [selectedHotelId, setSelectedHotelId] = useState(() => {
   if (typeof window !== 'undefined') {
@@ -279,14 +283,22 @@ useEffect(() => {
 
   
 
-  const [newConsigne, setNewConsigne] = useState({
+  const [newConsigne, setNewConsigne] = useState<{
+  texte: string;
+  service?: string;
+  date?: string;
+  valide: boolean;
+  utilisateurs_ids: string[];   // ⬅️ tableau d'IDs
+  date_fin: string;
+}>({
   texte: '',
   service: 'Tous les services',
   date: '',
   valide: false,
-  utilisateur_id: null,
-  date_fin: ''   // ✅ nouveau champ
+  utilisateurs_ids: [],
+  date_fin: ''
 });
+
 
 
   const [newTaxi, setNewTaxi] = useState({
@@ -448,10 +460,12 @@ const consigneToInsert = {
   auteur: user?.name || 'Anonyme',
   date_fin: newConsigne.date_fin || null,
   valide: false,
-  utilisateur_id: newConsigne.utilisateur_id || null,
+  // ⬇️ tableau multi-utilisateurs (champ Supabase text[])
+  utilisateurs_ids: newConsigne.utilisateurs_ids ?? [],
   hotel_id: hotelId,
   date_creation: formatDate(selectedDate, 'yyyy-MM-dd'),
 };
+
 
 
 
@@ -493,9 +507,10 @@ const consigneToInsert = {
   texte: '',
   date: new Date().toISOString().split('T')[0],
   valide: false,
-  utilisateur_id: null,
+  utilisateurs_ids: [],
   date_fin: ''
 });
+
 
   setShowConsigneModal(false);
 };
@@ -650,7 +665,17 @@ const validerDemande = async (index: number) => {
   const originalIndex = consignes.findIndex(c => c.id === consigne.id);
   if (originalIndex === -1) return;
 
-  setNewConsigne({ ...consigne });
+  setNewConsigne({
+  texte: consigne.texte ?? '',
+  service: consigne.service ?? 'Tous les services',
+  date: consigne.date ?? consigne.date_creation ?? '',
+  valide: !!consigne.valide,
+  date_fin: consigne.date_fin ?? '',
+  utilisateurs_ids: Array.isArray(consigne.utilisateurs_ids)
+    ? consigne.utilisateurs_ids
+    : (consigne.utilisateur_id ? [String(consigne.utilisateur_id)] : []),
+});
+
   setEditConsigneIndex(originalIndex); // 🔁 index réel
   setShowConsigneModal(true);
 };
@@ -737,8 +762,8 @@ const demandesVisibles = useMemo(() => {
 
 
 
- const consignesVisibles = useMemo(() => {
-  const visibles = consignes.filter((c) => {
+const consignesVisibles = useMemo(() => {
+  let visibles = consignes.filter((c) => {
     const creationDate = c.date_creation ? new Date(c.date_creation) : null;
     const endDate = c.date_fin ? new Date(c.date_fin) : creationDate;
     const validationDate = c.date_validation ? new Date(c.date_validation) : null;
@@ -746,15 +771,27 @@ const demandesVisibles = useMemo(() => {
 
     if (!creationDate || isNaN(creationDate.getTime())) return false;
     if (current < creationDate || current > endDate) return false;
-    if (!c.valide) return true;
-    return validationDate && current <= validationDate;
+
+    // Filtrage : afficher validées seulement si switch activé
+    if (c.valide) {
+      if (!showValidatedConsignes) return false;
+      return validationDate && current <= validationDate;
+    }
+
+    return true;
   });
 
+  // ✅ Tri : non validées en premier, validées en bas
   return visibles.sort((a, b) => {
-    if (a.valide !== b.valide) return a.valide ? 1 : -1;
+    if (a.valide !== b.valide) {
+      return a.valide ? 1 : -1; // validées après
+    }
+    // tri interne par date de création décroissante
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
-}, [consignes, selectedDate]);
+}, [consignes, selectedDate, showValidatedConsignes]);
+
+
 
 
 
@@ -914,11 +951,54 @@ const demandesVisibles = useMemo(() => {
         <Card>
           <CardContent className="p-4">
             <div className="flex justify-between items-center mb-2">
-              <h2 className="text-lg font-bold">📌 Passage de Consignes</h2>
-              <button onClick={() => setShowConsigneModal(true)} className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md flex items-center gap-2 shadow-sm">
-                <PlusCircle className="w-4 h-4" /> Ajouter
-              </button>
-            </div>
+  <h2 className="text-lg font-bold">📌 Passage de Consignes</h2>
+
+  <div className="flex items-center gap-2">
+    {/* Switch compact + texte clickable */}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={showValidatedConsignes}
+      onClick={() => setShowValidatedConsignes(!showValidatedConsignes)}
+      className="group flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800"
+      title="Afficher/Masquer les consignes validées"
+    >
+      <span className="whitespace-nowrap select-none">Afficher validées</span>
+      <span
+        className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${
+          showValidatedConsignes ? "bg-indigo-600" : "bg-gray-300"
+        }`}
+      >
+        <span
+          className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+            showValidatedConsignes ? "translate-x-4" : "translate-x-1"
+          }`}
+        />
+      </span>
+    </button>
+
+    {/* Bouton Ajouter compact */}
+    <Button
+      size="sm"
+      className="bg-indigo-500 hover:bg-indigo-600 text-white shadow-sm"
+      onClick={() => {
+        setNewConsigne({
+          texte: '',
+          service: 'Tous les services',
+          date: '',
+          valide: false,
+          utilisateurs_ids: [],
+          date_fin: '',
+        });
+        setEditConsigneIndex(null);
+        setShowConsigneModal(true);
+      }}
+    >
+      <PlusCircle className="w-4 h-4 mr-1" /> Ajouter
+    </Button>
+  </div>
+</div>
+
             <div className="space-y-2">
               {consignesVisibles.map((c, idx) => (
                 <div
@@ -933,11 +1013,27 @@ const demandesVisibles = useMemo(() => {
                   
                   <div className="font-light text-sm whitespace-pre-wrap break-words">
   {c.texte}
-  {c.utilisateur_id && (
-  <div className="text-xs text-gray-500">
-    🔒 Assignée à : {users.find(u => u.id_auth === c.utilisateur_id)?.name || 'Inconnu'}
+  {(Array.isArray(c.utilisateurs_ids) ? c.utilisateurs_ids.length > 0 : !!c.utilisateur_id) && (
+  <div className="text-xs text-gray-600 flex items-center gap-1 flex-wrap">
+    <span className="mr-1">🔒 Assignée à :</span>
+    {(
+      Array.isArray(c.utilisateurs_ids) && c.utilisateurs_ids.length > 0
+        ? c.utilisateurs_ids
+        : (c.utilisateur_id ? [String(c.utilisateur_id)] : [])
+    )
+      .map((id: string) => users.find((u) => u.id_auth === id)?.name || 'Inconnu')
+      .filter(Boolean)
+      .map((name, i) => (
+        <span
+          key={i}
+          className="inline-block bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full"
+        >
+          {name}
+        </span>
+      ))}
   </div>
 )}
+
 
 </div>
 
@@ -1255,25 +1351,71 @@ const demandesVisibles = useMemo(() => {
   rows={4}
   className="w-full border rounded px-2 py-1"
 />
-            <select
-  className="w-full border rounded px-2 py-1"
-  value={newConsigne.utilisateur_id || ''}
-  onChange={(e) =>
-    setNewConsigne({
-      ...newConsigne,
-      utilisateur_id: e.target.value || null,
-    })
-  }
->
-  
+            <div className="relative">
+  <label className="block text-sm font-medium mb-1">Assigner à</label>
 
-  <option value="">Aucun utilisateur assigné</option>
-  {users.map((u) => (
-    <option key={u.id_auth} value={u.id_auth}>
-      {u.name} ({u.email})
-    </option>
-  ))}
-</select>
+  {/* Bouton pour ouvrir/fermer */}
+  <Button
+    variant="outline"
+    className="w-full justify-between"
+    onClick={() => setShowUserDropdown((prev) => !prev)}
+  >
+    {newConsigne.utilisateurs_ids.length > 0
+      ? `${newConsigne.utilisateurs_ids.length} sélectionné(s)`
+      : "Sélectionner des utilisateurs"}
+    <span className="ml-2">▼</span>
+  </Button>
+
+  {/* Liste déroulante */}
+  {showUserDropdown && (
+    <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto border rounded bg-white shadow">
+      {users.map((u) => (
+        <label
+          key={u.id_auth}
+          className="flex items-center gap-2 px-2 py-1 hover:bg-gray-100 cursor-pointer"
+        >
+          <input
+            type="checkbox"
+            checked={newConsigne.utilisateurs_ids.includes(u.id_auth)}
+            onChange={(e) => {
+              if (e.target.checked) {
+                setNewConsigne({
+                  ...newConsigne,
+                  utilisateurs_ids: [...newConsigne.utilisateurs_ids, u.id_auth],
+                });
+              } else {
+                setNewConsigne({
+                  ...newConsigne,
+                  utilisateurs_ids: newConsigne.utilisateurs_ids.filter(
+                    (id) => id !== u.id_auth
+                  ),
+                });
+              }
+            }}
+          />
+          <span>{u.name}</span>
+        </label>
+      ))}
+    </div>
+  )}
+
+  {/* Badges des utilisateurs choisis */}
+  <div className="flex flex-wrap gap-1 mt-2">
+    {newConsigne.utilisateurs_ids.map((id) => {
+      const user = users.find((u) => u.id_auth === id);
+      return (
+        <span
+          key={id}
+          className="bg-gray-100 px-2 py-0.5 rounded-full text-xs text-gray-700"
+        >
+          {user?.name || "Inconnu"}
+        </span>
+      );
+    })}
+  </div>
+</div>
+
+
 <label className="flex items-center gap-2 text-sm mt-2">
   <input
     type="checkbox"
