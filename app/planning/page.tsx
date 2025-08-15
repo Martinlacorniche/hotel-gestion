@@ -75,10 +75,12 @@ const [hasSeenMyCpNotif, setHasSeenMyCpNotif] = useState(false);
 const [showPublishModal, setShowPublishModal] = useState(false);
 const [publishSelectedUserIds, setPublishSelectedUserIds] = useState<string[]>([]);
 const [publishUntil, setPublishUntil] = useState<string>(''); // yyyy-MM-dd
+
+
 const handlePublish = async () => {
   if (!publishUntil || publishSelectedUserIds.length === 0 || !hotelId) return;
 
-  // 1) Récupérer tous les brouillons jusqu’à publishUntil
+  // 1) Lire tous les drafts à publier
   const { data: drafts, error: draftsErr } = await supabase
     .from('planning_entries')
     .select('*')
@@ -91,59 +93,80 @@ const handlePublish = async () => {
     toast.error("Erreur lecture brouillons");
     return;
   }
-
   if (!drafts || drafts.length === 0) {
     toast('Aucun brouillon à publier avant cette date.');
     return;
   }
 
-  // 2) Supprimer les “published” existants sur le même périmètre (users + dates ≤ publishUntil)
-  const { error: delErr } = await supabase
-    .from('planning_entries')
-    .delete()
-    .eq('hotel_id', hotelId)
-    .eq('status', 'published')
-    .in('user_id', publishSelectedUserIds)
-    .lte('date', publishUntil);
-
-  if (delErr) {
-    toast.error("Erreur suppression des entrées publiées");
-    return;
+  // 2) Supprimer les "published" existants sur le même périmètre
+  {
+    const { error: delErr } = await supabase
+      .from('planning_entries')
+      .delete()
+      .eq('hotel_id', hotelId)
+      .eq('status', 'published')
+      .in('user_id', publishSelectedUserIds)
+      .lte('date', publishUntil);
+    if (delErr) {
+      toast.error("Erreur suppression des entrées publiées");
+      return;
+    }
   }
 
-  // 3) Insérer les brouillons en published
-  const toPublish = drafts.map(d => ({
+  // 3) Dédupliquer les drafts -> un seul par (hotel_id,user_id,date)
+  //    On garde le plus "récent" si created_at existe
+  const pickLatest = (a: any, b: any) => {
+    if (a?.created_at && b?.created_at) {
+      return new Date(a.created_at) >= new Date(b.created_at) ? a : b;
+    }
+    return b; // à défaut, on écrase par le dernier rencontré
+  };
+
+  const map = new Map<string, any>();
+  for (const d of drafts) {
+    const key = `${d.hotel_id}|${d.user_id}|${d.date}|published`;
+    map.set(key, map.has(key) ? pickLatest(map.get(key), d) : d);
+  }
+
+  const toPublish = Array.from(map.values()).map(({ id, status, ...d }) => ({
     ...d,
     status: 'published',
     published_at: new Date().toISOString(),
-    id: undefined,
   }));
 
+  // 4) Upsert (clé unique: hotel_id,user_id,date,status)
   const { error: insErr } = await supabase
     .from('planning_entries')
-    .upsert(toPublish, { onConflict: ['user_id','date','status'] });
+    .upsert(toPublish, {
+      onConflict: ['hotel_id','user_id','date','status'],
+      ignoreDuplicates: true, // optionnel, au cas où
+    });
 
   if (insErr) {
+    console.error('Publish upsert error:', insErr);
     toast.error("Erreur pendant la publication");
     return;
   }
 
-  // 4) Supprimer les brouillons publiés (mêmes critères)
-  const { error: delDraftsErr } = await supabase
-    .from('planning_entries')
-    .delete()
-    .eq('hotel_id', hotelId)
-    .eq('status', 'draft')
-    .in('user_id', publishSelectedUserIds)
-    .lte('date', publishUntil);
-
-  if (delDraftsErr) {
-    console.warn('Suppression de brouillons échouée', delDraftsErr);
+  // 5) Supprimer les drafts désormais publiés
+  {
+    const { error: delDraftsErr } = await supabase
+      .from('planning_entries')
+      .delete()
+      .eq('hotel_id', hotelId)
+      .eq('status', 'draft')
+      .in('user_id', publishSelectedUserIds)
+      .lte('date', publishUntil);
+    if (delDraftsErr) {
+      console.warn('Suppression de brouillons échouée', delDraftsErr);
+    }
   }
 
   await reloadEntries();
   toast.success("Publication effectuée ✅");
 };
+
+
 
 
 
@@ -583,7 +606,7 @@ const targetWeekEnd = targetWeekStart ? addDays(targetWeekStart, 6) : null;
 
   await supabase
     .from('planning_entries')
-    .upsert(payload, { onConflict: ['user_id','date','status'] });
+    .upsert(payload, { onConflict: ['hotel_id','user_id','date','status'] });
 
   if (cutMode) {
     // On coupe dans la même "couche" où on travaillait : le draft si présent sinon la publiée
@@ -652,7 +675,7 @@ const handleDuplicateMultiWeeks = async () => {
 
   const { error } = await supabase
     .from('planning_entries')
-    .upsert(allEntries, { onConflict: ['user_id','date','status'] });
+    .upsert(allEntries, { onConflict: ['hotel_id','user_id','date','status'] });
 
   if (error) {
     toast.error("❌ Erreur pendant la duplication");
@@ -956,7 +979,7 @@ const loadInitialData = async () => {
    // On upsert par (user_id, date, status)
  const upsertShift = supabase
    .from('planning_entries')
-   .upsert(payload, { onConflict: ['user_id','date','status'] });
+   .upsert(payload, { onConflict: ['hotel_id','user_id','date','status'] });
 
   const defaultUpdate = useAsDefault && shiftInput
     ? supabase.from('default_shift_hours').upsert({
