@@ -44,6 +44,12 @@ const SHIFT_OPTIONS = [
 ];
 
 const getShiftColor = (shift) => SHIFT_OPTIONS.find(opt => opt.value === shift)?.color || '';
+const getCellEntries = (entries, userId, dateStr) => {
+  if (!Array.isArray(entries)) return { draft: null, published: null };
+  const draft = entries.find(e => e.user_id === userId && e.date === dateStr && e.status === 'draft') || null;
+  const published = entries.find(e => e.user_id === userId && e.date === dateStr && e.status === 'published') || null;
+  return { draft, published };
+};
 
 
 const getEntry = (entries = [], userId, dateStr, preferDraft = false, isAdminFlag = false) => {
@@ -1327,37 +1333,25 @@ const loadInitialData = async () => {
                 </td>
                 {weekDates.map(date => {
                   const formatted = format(date, 'yyyy-MM-dd');
-                 const entry = row.id_auth ? getEntry(entriesView, row.id_auth, formatted, isAdmin, isAdmin) : null;
 
-                  return (
-                    <td
-  key={`${row.id || row.id_auth}-${date.toISOString()}`}
-  className={
-    row.id_auth
-      ? `px-4 py-3 text-center text-sm bg-white rounded-xl transition hover:scale-[1.04] hover:z-10 cursor-pointer shadow-sm ${getShiftColor(entry?.shift || '')} ${isAdmin ? 'hover:bg-indigo-50' : ''}`
-      : `px-4 py-3 text-center text-sm bg-gray-100 font-bold text-gray-700` // lignes “poste” sobres, grises, pas d'effet
-  }
-  onDragOver={(e) => e.preventDefault()}
-  onDrop={() => handleShiftDrop(row.id_auth, formatted)}
->
-
-                      {entry?.shift ? (
+// helper qui garde ton ancien style 1:1
+const renderBubble = (entry: any, icon?: string) => (
   <div
     draggable={isAdmin}
-    onDragStart={() => setDraggedShift({ userId: row.id_auth, date: formatted })}
-    onClick={() => handleCellClick(row.id_auth, formatted, entry?.shift)}
+    onDragStart={() => isAdmin && setDraggedShift({ userId: row.id_auth, date: formatted })}
+    onClick={() => isAdmin && handleCellClick(row.id_auth, formatted, entry?.shift)}
     className="cursor-pointer leading-tight relative group flex flex-col items-center"
   >
     <div className={`inline-block px-3 py-1 rounded-xl font-medium text-sm mb-1 shadow ${getShiftColor(entry?.shift || '')}`}>
-      {entry.shift}
+      {icon ? <span className="mr-1">{icon}</span> : null}
+      {entry?.shift}
     </div>
-    {entry.shift !== 'Repos' && (
+    {entry?.shift !== 'Repos' && (
       <div className="text-xs text-gray-700">
-        {entry.start_time?.slice(0, 5)} - {entry.end_time?.slice(0, 5)}
+        {entry?.start_time?.slice(0, 5)} - {entry?.end_time?.slice(0, 5)}
       </div>
     )}
-    {/* Croix admin ... */}
-    {isAdmin && (
+    {isAdmin && entry?.id && (
       <button
         onClick={e => {
           e.stopPropagation();
@@ -1367,38 +1361,72 @@ const loadInitialData = async () => {
         className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-red-100"
         style={{ zIndex: 10 }}
       >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 20 20"
-          fill="none"
-          className="text-gray-400 hover:text-red-500"
-          xmlns="http://www.w3.org/2000/svg"
-        >
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" className="text-gray-400 hover:text-red-500" xmlns="http://www.w3.org/2000/svg">
           <line x1="5" y1="5" x2="15" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
           <line x1="15" y1="5" x2="5" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
         </svg>
       </button>
     )}
   </div>
-) : (
+);
+
+let cellClass =
+  row.id_auth
+    ? `px-4 py-3 text-center text-sm bg-white rounded-xl transition hover:scale-[1.04] hover:z-10 cursor-pointer shadow-sm ${isAdmin ? 'hover:bg-indigo-50' : ''}`
+    : `px-4 py-3 text-center text-sm bg-gray-100 font-bold text-gray-700`;
+
+let content: React.ReactNode = null;
+
+if (row.id_auth) {
+  if (isAdmin) {
+    // ADMIN : montre les 2 couches si présentes, mêmes bulles qu'avant
+    const { draft, published } = getCellEntries(planningEntries, row.id_auth, formatted);
+
+    if (!draft && !published) {
+      content = (
+        <button
+          onClick={() => handleCellClick(row.id_auth, formatted, '')}
+          className="text-gray-400 hover:text-black"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={() => handleShiftDrop(row.id_auth, formatted)}
+        >
+          <Plus className="w-4 h-4 mx-auto" />
+        </button>
+      );
+    } else {
+      content = (
+        <div className="flex flex-col items-center gap-1">
+          {draft && renderBubble(draft, '📝')}
+          {published && renderBubble(published, '')}
+        </div>
+      );
+    }
+  } else {
+    // EMPLOYÉ : uniquement la publiée (style identique à avant)
+    const entryEmp = getEntry(entriesView, row.id_auth, formatted, false, false);
+    if (entryEmp) {
+      // pour l'employé, on garde aussi la couleur sur le <td> comme avant
+      cellClass += ` ${getShiftColor(entryEmp.shift || '')}`;
+      content = renderBubble(entryEmp);
+    } else {
+      content = null;
+    }
+  }
+}
+
+return (
+  <td
+    key={`${row.id || row.id_auth}-${date.toISOString()}`}
+    className={cellClass}
+    onDragOver={(e) => e.preventDefault()}
+    onDrop={() => handleShiftDrop(row.id_auth, formatted)}
+  >
+    {content}
+  </td>
+);
 
 
-  isAdmin && row.id_auth ? (
-    <button
-      onClick={() => handleCellClick(row.id_auth, formatted, '')}
-      className="text-gray-400 hover:text-black"
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={() => handleShiftDrop(row.id_auth, formatted)}
-    >
-      <Plus className="w-4 h-4 mx-auto" />
-    </button>
-  ) : null
-)}
 
-
-                    </td>
-                  );
                 })}
               </tr>
             ))}
