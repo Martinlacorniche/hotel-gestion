@@ -46,16 +46,106 @@ const SHIFT_OPTIONS = [
 const getShiftColor = (shift) => SHIFT_OPTIONS.find(opt => opt.value === shift)?.color || '';
 
 
-const getEntry = (entries = [], userId, date) => {
+const getEntry = (entries = [], userId, dateStr, preferDraft = false, isAdminFlag = false) => {
   if (!Array.isArray(entries)) return null;
-  return entries.find(p => p.user_id === userId && p.date === format(date, 'yyyy-MM-dd'));
+
+  if (!isAdminFlag) {
+    // Côté employé : on ignore complètement les brouillons
+    return entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'published') || null;
+  }
+
+  if (preferDraft) {
+    const draft = entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'draft');
+    if (draft) return draft;
+  }
+
+  return entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'published') ||
+         entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'draft') ||
+         null;
 };
+
+
+
 
 export default function PlanningPage() {
   const { user, isLoading } = useAuth();
   const isAdmin = user?.role === 'admin';
 const [showMyCpModal, setShowMyCpModal] = useState(false);
 const [hasSeenMyCpNotif, setHasSeenMyCpNotif] = useState(false);
+const [showPublishModal, setShowPublishModal] = useState(false);
+const [publishSelectedUserIds, setPublishSelectedUserIds] = useState<string[]>([]);
+const [publishUntil, setPublishUntil] = useState<string>(''); // yyyy-MM-dd
+const handlePublish = async () => {
+  if (!publishUntil || publishSelectedUserIds.length === 0 || !hotelId) return;
+
+  // 1) Récupérer tous les brouillons jusqu’à publishUntil
+  const { data: drafts, error: draftsErr } = await supabase
+    .from('planning_entries')
+    .select('*')
+    .eq('hotel_id', hotelId)
+    .eq('status', 'draft')
+    .in('user_id', publishSelectedUserIds)
+    .lte('date', publishUntil);
+
+  if (draftsErr) {
+    toast.error("Erreur lecture brouillons");
+    return;
+  }
+
+  if (!drafts || drafts.length === 0) {
+    toast('Aucun brouillon à publier avant cette date.');
+    return;
+  }
+
+  // 2) Supprimer les “published” existants sur le même périmètre (users + dates ≤ publishUntil)
+  const { error: delErr } = await supabase
+    .from('planning_entries')
+    .delete()
+    .eq('hotel_id', hotelId)
+    .eq('status', 'published')
+    .in('user_id', publishSelectedUserIds)
+    .lte('date', publishUntil);
+
+  if (delErr) {
+    toast.error("Erreur suppression des entrées publiées");
+    return;
+  }
+
+  // 3) Insérer les brouillons en published
+  const toPublish = drafts.map(d => ({
+    ...d,
+    status: 'published',
+    published_at: new Date().toISOString(),
+    id: undefined,
+  }));
+
+  const { error: insErr } = await supabase
+    .from('planning_entries')
+    .upsert(toPublish, { onConflict: ['user_id','date','status'] });
+
+  if (insErr) {
+    toast.error("Erreur pendant la publication");
+    return;
+  }
+
+  // 4) Supprimer les brouillons publiés (mêmes critères)
+  const { error: delDraftsErr } = await supabase
+    .from('planning_entries')
+    .delete()
+    .eq('hotel_id', hotelId)
+    .eq('status', 'draft')
+    .in('user_id', publishSelectedUserIds)
+    .lte('date', publishUntil);
+
+  if (delDraftsErr) {
+    console.warn('Suppression de brouillons échouée', delDraftsErr);
+  }
+
+  await reloadEntries();
+  toast.success("Publication effectuée ✅");
+};
+
+
 
   const handleSendCpRequest = async () => {
   if (!user || !cpStartDate || !cpEndDate || !hotelId) return;
@@ -100,6 +190,25 @@ const [selectedHotelId, setSelectedHotelId] = useState(() => {
 const [currentHotel, setCurrentHotel] = useState(null);
 const hotelId = selectedHotelId || user?.hotel_id || '';
 
+// Toujours filtrer côté UI : un salarié ne voit que "published"
+
+
+
+const reloadEntries = async () => {
+  if (!hotelId) return;
+  const q = isAdmin
+    ? supabase.from('planning_entries').select('*').eq('hotel_id', hotelId).in('status', ['draft','published'])
+    : supabase.from('planning_entries').select('*').eq('hotel_id', hotelId).eq('status','published');
+  const { data } = await q;
+  setPlanningEntries(data || []);
+};
+
+useEffect(() => {
+  if (!isAdmin) {
+    setPlanningEntries(prev => prev.filter(e => e.status === 'published'));
+  }
+}, [isAdmin]);
+
 useEffect(() => {
   const hotelName = currentHotel?.nom ? ` — ${currentHotel.nom}` : '';
   document.title = `Planning${hotelName}`; // adapte “Planning” -> “Parking”, “Commandes”, ...
@@ -123,6 +232,11 @@ useEffect(() => {
   const [users, setUsers] = useState([]);
   const [planningEntries, setPlanningEntries] = useState([]);
   const [cpRequests, setCpRequests] = useState([]);
+
+const entriesView = useMemo(
+  () => (isAdmin ? planningEntries : planningEntries.filter(e => e.status === 'published')),
+  [planningEntries, isAdmin]
+);
   const [showCpAdminModal, setShowCpAdminModal] = useState(false);
   const [showAllCp, setShowAllCp] = useState(false);
 const [showCpModal, setShowCpModal] = useState(false);
@@ -268,11 +382,7 @@ const handleAcceptCp = async (req) => {
 
   // 7) Rechargement local
   await loadCpRequests();
-  const { data: updated } = await supabase
-    .from('planning_entries')
-    .select('*')
-    .eq('hotel_id', hotelId);
-  setPlanningEntries(updated || []);
+  await reloadEntries();
 };
 
 
@@ -298,7 +408,7 @@ const exportPDF = () => {
   const start = new Date(year, month, 1);
   const end = new Date(year, month + 1, 0);
 
-  const entriesForMonth = planningEntries.filter(entry => {
+  const entriesForMonth = entriesView.filter(entry => {
     const entryDate = new Date(entry.date);
     return entryDate >= start && entryDate <= end;
   });
@@ -442,25 +552,23 @@ const targetWeekEnd = targetWeekStart ? addDays(targetWeekStart, 6) : null;
 
   const { userId: sourceUserId, date: sourceDate } = draggedShift;
 
-  
-
-
-
   const existingTarget = planningEntries.find(
-    e => e.user_id === targetUserId && e.date === targetDate
+    e => e.user_id === targetUserId && e.date === targetDate && e.status === 'draft'
   );
 
   if (existingTarget) {
-    const confirmReplace = window.confirm("Un shift existe déjà à cette date. Le remplacer ?");
+    const confirmReplace = window.confirm("Un shift brouillon existe déjà à cette date. Le remplacer ?");
     if (!confirmReplace) {
       setDraggedShift(null);
       return;
     }
   }
 
-  const sourceEntry = planningEntries.find(
-    e => e.user_id === sourceUserId && e.date === sourceDate
-  );
+  // On prend la source : si un draft existe on le prend, sinon on tombe sur la publiée
+  const sourceEntry =
+    planningEntries.find(e => e.user_id === sourceUserId && e.date === sourceDate && e.status === 'draft') ||
+    planningEntries.find(e => e.user_id === sourceUserId && e.date === sourceDate && e.status === 'published');
+
   if (!sourceEntry) return;
 
   const payload = {
@@ -470,28 +578,29 @@ const targetWeekEnd = targetWeekStart ? addDays(targetWeekStart, 6) : null;
     start_time: sourceEntry.start_time,
     end_time: sourceEntry.end_time,
     hotel_id: hotelId,
+    status: 'draft',
   };
 
-  await supabase.from('planning_entries')
-    .upsert(payload, { onConflict: ['user_id', 'date'] });
+  await supabase
+    .from('planning_entries')
+    .upsert(payload, { onConflict: ['user_id','date','status'] });
 
   if (cutMode) {
-    await supabase.from('planning_entries')
+    // On coupe dans la même "couche" où on travaillait : le draft si présent sinon la publiée
+    const sourceStatus = sourceEntry.status || 'draft';
+    await supabase
+      .from('planning_entries')
       .delete()
       .eq('user_id', sourceUserId)
-      .eq('date', sourceDate);
+      .eq('date', sourceDate)
+      .eq('status', sourceStatus);
   }
 
-  const { data: updatedEntries } = await supabase
-  .from('planning_entries')
-  .select('*')
-  .eq('hotel_id', hotelId);
-setPlanningEntries(updatedEntries || []);
-
-
-
+  await reloadEntries();
   setDraggedShift(null);
 };
+
+
 
 const handleDuplicateMultiWeeks = async () => {
   if (!duplicationSource || !targetStartDate || !duplicationTargetIds.length || !hotelId) return;
@@ -499,18 +608,16 @@ const handleDuplicateMultiWeeks = async () => {
   let allEntries = [];
 
   for (let t = 0; t < nbWeeksTarget; t++) {
-    // Calcul semaine source correspondante (en cycle)
     const sourceIndex = t % nbWeeksSource;
     const sourceWeekStart = addDays(startOfWeek(currentWeekStart, { weekStartsOn: 1 }), sourceIndex * 7);
     sourceWeekStart.setHours(12, 0, 0, 0);
     const sourceWeekEnd = addDays(sourceWeekStart, 6);
     sourceWeekEnd.setHours(23, 59, 59, 999);
 
-    // Semaine destination
     const targetWeekStart = addDays(startOfWeek(targetStartDate, { weekStartsOn: 1 }), t * 7);
     targetWeekStart.setHours(12, 0, 0, 0);
 
-    // Filtrer shifts source
+    // On copie ce qu’on voit : s’il existe un draft on le prendra, sinon la publiée
     const shiftsToCopy = planningEntries.filter((entry) => {
       const d = new Date(entry.date);
       d.setHours(12, 0, 0, 0);
@@ -521,7 +628,6 @@ const handleDuplicateMultiWeeks = async () => {
       );
     });
 
-    // Dupliquer
     for (const targetId of duplicationTargetIds) {
       allEntries = allEntries.concat(
         shiftsToCopy.map((entry) => {
@@ -537,6 +643,7 @@ const handleDuplicateMultiWeeks = async () => {
             start_time: entry.start_time,
             end_time: entry.end_time,
             hotel_id: hotelId,
+            status: 'draft', // toujours brouillon
           };
         })
       );
@@ -545,22 +652,19 @@ const handleDuplicateMultiWeeks = async () => {
 
   const { error } = await supabase
     .from('planning_entries')
-    .upsert(allEntries, { onConflict: ['user_id', 'date'] });
+    .upsert(allEntries, { onConflict: ['user_id','date','status'] });
 
   if (error) {
     toast.error("❌ Erreur pendant la duplication");
     console.error(error);
   } else {
-    const { data: updated } = await supabase
-      .from('planning_entries')
-      .select('*')
-      .eq('hotel_id', hotelId);
-    setPlanningEntries(updated || []);
-
+    await reloadEntries();
     toast.success(`✅ Duplication terminée (${nbWeeksSource} semaines source → ${nbWeeksTarget} cibles)`);
     closeDuplicationModal();
   }
 };
+
+
 
 
 
@@ -600,9 +704,10 @@ const visibleRequests = showAllCp
 
   const startMinutes = sh * 60 + sm;
   const endMinutes = eh * 60 + em;
-  const diff = endMinutes - startMinutes;
+  let diff = endMinutes - startMinutes;
 
-  if (diff <= 0) return '0h00';
+  // si le shift passe après minuit
+  if (diff < 0) diff += 24 * 60;
 
   const hours = Math.floor(diff / 60);
   const minutes = diff % 60;
@@ -613,7 +718,7 @@ const visibleRequests = showAllCp
 
 
   const getWeeklyHours = (userId) => {
-  const userEntries = planningEntries.filter(
+  const userEntries = entriesView.filter(
     e => e.user_id === userId && weekDates.some(d => format(d, 'yyyy-MM-dd') === e.date)
   );
 
@@ -626,8 +731,10 @@ const visibleRequests = showAllCp
       if (!entry.start_time || !entry.end_time) return total;
       const [sh, sm] = entry.start_time.split(':').map(Number);
       const [eh, em] = entry.end_time.split(':').map(Number);
-      const minutes = (eh * 60 + em) - (sh * 60 + sm);
-      return total + (minutes > 0 ? minutes : 0);
+      let minutes = (eh * 60 + em) - (sh * 60 + sm);
+      // correction pour les shifts qui passent minuit
+      if (minutes < 0) minutes += 24 * 60;
+      return total + minutes;
     }, 0);
 
   const hours = Math.floor(totalMinutes / 60);
@@ -637,9 +744,11 @@ const visibleRequests = showAllCp
 };
 
 
+
+
 const getWorkingDays = (userId) => {
   const excludedShifts = ['Repos', 'Maladie', 'CP', 'Injustifié'];
-  const userEntries = planningEntries.filter(
+  const userEntries = entriesView.filter(
     e => e.user_id === userId && weekDates.some(d => format(d, 'yyyy-MM-dd') === e.date)
   );
 
@@ -741,15 +850,25 @@ const moveRow = async (index, direction) => {
 
 
 const loadInitialData = async () => {
-  if (!hotelId || typeof hotelId !== "string" || hotelId.length < 10) return; 
+  if (!hotelId || typeof hotelId !== "string" || hotelId.length < 10) return;
+
+  // ⚠️ On ne récupère les drafts du planning que pour les admins
+  const entriesQuery = isAdmin
+    ? supabase.from('planning_entries')
+        .select('*')
+        .eq('hotel_id', hotelId)
+        .in('status', ['draft', 'published'])
+    : supabase.from('planning_entries')
+        .select('*')
+        .eq('hotel_id', hotelId)
+        .eq('status', 'published');
+
   const [usersRes, configRes, entriesRes, cpRes, defaultShiftsRes] = await Promise.all([
     supabase.from('users').select('*').eq('hotel_id', hotelId),
-supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
-supabase.from('planning_entries').select('*').eq('hotel_id', hotelId),
-supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
-
-
-    supabase.from('default_shift_hours').select('*')
+    supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
+    entriesQuery,
+    supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
+    supabase.from('default_shift_hours').select('*'),
   ]);
 
   const usersData = usersRes.data || [];
@@ -758,37 +877,41 @@ supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
   const cpData = cpRes.data || [];
   const defaultShiftData = defaultShiftsRes.data || [];
 
+  // ✅ Sécurisation supplémentaire : si jamais des drafts sont revenus, on les filtre côté employé
+  const safeEntries = isAdmin ? entriesData : entriesData.filter(e => e.status === 'published');
+
   const usersWithOrder = usersData.map(u => {
     const conf = configData.find(c => c.user_id === u.id_auth);
     return { ...u, ordre: conf?.ordre ?? 9999 };
   });
 
   const serviceRows = configData
-  .filter(c => c.service_id && c.hotel_id === hotelId)
-  .map((conf, i) => {
-    // Retrouve le nom/couleur depuis SERVICE_ROWS statique si besoin
-    const srvStatic = SERVICE_ROWS.find(s => s.id === conf.service_id);
-    return {
-      ...srvStatic,
-      ...conf,
-      id: conf.service_id,
-      ordre: conf.ordre ?? i
-    };
-  });
+    .filter(c => c.service_id && c.hotel_id === hotelId)
+    .map((conf, i) => {
+      const srvStatic = SERVICE_ROWS.find(s => s.id === conf.service_id);
+      return {
+        ...srvStatic,
+        ...conf,
+        id: conf.service_id,
+        ordre: conf.ordre ?? i
+      };
+    });
 
   const allRows = [...serviceRows, ...usersWithOrder].sort((a, b) => a.ordre - b.ordre);
 
-  const defaultsMap = {};
+  const defaultsMap: Record<string, {start:string; end:string}> = {};
   defaultShiftData.forEach(d => {
     defaultsMap[d.shift_name] = { start: d.start_time, end: d.end_time };
   });
 
   setUsers(usersWithOrder);
-  setPlanningEntries(entriesData);
+  setPlanningEntries(safeEntries); // ⬅️ Important
   setCpRequests(cpData);
   setRows(allRows);
   setDefaultHours(defaultsMap);
 };
+
+
 
 
   useEffect(() => {
@@ -802,11 +925,7 @@ supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
     if (!hotelId || typeof hotelId !== "string" || hotelId.length < 10) return;
   await supabase.from('planning_entries').delete().eq('id', entryId);
   // Recharge le planning après suppression
-  const { data: updatedEntries } = await supabase
-  .from('planning_entries')
-  .select('*')
-  .eq('hotel_id', hotelId);
-setPlanningEntries(updatedEntries || []);
+  await reloadEntries();
 
 };
 
@@ -829,13 +948,15 @@ setPlanningEntries(updatedEntries || []);
     start_time: startTime,
     end_time: endTime,
     hotel_id: hotelId,
+    status: 'draft',
   };
 
   const existing = planningEntries.find(p => p.user_id === userId && p.date === date);
 
-  const upsertShift = existing
-    ? supabase.from('planning_entries').update(payload).eq('user_id', userId).eq('date', date)
-    : supabase.from('planning_entries').insert(payload);
+   // On upsert par (user_id, date, status)
+ const upsertShift = supabase
+   .from('planning_entries')
+   .upsert(payload, { onConflict: ['user_id','date','status'] });
 
   const defaultUpdate = useAsDefault && shiftInput
     ? supabase.from('default_shift_hours').upsert({
@@ -848,11 +969,8 @@ setPlanningEntries(updatedEntries || []);
   await Promise.all([upsertShift, defaultUpdate]);
 
   // Recharge uniquement les shifts (pas besoin de tout recharger)
-  const { data: updatedEntries } = await supabase
-  .from('planning_entries')
-  .select('*')
-  .eq('hotel_id', hotelId);
-setPlanningEntries(updatedEntries || []);
+  await reloadEntries();
+
 
 
   // Met à jour localement les horaires par défaut (optionnel mais utile)
@@ -1002,47 +1120,60 @@ setPlanningEntries(updatedEntries || []);
 
       {isAdmin && (
   <div className="flex items-center gap-2 mb-4">
-    <button
-  className="flex items-center gap-1 text-sm px-4 py-2 rounded-xl bg-gray-100 shadow hover:bg-indigo-50 hover:text-indigo-700 transition font-semibold"
-  onClick={() => setIsUnlocked(!isUnlocked)}
->
-  {isUnlocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-  {isUnlocked ? 'Déverrouillé' : 'Verrouillé'}
-</button>
-
 
     <button
-  onClick={() => setCutMode(!cutMode)}
-  className={`text-sm px-4 py-2 rounded-xl shadow font-semibold transition ${
-    cutMode ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700'
-  }`}
->
-  {cutMode ? '✂️ Mode Couper activé' : 'Activer mode Couper'}
-</button>
-    {isAdmin && (
-  <button
-  onClick={exportPDF}
-  className="px-4 py-2 bg-indigo-600 text-white rounded-xl shadow hover:bg-indigo-700 transition font-semibold"
->
-  Export PDF
-</button>
+      className="flex items-center gap-1 text-sm px-4 py-2 rounded-xl bg-gray-100 shadow hover:bg-indigo-50 hover:text-indigo-700 transition font-semibold"
+      onClick={() => setIsUnlocked(!isUnlocked)}
+    >
+      {isUnlocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+      {isUnlocked ? 'Déverrouillé' : 'Verrouillé'}
+    </button>
 
+    <button
+      onClick={() => setCutMode(!cutMode)}
+      className={`text-sm px-4 py-2 rounded-xl shadow font-semibold transition ${
+        cutMode ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700'
+      }`}
+    >
+      {cutMode ? '✂️ Mode Couper activé' : 'Activer mode Couper'}
+    </button>
+
+    <button
+      onClick={() => {
+        setPublishSelectedUserIds(users.map(u => u.id_auth));
+        // Par défaut : fin de la semaine affichée
+        const until = format(addDays(startOfWeek(currentWeekStart, { weekStartsOn: 1 }), 6), 'yyyy-MM-dd');
+        setPublishUntil(until);
+        setShowPublishModal(true);
+      }}
+      className="px-4 py-2 bg-green-600 text-white rounded-xl shadow hover:bg-green-700 transition font-semibold"
+    >
+      Publier…
+    </button>
+
+    <button
+      onClick={exportPDF}
+      className="px-4 py-2 bg-indigo-600 text-white rounded-xl shadow hover:bg-indigo-700 transition font-semibold"
+    >
+      Export PDF
+    </button>
+
+    <button
+      onClick={() => setShowCpAdminModal(true)}
+      className="relative bg-yellow-100 hover:bg-yellow-200 text-yellow-900 rounded-xl px-4 py-2 font-semibold shadow flex items-center gap-2"
+    >
+      Demandes de CP
+      {cpRequests.filter(r => r.status === 'pending').length > 0 && (
+        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+          {cpRequests.filter(r => r.status === 'pending').length}
+        </span>
+      )}
+    </button>
+
+  </div>
 )}
 
-{isAdmin && (
-  <button
-    onClick={() => setShowCpAdminModal(true)}
-    className="relative bg-yellow-100 hover:bg-yellow-200 text-yellow-900 rounded-xl px-4 py-2 font-semibold shadow flex items-center gap-2"
-  >
-    Demandes de CP
-    {cpRequests.filter(r => r.status === 'pending').length > 0 && (
-  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
-    {cpRequests.filter(r => r.status === 'pending').length}
-  </span>
-)}
 
-  </button>
-)}
 {showCpAdminModal && (
   <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
     <div className="bg-white rounded-2xl p-8 shadow-2xl w-full max-w-xl space-y-6 border">
@@ -1105,9 +1236,7 @@ setPlanningEntries(updatedEntries || []);
       </div>
     </div>
   </div>
-)}
 
-  </div>
 )}
 
       <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
@@ -1175,7 +1304,7 @@ setPlanningEntries(updatedEntries || []);
                 </td>
                 {weekDates.map(date => {
                   const formatted = format(date, 'yyyy-MM-dd');
-                  const entry = row.id_auth ? getEntry(planningEntries, row.id_auth, formatted) : null;
+                 const entry = row.id_auth ? getEntry(entriesView, row.id_auth, formatted, isAdmin, isAdmin) : null;
 
                   return (
                     <td
@@ -1253,6 +1382,72 @@ setPlanningEntries(updatedEntries || []);
           </tbody>
         </table>
       </div> 
+
+      {showPublishModal && (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-md space-y-4">
+      <h2 className="text-xl font-semibold">Publier le planning</h2>
+
+      {/* Date limite */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Publier jusqu’au</label>
+        <input
+          type="date"
+          className="w-full border rounded px-2 py-1"
+          value={publishUntil}
+          onChange={e => setPublishUntil(e.target.value)}
+        />
+        {publishUntil && (
+          <div className="text-xs text-gray-600 mt-1">
+            Toutes les entrées <span className="font-semibold">brouillon</span> jusqu’au <span className="font-semibold">{publishUntil}</span> seront publiées pour les salariés sélectionnés.
+          </div>
+        )}
+      </div>
+
+      {/* Sélection salariés */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Salariés</label>
+        <div className="max-h-48 overflow-y-auto border rounded p-2 space-y-1">
+          {users.map(u => (
+            <label key={u.id_auth} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={publishSelectedUserIds.includes(u.id_auth)}
+                onChange={e => {
+                  setPublishSelectedUserIds(prev =>
+                    e.target.checked ? [...prev, u.id_auth] : prev.filter(id => id !== u.id_auth)
+                  );
+                }}
+              />
+              <span>{u.name || u.email}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <button
+          className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 shadow font-semibold"
+          onClick={() => setShowPublishModal(false)}
+        >
+          Annuler
+        </button>
+        <button
+          className="px-4 py-2 rounded-xl bg-green-600 text-white shadow font-semibold"
+          onClick={async () => {
+            await handlePublish();
+            setShowPublishModal(false);
+          }}
+          disabled={!publishUntil || publishSelectedUserIds.length === 0}
+        >
+          Publier
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+
       {showShiftModal && editingCell && (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
     <div className="bg-white p-6 rounded-lg space-y-4 w-full max-w-md">
