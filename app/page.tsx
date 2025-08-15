@@ -745,10 +745,10 @@ const [editTicketIndex, setEditTicketIndex] = useState<number | null>(null);
     .filter((t) => filterService === 'Tous' || t.service === filterService);
 
   return visibles.sort((a, b) => {
-    // Priorité : non validé d'abord, puis par date décroissante
-    if (a.valide !== b.valide) return a.valide ? 1 : -1;
-    return new Date(b.date_action).getTime() - new Date(a.date_action).getTime();
-  });
+  // Priorité : non validé d'abord, puis par date de création décroissante
+  if (a.valide !== b.valide) return a.valide ? 1 : -1;
+  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+});
 }, [tickets, sortBy, filterService, selectedDate]);
 
 
