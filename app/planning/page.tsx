@@ -30,7 +30,8 @@ const SERVICE_ROWS = [
 const SHIFT_OPTIONS = [
   { label: "Réception matin", value: "Réception matin", color: "bg-blue-100 text-blue-900" },
   { label: "Réception soir", value: "Réception soir", color: "bg-indigo-500 text-white" },
-  { label: "Night", value: "Night", color: "bg-gray-200 text-gray-800" },
+  // Night : couleur plus contrastée que Repos
+  { label: "Night", value: "Night", color: "bg-gray-800 text-white" },
   { label: "Présence", value: "Présence", color: "bg-violet-400 text-violet-900" },
   { label: "Housekeeping Chambre", value: "Housekeeping Chambre", color: "bg-green-100 text-green-800" },
   { label: "Housekeeping Communs", value: "Housekeeping Communs", color: "bg-green-200 text-green-900" },
@@ -41,7 +42,10 @@ const SHIFT_OPTIONS = [
   { label: "Injustifié", value: "Injustifié", color: "bg-orange-100 text-orange-900" },
   { label: "Repos", value: "Repos", color: "bg-gray-200 text-gray-400" },
   { label: "Les Voiles", value: "Les Voiles", color: "bg-White-200 text-black-400" },
+  // Nouveau shift
+  { label: "École", value: "École", color: "bg-green-300 text-green-900" },
 ];
+
 
 const getShiftColor = (shift) => SHIFT_OPTIONS.find(opt => opt.value === shift)?.color || '';
 const getCellEntries = (entries, userId, dateStr) => {
@@ -424,75 +428,122 @@ const exportPDF = () => {
     const entryDate = new Date(entry.date);
     return entryDate >= start && entryDate <= end;
   });
+  // bornes du mois affiché
+// bornes du mois exporté
+const monthStart = new Date(year, month, 1, 0, 0, 0);
+const monthEnd   = new Date(year, month + 1, 0, 23, 59, 59);
+
+// parse "YYYY-MM-DD" -> Date locale fin de journée (fin inclusive)
+const parseYMD = (s?: string | null) => {
+  if (!s) return null;
+  const [yy, mm, dd] = s.split('-').map(Number);
+  return new Date(yy, (mm || 1) - 1, dd || 1, 23, 59, 59);
+};
+
+// chevauchement contrat/mois
+const overlapsMonth = (u: any) => {
+  const start = u.employment_start_date ? new Date(u.employment_start_date) : null;
+  const end   = parseYMD(u.employment_end_date);
+  if (end && end < monthStart) return false;
+  if (start && start > monthEnd) return false;
+  return true;
+};
+
+// ✅ Ordre identique au planning mais en partant de "users" (pas rows)
+const orderedUsersByOrd = [...users].sort((a, b) => (a.ordre ?? 9999) - (b.ordre ?? 9999));
+
+// ✅ Utilisateurs à exporter = ceux dont le contrat chevauche le mois
+const exportUsers = orderedUsersByOrd.filter(overlapsMonth);
+
+
 
   
 
   // Couleurs associées aux shifts (mêmes que dans ton planning)
-  const shiftColors = {
-    'Réception matin': [173, 216, 230], // bleu clair
-    'Réception soir': [135, 206, 250], // indigo foncé
-    'Night': [200, 200, 200], // gris
-    'Présence': [238, 130, 238], // violet
-    'Housekeeping Chambre': [144, 238, 144], // vert clair
-    'Housekeeping Communs': [0, 128, 0], // vert foncé
-    'Petit Déjeuner': [255, 255, 102], // jaune
-    'Extra': [216, 191, 216], // mauve
-    'CP': [255, 182, 193], // rose
-    'Maladie': [255, 99, 71], // rouge clair
-    'Injustifié': [255, 165, 0], // orange
-    'Repos': [220, 220, 220], // gris clair
-    'Les Voiles': [0, 0, 0], // noir
-  };
+const shiftColors = {
+  'Réception matin': [173, 216, 230],      // bleu clair (très clair)
+  'Réception soir': [30, 144, 255],        // bleu soutenu (DodgerBlue)
+  'Night': [0, 0, 0],                      // noir
+  'Présence': [238, 130, 238],             // violet
+  'Housekeeping Chambre': [144, 238, 144], // vert clair
+  'Housekeeping Communs': [0, 128, 0],     // vert foncé
+  'Petit Déjeuner': [255, 255, 102],       // jaune vif
+  'Extra': [216, 191, 216],                // mauve
+  'CP': [255, 182, 193],                   // rose clair
+  'Maladie': [255, 99, 71],                // rouge
+  'Injustifié': [255, 165, 0],             // orange
+  'Repos': [220, 220, 220],                // gris clair
+  'Les Voiles': [0, 0, 0],                 // noir (texte blanc)
+  'École': [102, 205, 170],                // vert menthe
+};
+
+
 
   const abbreviateShift = (shift) => {
-    switch (shift) {
-      case 'Réception matin': return 'RM';
-      case 'Réception soir': return 'RS';
-      case 'Night': return 'N';
-      case 'Présence': return 'P';
-      case 'Housekeeping Chambre': return 'HC';
-      case 'Housekeeping Communs': return 'HCo';
-      case 'Petit Déjeuner': return 'PD';
-      case 'Extra': return 'E';
-      case 'CP': return 'CP';
-      case 'Maladie': return 'M';
-      case 'Injustifié': return 'I';
-      case 'Repos': return 'R';
-      case 'Les Voiles': return 'LV';
-      default: return '';
-    }
-  };
+  switch (shift) {
+    case 'Réception matin': return 'RM';
+    case 'Réception soir': return 'RS';
+    case 'Night': return 'N';
+    case 'Présence': return 'P';
+    case 'Housekeeping Chambre': return 'HC';
+    case 'Housekeeping Communs': return 'HCo';
+    case 'Petit Déjeuner': return 'PD';
+    case 'Extra': return 'E';
+    case 'CP': return 'CP';
+    case 'Maladie': return 'M';
+    case 'Injustifié': return 'I';
+    case 'Repos': return 'R';
+    case 'Les Voiles': return 'LV';
+    case 'École': return 'ECO'; // nouveau
+    default: return '';
+  }
+};
+
 
   // PAGE 1 - Récapitulatif
-  const userStats = users.map(user => {
-    const entries = entriesForMonth.filter(e => e.user_id === user.id_auth);
-    let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0;
+  // Utiliser le même ordre que l'affichage du planning
 
-    for (const entry of entries) {
-      if (!['Repos', 'CP', 'Maladie', 'Injustifié'].includes(entry.shift)) {
-        workedDays++;
-        if (entry.start_time && entry.end_time) {
-          const [sh, sm] = entry.start_time.split(":").map(Number);
-          const [eh, em] = entry.end_time.split(":").map(Number);
-          let minutes = (eh * 60 + em) - (sh * 60 + sm);
-          if (minutes < 0) minutes += 24 * 60;
-          workedHours += minutes / 60;
-        }
-      }
-      if (entry.shift === 'CP') cp++;
-      if (entry.shift === 'Maladie') maladie++;
-      if (entry.shift === 'Injustifié') injustifie++;
-    }
+  const userStats = exportUsers.map(user => {
+  const uEnd = parseYMD(user.employment_end_date);
+  const uStart = user.employment_start_date ? new Date(user.employment_start_date) : null;
 
-    return {
-      nom: user.name || user.email,
-      workedDays,
-      workedHours: Math.round(workedHours * 100) / 100,
-      cp,
-      maladie,
-      injustifie,
-    };
+  // Entries du mois ET dans la fenêtre de contrat
+  const entries = entriesForMonth.filter(e => {
+    if (e.user_id !== user.id_auth) return false;
+    const d = new Date(e.date);
+    if (uStart && d < uStart) return false;
+    if (uEnd && d > uEnd) return false;
+    return true;
   });
+
+  let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0;
+
+  for (const entry of entries) {
+    if (!['Repos', 'CP', 'Maladie', 'Injustifié', 'École'].includes(entry.shift)) {
+      workedDays++;
+      if (entry.start_time && entry.end_time) {
+        const [sh, sm] = entry.start_time.split(":").map(Number);
+        const [eh, em] = entry.end_time.split(":").map(Number);
+        let minutes = (eh * 60 + em) - (sh * 60 + sm);
+        if (minutes < 0) minutes += 24 * 60;
+        workedHours += minutes / 60;
+      }
+    }
+    if (entry.shift === 'CP') cp++;
+    if (entry.shift === 'Maladie') maladie++;
+    if (entry.shift === 'Injustifié') injustifie++;
+  }
+
+  return {
+    nom: user.name || user.email,
+    workedDays,
+    workedHours: Math.round(workedHours * 100) / 100,
+    cp,
+    maladie,
+    injustifie,
+  };
+});
+
 
   doc.setFontSize(14);
   doc.text(`Récapitulatif du mois ${month + 1}/${year}`, 40, 40);
@@ -509,15 +560,27 @@ const exportPDF = () => {
   doc.addPage('a4', 'landscape');
   const daysInMonth = Array.from({ length: end.getDate() }, (_, i) => i + 1);
 
-  const planningTable = users.map(user => {
-    const row = [user.name || user.email];
-    for (let d = 1; d <= daysInMonth.length; d++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const entry = entriesForMonth.find(e => e.user_id === user.id_auth && e.date === dateStr);
-      row.push(entry ? abbreviateShift(entry.shift) : '');
+  const planningTable = exportUsers.map(user => {
+  const row = [user.name || user.email];
+  const uEnd = parseYMD(user.employment_end_date);
+  const uStart = user.employment_start_date ? new Date(user.employment_start_date) : null;
+
+  for (let d = 1; d <= daysInMonth.length; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const day = new Date(year, month, d, 12, 0, 0);
+
+    // hors fenêtre de contrat -> vide
+    if ((uStart && day < uStart) || (uEnd && day > uEnd)) {
+      row.push('');
+      continue;
     }
-    return row;
-  });
+
+    const entry = entriesForMonth.find(e => e.user_id === user.id_auth && e.date === dateStr);
+    row.push(entry ? abbreviateShift(entry.shift) : '');
+  }
+  return row;
+});
+
 
   
 
@@ -791,8 +854,7 @@ useEffect(() => {
 
 useEffect(() => {
   if (hotelId) loadInitialData();
-  // eslint-disable-next-line
-}, [hotelId]);
+}, [hotelId, currentWeekStart]);
 
 
 useEffect(() => {
@@ -876,14 +938,26 @@ const loadInitialData = async () => {
         .eq('status', 'published');
 
   const [usersRes, configRes, entriesRes, cpRes, defaultShiftsRes] = await Promise.all([
-    supabase.from('users').select('*').eq('hotel_id', hotelId),
-    supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
-    entriesQuery,
-    supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
-    supabase.from('default_shift_hours').select('*'),
-  ]);
+  supabase.from('users').select(`
+    id_auth,
+    name,
+    email,
+    hotel_id,
+    role,
+    ordre,
+    employment_start_date,
+    employment_end_date,
+    active
+  `).eq('hotel_id', hotelId),
+  supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
+  entriesQuery,
+  supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
+  supabase.from('default_shift_hours').select('*'),
+]);
+
 
   const usersData = usersRes.data || [];
+  console.log("usersData", usersData);
   const configData = configRes.data || [];
   const entriesData = entriesRes.data || [];
   const cpData = cpRes.data || [];
@@ -893,23 +967,67 @@ const loadInitialData = async () => {
   const safeEntries = isAdmin ? entriesData : entriesData.filter(e => e.status === 'published');
 
   const usersWithOrder = usersData.map(u => {
-    const conf = configData.find(c => c.user_id === u.id_auth);
-    return { ...u, ordre: conf?.ordre ?? 9999 };
+  const conf = configData.find(c => c.user_id === u.id_auth);
+  return { ...u, ordre: conf?.ordre ?? 9999 };
+});
+
+// 🔧 Filtrer les salariés visibles selon leur contrat
+const weekStart = startOfWeek(currentWeekStart, { weekStartsOn: 1 });
+const weekEnd   = addDays(weekStart, 6);
+
+function parseYMD(str: string | null): Date | null {
+  if (!str) return null;
+  const [y,m,d] = str.split("-").map(Number);
+  return new Date(y, m-1, d, 23, 59, 59); // fin de journée locale
+}
+
+const usersVisibleForWeek = usersWithOrder.filter((u) => {
+  const end = parseYMD(u.employment_end_date); // on ignore start pour ne pas couper l'historique
+
+  // bornes de la semaine affichée
+  const weekStart = new Date(currentWeekStart);
+  const weekEnd   = addDays(weekStart, 6);
+  weekStart.setHours(0,0,0,0);
+  weekEnd.setHours(23,59,59,999);
+
+  // 1) s'il a AU MOINS un shift cette semaine -> toujours visible (historique prioritaire)
+  const hasEntriesThisWeek = (entriesData || []).some(e => {
+    if (e.user_id !== u.id_auth) return false;
+    const d = new Date(e.date);
+    return d >= weekStart && d <= weekEnd;
+  });
+  if (hasEntriesThisWeek) return true;
+
+  // 2) sinon, on n'applique que la date de FIN pour masquer après clôture
+  if (end && end < weekStart) return false;
+
+  return true;
+});
+
+
+
+
+
+
+
+
+
+
+const serviceRows = configData
+  .filter(c => c.service_id && c.hotel_id === hotelId)
+  .map((conf, i) => {
+    const srvStatic = SERVICE_ROWS.find(s => s.id === conf.service_id);
+    return {
+      ...srvStatic,
+      ...conf,
+      id: conf.service_id,
+      ordre: conf.ordre ?? i
+    };
   });
 
-  const serviceRows = configData
-    .filter(c => c.service_id && c.hotel_id === hotelId)
-    .map((conf, i) => {
-      const srvStatic = SERVICE_ROWS.find(s => s.id === conf.service_id);
-      return {
-        ...srvStatic,
-        ...conf,
-        id: conf.service_id,
-        ordre: conf.ordre ?? i
-      };
-    });
+// ✅ On ne garde que les users visibles
+const allRows = [...serviceRows, ...usersVisibleForWeek].sort((a, b) => a.ordre - b.ordre);
 
-  const allRows = [...serviceRows, ...usersWithOrder].sort((a, b) => a.ordre - b.ordre);
 
   const defaultsMap: Record<string, {start:string; end:string}> = {};
   defaultShiftData.forEach(d => {

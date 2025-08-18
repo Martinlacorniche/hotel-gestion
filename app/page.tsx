@@ -92,6 +92,62 @@ const [newUser, setNewUser] = useState<{
 });
 const [showUsersList, setShowUsersList] = useState(false);
 const [users, setUsers] = useState<any[]>([]);
+// Modal "Clôturer"
+const [closeModal, setCloseModal] = useState<{
+  open: boolean;
+  user: any | null;
+  date: string;
+}>({ open: false, user: null, date: new Date().toISOString().slice(0,10) });
+
+const openCloseModal = (u: any) => {
+  setCloseModal({
+    open: true,
+    user: u,
+    date: new Date().toISOString().slice(0,10),
+  });
+};
+
+const doCloseUser = async () => {
+  if (!closeModal.user || !closeModal.date) return;
+  const u = closeModal.user;
+
+  const { error: upErr } = await supabase
+    .from('users')
+    .update({ active: false, employment_end_date: closeModal.date })
+    .eq('id_auth', u.id_auth);
+  if (upErr) { alert("Erreur clôture : " + upErr.message); return; }
+
+  const { error: banErr } = await supabase.rpc('ban_user', { p_user_id: u.id_auth });
+  if (banErr) { alert("Erreur ban : " + banErr.message); return; }
+
+  setUsers(prev => prev.map(x =>
+    x.id_auth === u.id_auth ? { ...x, active:false, employment_end_date: closeModal.date } : x
+  ));
+
+  setCloseModal({ open:false, user:null, date:new Date().toISOString().slice(0,10) });
+  alert("Salarié clôturé ✅");
+};
+
+const reactivateUser = async (u: any) => {
+  // On NE TOUCHE PAS à employment_start_date pour préserver l’historique
+  const { error: upErr } = await supabase
+    .from('users')
+    .update({ active: true, employment_end_date: null })
+    .eq('id_auth', u.id_auth);
+  if (upErr) { alert("Erreur réactivation : " + upErr.message); return; }
+
+  const { error: unbanErr } = await supabase.rpc('unban_user', { p_user_id: u.id_auth });
+  if (unbanErr) { alert("Erreur unban : " + unbanErr.message); return; }
+
+  setUsers(prev => prev.map(x =>
+    x.id_auth === u.id_auth ? { ...x, active: true, employment_end_date: null } : x
+  ));
+
+  alert("Utilisateur réactivé ✅");
+};
+
+
+
 const [editIndex, setEditIndex] = useState<number | null>(null);
 const [editObjetIndex, setEditObjetIndex] = useState<number | null>(null);
 const [ticketsLoading, setTicketsLoading] = useState(false);
@@ -1692,27 +1748,82 @@ const consignesVisibles = useMemo(() => {
                 ))}
               </select>
 
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={async () => {
-                  const userToDelete = users[idx];
-                  const { error } = await supabase.from('users').delete().eq('id_auth', userToDelete.id_auth);
-                  if (error) {
-                    console.error('Erreur suppression utilisateur :', error.message);
-                  } else {
-                    const updated = users.filter((u) => u.id_auth !== userToDelete.id_auth);
-                    setUsers(updated);
-                  }
-                }}
-              >
-                Supprimer
-              </Button>
+             {(() => {
+  const isClosed =
+    (u.active === false) ||
+    (u.employment_end_date && new Date(u.employment_end_date) < new Date());
+
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className={`text-xs px-2 py-1 rounded ${
+          isClosed ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+        }`}
+      >
+        {isClosed ? 'Clôturé' : 'Actif'}
+      </span>
+
+      {!isClosed ? (
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => openCloseModal(u)}
+        >
+          Clôturer
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => reactivateUser(u)}
+        >
+          Réactiver
+        </Button>
+      )}
+    </div>
+  );
+})()}
+
+
             </div>
           </div>
         ))}
       </div>
     )}
+  </div>
+)}
+
+{closeModal.open && (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-md space-y-4">
+      <h2 className="text-lg font-semibold">Clôturer un salarié</h2>
+      <div className="text-sm text-gray-600">
+        Salarié : <span className="font-medium">{closeModal.user?.name || closeModal.user?.email}</span>
+      </div>
+
+      <label className="block text-sm font-medium">Date de fin de contrat</label>
+      <input
+        type="date"
+        className="w-full border rounded px-3 py-2"
+        value={closeModal.date}
+        onChange={e => setCloseModal(m => ({ ...m, date: e.target.value }))}
+      />
+
+      <div className="flex justify-end gap-2 pt-2">
+        <button
+          className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 shadow font-semibold"
+          onClick={() => setCloseModal({ open:false, user:null, date:new Date().toISOString().slice(0,10) })}
+        >
+          Annuler
+        </button>
+        <button
+          className="px-4 py-2 rounded-xl bg-red-600 text-white shadow font-semibold"
+          onClick={doCloseUser}
+        >
+          Clôturer
+        </button>
+      </div>
+    </div>
   </div>
 )}
 
