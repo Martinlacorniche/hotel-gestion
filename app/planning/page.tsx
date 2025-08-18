@@ -104,28 +104,12 @@ const handlePublish = async () => {
     return;
   }
 
-  // 2) Supprimer les "published" existants sur le même périmètre
-  {
-    const { error: delErr } = await supabase
-      .from('planning_entries')
-      .delete()
-      .eq('hotel_id', hotelId)
-      .eq('status', 'published')
-      .in('user_id', publishSelectedUserIds)
-      .lte('date', publishUntil);
-    if (delErr) {
-      toast.error("Erreur suppression des entrées publiées");
-      return;
-    }
-  }
-
-  // 3) Dédupliquer les drafts -> un seul par (hotel_id,user_id,date)
-  //    On garde le plus "récent" si created_at existe
+  // 2) Dédupliquer les drafts -> un seul par (hotel_id,user_id,date)
   const pickLatest = (a: any, b: any) => {
     if (a?.created_at && b?.created_at) {
       return new Date(a.created_at) >= new Date(b.created_at) ? a : b;
     }
-    return b; // à défaut, on écrase par le dernier rencontré
+    return b;
   };
 
   const map = new Map<string, any>();
@@ -140,12 +124,11 @@ const handlePublish = async () => {
     published_at: new Date().toISOString(),
   }));
 
-  // 4) Upsert (clé unique: hotel_id,user_id,date,status)
+  // 3) Upsert sans suppression
   const { error: insErr } = await supabase
     .from('planning_entries')
     .upsert(toPublish, {
       onConflict: ['hotel_id','user_id','date','status'],
-      ignoreDuplicates: true, // optionnel, au cas où
     });
 
   if (insErr) {
@@ -154,23 +137,23 @@ const handlePublish = async () => {
     return;
   }
 
-  // 5) Supprimer les drafts désormais publiés
-  {
-    const { error: delDraftsErr } = await supabase
-      .from('planning_entries')
-      .delete()
-      .eq('hotel_id', hotelId)
-      .eq('status', 'draft')
-      .in('user_id', publishSelectedUserIds)
-      .lte('date', publishUntil);
-    if (delDraftsErr) {
-      console.warn('Suppression de brouillons échouée', delDraftsErr);
-    }
+  // 4) Supprimer uniquement les drafts désormais publiés
+  const { error: delDraftsErr } = await supabase
+    .from('planning_entries')
+    .delete()
+    .eq('hotel_id', hotelId)
+    .eq('status', 'draft')
+    .in('user_id', publishSelectedUserIds)
+    .lte('date', publishUntil);
+
+  if (delDraftsErr) {
+    console.warn('Suppression de brouillons échouée', delDraftsErr);
   }
 
   await reloadEntries();
   toast.success("Publication effectuée ✅");
 };
+
 
 
 
