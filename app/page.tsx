@@ -582,6 +582,20 @@ const validerDemande = async (index: number) => {
   updated[index].date_validation = date_validation;
   setDemandes(updated);
 };
+const deleteDemande = async (id: string) => {
+  const { error } = await supabase
+    .from('demandes')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Erreur suppression demande :', error.message);
+    return;
+  }
+
+  // MAJ locale (on enlève la demande supprimée)
+  setDemandes((prev) => prev.filter((d) => d.id !== id));
+};
 
 
   const createTaxi = () => {
@@ -1200,13 +1214,13 @@ const consignesVisibles = useMemo(() => {
     `}
   >
     <span className="text-xs">{d.type} - #{d.chambre} à {d.heure?.slice(0, 5)}</span>
+
     <div className="flex items-center gap-2">
       <select
         className="text-sm border rounded px-2 py-1"
         value={d.statut || 'À prévoir'}
         onChange={async (e) => {
           const newStatut = e.target.value;
-
           const { error } = await supabase
             .from('demandes')
             .update({ statut: newStatut })
@@ -1217,9 +1231,9 @@ const consignesVisibles = useMemo(() => {
             return;
           }
 
+          // Mise à jour locale par id
           const realIndex = demandes.findIndex(dd => dd.id === d.id);
           if (realIndex === -1) return;
-
           const updated = [...demandes];
           updated[realIndex].statut = newStatut;
           setDemandes(updated);
@@ -1229,9 +1243,23 @@ const consignesVisibles = useMemo(() => {
         <option value="Prévu">Prévu</option>
         <option value="Fait">Fait</option>
       </select>
+
+      {/* 🗑️ Bouton suppression */}
+      <button
+        className="text-sm px-2 py-1 border rounded hover:bg-red-50"
+        title="Supprimer"
+        onClick={() => {
+          if (confirm('Supprimer cette demande ?')) {
+            deleteDemande(d.id);
+          }
+        }}
+      >
+        🗑️
+      </button>
     </div>
   </div>
 ))}
+
 
 
               </div>
