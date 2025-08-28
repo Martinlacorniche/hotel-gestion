@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import { addDays, format, startOfWeek, isWithinInterval, differenceInCalendarDays } from 'date-fns';
@@ -84,38 +84,44 @@ const [showMyCpModal, setShowMyCpModal] = useState(false);
 const [hasSeenMyCpNotif, setHasSeenMyCpNotif] = useState(false);
 const [showPublishModal, setShowPublishModal] = useState(false);
 const [publishSelectedUserIds, setPublishSelectedUserIds] = useState<string[]>([]);
+const [publishFrom, setPublishFrom] = useState<string>('');
 const [publishUntil, setPublishUntil] = useState<string>(''); // yyyy-MM-dd
+const lastLoadId = useRef(0);
+const lastReloadId = useRef(0);
 
 
 const handlePublish = async () => {
-  if (!publishUntil || publishSelectedUserIds.length === 0 || !hotelId) return;
+  if (publishSelectedUserIds.length === 0 || !hotelId) return;
 
-  // 1) Lire tous les drafts à publier
-  const { data: drafts, error: draftsErr } = await supabase
+  // 1) Construire la requête de lecture des drafts à publier
+  let q = supabase
     .from('planning_entries')
     .select('*')
     .eq('hotel_id', hotelId)
     .eq('status', 'draft')
-    .in('user_id', publishSelectedUserIds)
-    .lte('date', publishUntil);
+    .in('user_id', publishSelectedUserIds);
+
+  if (publishFrom) q = q.gte('date', publishFrom);   // borne de début (optionnelle)
+  if (publishUntil) q = q.lte('date', publishUntil); // borne de fin (optionnelle)
+
+  const { data: drafts, error: draftsErr } = await q;
 
   if (draftsErr) {
     toast.error("Erreur lecture brouillons");
     return;
   }
   if (!drafts || drafts.length === 0) {
-    toast('Aucun brouillon à publier avant cette date.');
+    toast('Aucun brouillon à publier dans cette plage.');
     return;
   }
 
-  // 2) Dédupliquer les drafts -> un seul par (hotel_id,user_id,date)
+  // 2) Dédupliquer (dernier créé) -> un seul par (hotel_id,user_id,date)
   const pickLatest = (a: any, b: any) => {
     if (a?.created_at && b?.created_at) {
       return new Date(a.created_at) >= new Date(b.created_at) ? a : b;
     }
     return b;
   };
-
   const map = new Map<string, any>();
   for (const d of drafts) {
     const key = `${d.hotel_id}|${d.user_id}|${d.date}|published`;
@@ -128,11 +134,11 @@ const handlePublish = async () => {
     published_at: new Date().toISOString(),
   }));
 
-  // 3) Upsert sans suppression
+  // 3) Upsert des publiées
   const { error: insErr } = await supabase
     .from('planning_entries')
     .upsert(toPublish, {
-      onConflict: ['hotel_id','user_id','date','status'],
+      onConflict: ['hotel_id', 'user_id', 'date', 'status'],
     });
 
   if (insErr) {
@@ -141,15 +147,18 @@ const handlePublish = async () => {
     return;
   }
 
-  // 4) Supprimer uniquement les drafts désormais publiés
-  const { error: delDraftsErr } = await supabase
+  // 4) Suppression des drafts publiés (avec mêmes bornes dynamiques)
+  let del = supabase
     .from('planning_entries')
     .delete()
     .eq('hotel_id', hotelId)
     .eq('status', 'draft')
-    .in('user_id', publishSelectedUserIds)
-    .lte('date', publishUntil);
+    .in('user_id', publishSelectedUserIds);
 
+  if (publishFrom) del = del.gte('date', publishFrom);
+  if (publishUntil) del = del.lte('date', publishUntil);
+
+  const { error: delDraftsErr } = await del;
   if (delDraftsErr) {
     console.warn('Suppression de brouillons échouée', delDraftsErr);
   }
@@ -157,6 +166,7 @@ const handlePublish = async () => {
   await reloadEntries();
   toast.success("Publication effectuée ✅");
 };
+
 
 
 
@@ -212,12 +222,21 @@ const hotelId = selectedHotelId || user?.hotel_id || '';
 
 const reloadEntries = async () => {
   if (!hotelId) return;
+
+  const myReloadId = ++lastReloadId.current; // 👈 garde anti-race
+
   const q = isAdmin
     ? supabase.from('planning_entries').select('*').eq('hotel_id', hotelId).in('status', ['draft','published'])
     : supabase.from('planning_entries').select('*').eq('hotel_id', hotelId).eq('status','published');
+
   const { data } = await q;
+
+  // On ignore si une nouvelle reload a démarré depuis
+  if (myReloadId !== lastReloadId.current) return;
+
   setPlanningEntries(data || []);
 };
+
 
 useEffect(() => {
   if (!isAdmin) {
@@ -926,7 +945,8 @@ const moveRow = async (index, direction) => {
 const loadInitialData = async () => {
   if (!hotelId || typeof hotelId !== "string" || hotelId.length < 10) return;
 
-  // ⚠️ On ne récupère les drafts du planning que pour les admins
+  const myLoadId = ++lastLoadId.current; // 👈 garde anti-race
+
   const entriesQuery = isAdmin
     ? supabase.from('planning_entries')
         .select('*')
@@ -938,108 +958,92 @@ const loadInitialData = async () => {
         .eq('status', 'published');
 
   const [usersRes, configRes, entriesRes, cpRes, defaultShiftsRes] = await Promise.all([
-  supabase.from('users').select(`
-    id_auth,
-    name,
-    email,
-    hotel_id,
-    role,
-    ordre,
-    employment_start_date,
-    employment_end_date,
-    active
-  `).eq('hotel_id', hotelId),
-  supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
-  entriesQuery,
-  supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
-  supabase.from('default_shift_hours').select('*'),
-]);
+    supabase.from('users').select(`
+      id_auth, name, email, hotel_id, role, ordre,
+      employment_start_date, employment_end_date, active
+    `).eq('hotel_id', hotelId),
+    supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
+    entriesQuery,
+    supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
+    supabase.from('default_shift_hours').select('*'),
+  ]);
 
+  // Si une autre load plus récente a démarré depuis, on abandonne ce résultat
+  if (myLoadId !== lastLoadId.current) return;
 
   const usersData = usersRes.data || [];
-  console.log("usersData", usersData);
   const configData = configRes.data || [];
   const entriesData = entriesRes.data || [];
   const cpData = cpRes.data || [];
   const defaultShiftData = defaultShiftsRes.data || [];
 
-  // ✅ Sécurisation supplémentaire : si jamais des drafts sont revenus, on les filtre côté employé
   const safeEntries = isAdmin ? entriesData : entriesData.filter(e => e.status === 'published');
 
   const usersWithOrder = usersData.map(u => {
-  const conf = configData.find(c => c.user_id === u.id_auth);
-  return { ...u, ordre: conf?.ordre ?? 9999 };
-});
+    const conf = configData.find(c => c.user_id === u.id_auth);
+    return { ...u, ordre: conf?.ordre ?? 9999 };
+  });
 
-// 🔧 Filtrer les salariés visibles selon leur contrat
-const weekStart = startOfWeek(currentWeekStart, { weekStartsOn: 1 });
-const weekEnd   = addDays(weekStart, 6);
-
-function parseYMD(str: string | null): Date | null {
-  if (!str) return null;
-  const [y,m,d] = str.split("-").map(Number);
-  return new Date(y, m-1, d, 23, 59, 59); // fin de journée locale
-}
-
-const usersVisibleForWeek = usersWithOrder.filter((u) => {
-  const end = parseYMD(u.employment_end_date); // on ignore start pour ne pas couper l'historique
-
-  // bornes de la semaine affichée
-  const weekStart = new Date(currentWeekStart);
+  // 🔧 bornes semaine + helpers à midi local (anti-flicker dates)
+  const weekStart = startOfWeek(currentWeekStart, { weekStartsOn: 1 });
   const weekEnd   = addDays(weekStart, 6);
-  weekStart.setHours(0,0,0,0);
-  weekEnd.setHours(23,59,59,999);
 
-  // 1) s'il a AU MOINS un shift cette semaine -> toujours visible (historique prioritaire)
-  const hasEntriesThisWeek = (entriesData || []).some(e => {
-    if (e.user_id !== u.id_auth) return false;
-    const d = new Date(e.date);
-    return d >= weekStart && d <= weekEnd;
-  });
-  if (hasEntriesThisWeek) return true;
+  function parseYMD(str: string | null): Date | null {
+    if (!str) return null;
+    const [y,m,d] = str.split("-").map(Number);
+    return new Date(y, m-1, d, 23, 59, 59);
+  }
+  const atNoon = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
+  const fromYMDNoon = (s: string) => {
+    const [y,m,d] = s.split('-').map(Number);
+    return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0, 0);
+  };
+  const weekStartNoon = atNoon(weekStart);
+  const weekEndNoon   = atNoon(weekEnd);
 
-  // 2) sinon, on n'applique que la date de FIN pour masquer après clôture
-  if (end && end < weekStart) return false;
+  // ✅ garde ta logique historique (ex-salariés visibles si shifts dans la semaine)
+  const usersVisibleForWeek = usersWithOrder.filter((u) => {
+    const end = parseYMD(u.employment_end_date);
 
-  return true;
-});
+    const hasEntriesThisWeek = (entriesData || []).some(e => {
+      if (e.user_id !== u.id_auth) return false;
+      const day = fromYMDNoon(e.date);
+      return day >= weekStartNoon && day <= weekEndNoon;
+    });
+    if (hasEntriesThisWeek) return true;
 
-
-
-
-
-
-
-
-
-
-const serviceRows = configData
-  .filter(c => c.service_id && c.hotel_id === hotelId)
-  .map((conf, i) => {
-    const srvStatic = SERVICE_ROWS.find(s => s.id === conf.service_id);
-    return {
-      ...srvStatic,
-      ...conf,
-      id: conf.service_id,
-      ordre: conf.ordre ?? i
-    };
+    if (end && end < weekStartNoon) return false;
+    return true;
   });
 
-// ✅ On ne garde que les users visibles
-const allRows = [...serviceRows, ...usersVisibleForWeek].sort((a, b) => a.ordre - b.ordre);
-
+  const serviceRows = configData
+    .filter(c => c.service_id && c.hotel_id === hotelId)
+    .map((conf, i) => {
+      const srvStatic = SERVICE_ROWS.find(s => s.id === conf.service_id);
+      return {
+        ...srvStatic,
+        ...conf,
+        id: conf.service_id,
+        ordre: conf.ordre ?? i
+      };
+    });
 
   const defaultsMap: Record<string, {start:string; end:string}> = {};
   defaultShiftData.forEach(d => {
     defaultsMap[d.shift_name] = { start: d.start_time, end: d.end_time };
   });
 
+  const allRows = [...serviceRows, ...usersVisibleForWeek]
+    .sort((a, b) => (a.ordre ?? 9999) - (b.ordre ?? 9999));
+
+  // ✅ Applique l’état (réponse la plus récente uniquement)
   setUsers(usersWithOrder);
-  setPlanningEntries(safeEntries); // ⬅️ Important
+  setPlanningEntries(safeEntries);
   setCpRequests(cpData);
   setRows(allRows);
   setDefaultHours(defaultsMap);
 };
+
 
 
 
@@ -1540,18 +1544,48 @@ return (
     <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-md space-y-4">
       <h2 className="text-xl font-semibold">Publier le planning</h2>
 
-      {/* Date limite */}
-      <div>
-        <label className="block text-sm font-medium mb-1">Publier jusqu’au</label>
-        <input
-          type="date"
-          className="w-full border rounded px-2 py-1"
-          value={publishUntil}
-          onChange={e => setPublishUntil(e.target.value)}
-        />
-        {publishUntil && (
-          <div className="text-xs text-gray-600 mt-1">
-            Toutes les entrées <span className="font-semibold">brouillon</span> jusqu’au <span className="font-semibold">{publishUntil}</span> seront publiées pour les salariés sélectionnés.
+      {/* Dates */}
+      <div className="grid gap-3">
+        <div>
+          <label className="block text-sm font-medium mb-1">Publier à partir du (optionnel)</label>
+          <input
+            type="date"
+            className="w-full border rounded px-2 py-1"
+            value={publishFrom}
+            onChange={e => setPublishFrom(e.target.value)}
+            placeholder="(vide = pas de borne de début)"
+          />
+          {!publishFrom && (
+            <div className="text-xs text-gray-500 mt-1">
+              Vide = pas de borne de début (on publie tout avant la date de fin si renseignée).
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">Publier jusqu’au (optionnel)</label>
+          <input
+            type="date"
+            className="w-full border rounded px-2 py-1"
+            value={publishUntil}
+            onChange={e => setPublishUntil(e.target.value)}
+          />
+          {!publishUntil && (
+            <div className="text-xs text-gray-500 mt-1">
+              Vide = pas de borne de fin (on publie tout après la date de début si renseignée, ou tout).
+            </div>
+          )}
+        </div>
+
+        {(publishFrom || publishUntil) ? (
+          <div className="text-xs text-gray-600">
+            Seront publiés : les brouillons{" "}
+            {publishFrom ? <>du <span className="font-semibold">{publishFrom}</span> </> : "de tout temps "}
+            {publishUntil ? <>jusqu’au <span className="font-semibold">{publishUntil}</span></> : "sans borne de fin"}.
+          </div>
+        ) : (
+          <div className="text-xs text-gray-600">
+            Aucune borne fournie : <span className="font-semibold">tous</span> les brouillons des salariés sélectionnés seront publiés.
           </div>
         )}
       </div>
@@ -1559,6 +1593,24 @@ return (
       {/* Sélection salariés */}
       <div>
         <label className="block text-sm font-medium mb-1">Salariés</label>
+
+        <div className="flex gap-2 mb-2">
+          <button
+            type="button"
+            className="px-3 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200"
+            onClick={() => setPublishSelectedUserIds(users.map(u => u.id_auth))}
+          >
+            Tout sélectionner
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200"
+            onClick={() => setPublishSelectedUserIds([])}
+          >
+            Tout désélectionner
+          </button>
+        </div>
+
         <div className="max-h-48 overflow-y-auto border rounded p-2 space-y-1">
           {users.map(u => (
             <label key={u.id_auth} className="flex items-center gap-2 text-sm">
@@ -1585,12 +1637,12 @@ return (
           Annuler
         </button>
         <button
-          className="px-4 py-2 rounded-xl bg-green-600 text-white shadow font-semibold"
+          className="px-4 py-2 rounded-xl bg-green-600 text-white shadow font-semibold disabled:opacity-50"
           onClick={async () => {
             await handlePublish();
             setShowPublishModal(false);
           }}
-          disabled={!publishUntil || publishSelectedUserIds.length === 0}
+          disabled={publishSelectedUserIds.length === 0}
         >
           Publier
         </button>
@@ -1598,6 +1650,7 @@ return (
     </div>
   </div>
 )}
+
 
 
       {showShiftModal && editingCell && (

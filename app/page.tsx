@@ -33,6 +33,8 @@ export default function HotelDashboard() {
   const { user: rawUser, logout, isLoading } = useAuth();
 const user = rawUser as CustomUser | null;
 const [showValidatedConsignes, setShowValidatedConsignes] = useState(false);
+const [showValidatedTickets, setShowValidatedTickets] = useState(false);
+
 
 
 const isAdmin = user?.role === 'admin';
@@ -646,10 +648,10 @@ const deleteDemande = async (id: string) => {
 
   if (error) {
     console.error('Erreur suppression demande :', error.message);
+    alert('Suppression impossible : ' + error.message); // 👈 visible
     return;
   }
 
-  // MAJ locale (on enlève la demande supprimée)
   setDemandes((prev) => prev.filter((d) => d.id !== id));
 };
 
@@ -809,17 +811,25 @@ const [editTicketIndex, setEditTicketIndex] = useState<number | null>(null);
 
       if (!actionDate || isNaN(actionDate.getTime())) return false;
       if (current < actionDate || current > endDate) return false;
-      if (!t.valide) return true;
-      return validationDate && current <= validationDate;
+
+      // 🔀 Même règle que consignes : si validé → n’afficher que si switch ON,
+      // et seulement jusqu’à la date de validation incluse
+      if (t.valide) {
+        if (!showValidatedTickets) return false;
+        return !!validationDate && current <= validationDate;
+      }
+
+      return true;
     })
     .filter((t) => filterService === 'Tous' || t.service === filterService);
 
+  // ✅ Tri : non validés d’abord, puis par date de création décroissante
   return visibles.sort((a, b) => {
-  // Priorité : non validé d'abord, puis par date de création décroissante
-  if (a.valide !== b.valide) return a.valide ? 1 : -1;
-  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-});
-}, [tickets, sortBy, filterService, selectedDate]);
+    if (a.valide !== b.valide) return a.valide ? 1 : -1;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+}, [tickets, filterService, selectedDate, showValidatedTickets]);
+
 
 
 
@@ -1129,21 +1139,52 @@ const consignesVisibles = useMemo(() => {
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold flex items-center gap-2">🎟️ To Do</h2>
-              <button className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md flex items-center gap-2 shadow-sm" onClick={() => {
-  setNewTicket({
-    titre: '',
-    service: 'Réception',
-    dateAction: formatDate(selectedDate, 'yyyy-MM-dd'), // ✅ prend la date du calendrier
-    priorite: 'Moyenne',
-    date_fin: ''
-  });
-  setEditTicketIndex(null);
-  setShowTicketModal(true);
-}}>
-                <PlusCircle className="w-4 h-4" /> Ajouter
-              </button>
-            </div>
+  <h2 className="text-lg font-bold flex items-center gap-2">🎟️ To Do</h2>
+
+  <div className="flex items-center gap-2">
+    {/* 🔀 Switch : afficher/masquer tickets validés */}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={showValidatedTickets}
+      onClick={() => setShowValidatedTickets(!showValidatedTickets)}
+      className="group flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800"
+      title="Afficher/Masquer les tickets validés"
+    >
+      <span className="whitespace-nowrap select-none">Afficher validés</span>
+      <span
+        className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${
+          showValidatedTickets ? "bg-indigo-600" : "bg-gray-300"
+        }`}
+      >
+        <span
+          className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+            showValidatedTickets ? "translate-x-4" : "translate-x-1"
+          }`}
+        />
+      </span>
+    </button>
+
+    {/* Bouton Ajouter existant */}
+    <button
+      className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md flex items-center gap-2 shadow-sm"
+      onClick={() => {
+        setNewTicket({
+          titre: '',
+          service: 'Réception',
+          dateAction: formatDate(selectedDate, 'yyyy-MM-dd'),
+          priorite: 'Moyenne',
+          date_fin: ''
+        });
+        setEditTicketIndex(null);
+        setShowTicketModal(true);
+      }}
+    >
+      <PlusCircle className="w-4 h-4" /> Ajouter
+    </button>
+  </div>
+</div>
+
             <div className="flex flex-col gap-3 mb-3">
               <div className="flex items-center gap-2">
                
