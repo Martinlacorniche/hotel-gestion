@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { format, parseISO, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isWithinInterval } from "date-fns";
+import { format, parseISO, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isWithinInterval, isAfter, isBefore, isValid } from "date-fns";
 
 export default function ParkingPage() {
   const [parkings, setParkings] = useState([]);
@@ -50,25 +50,35 @@ export default function ParkingPage() {
   }
 
   async function handleReservation() {
-    if (!selectedParking || !clientName || !startDate || !endDate) {
-      setMessage("Tous les champs sont obligatoires.");
-      return;
-    }
+  if (!selectedParking || !clientName || !startDate || !endDate) {
+    setMessage("Tous les champs sont obligatoires.");
+    return;
+  }
 
-    const overlapping = reservations.some(r => {
-      if (editingId && r.id === editingId) return false;
-      return (
-        r.parking_id === selectedParking &&
-        ((startDate >= r.start_date && startDate <= r.end_date) ||
-         (endDate >= r.start_date && endDate <= r.end_date) ||
-         (startDate <= r.start_date && endDate >= r.end_date))
-      );
-    });
+  const s = parseISO(startDate);
+  const e = parseISO(endDate);
+  if (!isValid(s) || !isValid(e) || isAfter(s, e)) {
+    setMessage("Dates invalides (début > fin ?).");
+    return;
+  }
 
-    if (overlapping) {
-      setMessage("❌ Déjà réservé sur cette période.");
-      return;
-    }
+  const overlapping = reservations.some((r) => {
+    if (editingId && r.id === editingId) return false;
+    if (r.parking_id !== selectedParking) return false;
+    if (!r.start_date || !r.end_date) return false; // ignore données sales
+
+    const rs = parseISO(r.start_date);
+    const re = parseISO(r.end_date);
+    if (!isValid(rs) || !isValid(re)) return false;
+
+    // Chevauchement si s <= re && e >= rs (bornes inclusives)
+    return !(isAfter(s, re) || isBefore(e, rs));
+  });
+
+  if (overlapping) {
+    setMessage("❌ Déjà réservé sur cette période.");
+    return;
+  }
 
     if (editingId) {
       const { error } = await supabase
@@ -230,9 +240,10 @@ function hideTip() {
 
           {monthDays.map(day => {
             const r = reservations.find(r =>
-              r.parking_id === p.id &&
-              isWithinInterval(day, { start: parseISO(r.start_date), end: parseISO(r.end_date) })
-            );
+  r.parking_id === p.id &&
+  r.start_date && r.end_date && // garde-fou
+  isWithinInterval(day, { start: parseISO(r.start_date), end: parseISO(r.end_date) })
+);
             const isStart = r && isSameDay(day, parseISO(r.start_date));
             const isEnd   = r && isSameDay(day, parseISO(r.end_date));
 

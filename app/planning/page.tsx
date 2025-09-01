@@ -223,19 +223,36 @@ const hotelId = selectedHotelId || user?.hotel_id || '';
 const reloadEntries = async () => {
   if (!hotelId) return;
 
-  const myReloadId = ++lastReloadId.current; // 👈 garde anti-race
+  const myReloadId = ++lastReloadId.current; // garde anti-race
+
+  // 🔧 même logique admin/non-admin + tri par date
+  const base = supabase
+    .from('planning_entries')
+    .select('*')
+    .eq('hotel_id', hotelId)
+    .order('date', { ascending: true });
 
   const q = isAdmin
-    ? supabase.from('planning_entries').select('*').eq('hotel_id', hotelId).in('status', ['draft','published'])
-    : supabase.from('planning_entries').select('*').eq('hotel_id', hotelId).eq('status','published');
+    ? base.in('status', ['draft', 'published'])
+    : base.eq('status', 'published');
 
-  const { data } = await q;
+  const { data, error } = await q;
+  if (error) {
+    console.error('reloadEntries error:', error.message);
+    return;
+  }
 
-  // On ignore si une nouvelle reload a démarré depuis
+  // abandon si un reload plus récent a démarré depuis
   if (myReloadId !== lastReloadId.current) return;
 
-  setPlanningEntries(data || []);
+  // Patch B (anti-écrasement, voir étape 2) — si tu veux l’activer aussi ici :
+  setPlanningEntries(prev => {
+    const next = data || [];
+    if (prev?.length && next.length < prev.length) return prev;
+    return next;
+  });
 };
+
 
 
 useEffect(() => {
@@ -272,6 +289,8 @@ const entriesView = useMemo(
   () => (isAdmin ? planningEntries : planningEntries.filter(e => e.status === 'published')),
   [planningEntries, isAdmin]
 );
+
+
   const [showCpAdminModal, setShowCpAdminModal] = useState(false);
   const [showAllCp, setShowAllCp] = useState(false);
 const [showCpModal, setShowCpModal] = useState(false);
@@ -789,7 +808,19 @@ const visibleRequests = showAllCp
       r.status === 'pending' &&
       new Date(r.end_date) >= new Date(new Date().setHours(0, 0, 0, 0))
     );
+useEffect(() => {
+  // log minimal pour détecter l'écrasement
+  const ymd = weekDates.map(d => format(d, 'yyyy-MM-dd'));
+  const louane = users.find(u => u.name?.toLowerCase().includes('louane'));
+  if (!louane) return;
 
+  const have = planningEntries
+    .filter(e => e.user_id === louane.id_auth && ymd.includes(e.date))
+    .map(e => `${e.date}:${e.shift}/${e.status}`)
+    .sort();
+
+  console.log('[DEBUG] Louane week entries in state:', have);
+}, [planningEntries, users, weekDates]);
 
   const calculateDuration = (start, end) => {
   if (!start || !end) return '0h00';
@@ -948,14 +979,17 @@ const loadInitialData = async () => {
   const myLoadId = ++lastLoadId.current; // 👈 garde anti-race
 
   const entriesQuery = isAdmin
-    ? supabase.from('planning_entries')
-        .select('*')
-        .eq('hotel_id', hotelId)
-        .in('status', ['draft', 'published'])
-    : supabase.from('planning_entries')
-        .select('*')
-        .eq('hotel_id', hotelId)
-        .eq('status', 'published');
+  ? supabase.from('planning_entries')
+      .select('*')
+      .eq('hotel_id', hotelId)
+      .in('status', ['draft', 'published'])
+      .order('date', { ascending: true })
+  : supabase.from('planning_entries')
+      .select('*')
+      .eq('hotel_id', hotelId)
+      .eq('status', 'published')
+      .order('date', { ascending: true });
+
 
   const [usersRes, configRes, entriesRes, cpRes, defaultShiftsRes] = await Promise.all([
     supabase.from('users').select(`
@@ -1038,7 +1072,13 @@ const loadInitialData = async () => {
 
   // ✅ Applique l’état (réponse la plus récente uniquement)
   setUsers(usersWithOrder);
-  setPlanningEntries(safeEntries);
+  setPlanningEntries(prev => {
+  const next = safeEntries || [];
+  // Évite d’écraser un state plus "rempli" par une réponse partielle/rétrograde
+  if (prev?.length && next.length < prev.length) return prev;
+  return next;
+});
+
   setCpRequests(cpData);
   setRows(allRows);
   setDefaultHours(defaultsMap);
