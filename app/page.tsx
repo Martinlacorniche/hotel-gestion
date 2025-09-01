@@ -1868,7 +1868,18 @@ const consignesVisibles = useMemo(() => {
   </div>
 )}
 
-
+{/* Lien Play Store */}
+<div className="mt-8 flex justify-center">
+  <a
+    href="https://play.google.com/store/apps/details?id=com.martinvitte.hotelstoulonborddemer&utm_source=emea_Med"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <Button className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 text-lg shadow-lg rounded-xl">
+      App Android
+    </Button>
+  </a>
+</div>
     
 </div>
   );
