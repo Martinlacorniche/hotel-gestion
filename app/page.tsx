@@ -1656,58 +1656,62 @@ const objetsVisibles = useMemo(() => {
         </div>
       )}
 
-    
-
-  <div className="mt-8 mb-1 flex items-center justify-between w-full">
-  {/* gauche : recherche + switch */}
-  <div className="flex items-center gap-2">
-    <input
-      className="border rounded px-2 py-1 text-sm"
-      placeholder="Rechercher (objet, nom, chambre)"
-      value={searchObjets}
-      onChange={(e) => setSearchObjets(e.target.value)}
-    />
-
-    <button
-      type="button"
-      role="switch"
-      aria-checked={showAllObjets}
-      onClick={() => setShowAllObjets((v) => !v)}
-      className="group flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800"
-      title="Afficher tous les objets"
-    >
-      <span className="whitespace-nowrap select-none">Tout afficher</span>
-      <span
-        className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${
-          showAllObjets ? 'bg-indigo-600' : 'bg-gray-300'
-        }`}
-      >
-        <span
-          className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-            showAllObjets ? 'translate-x-4' : 'translate-x-1'
-          }`}
-        />
-      </span>
-    </button>
+   <div className="mt-8">
+  <div className="flex justify-between items-center mb-2">
+    <h2 className="text-lg font-bold">🧳 Objets trouvés</h2>
   </div>
 
-  {/* droite : LHOST + Ajouter */}
-  <div className="flex items-center gap-2">
-    <a
-      href="https://resort.mylhost.com/login"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-orange-500 font-bold border border-orange-400 rounded px-3 py-1 text-xs hover:bg-orange-50 transition"
-    >
-      LHOST
-    </a>
+  <div className="mb-4 flex items-center justify-between w-full">
+    {/* gauche : recherche + switch */}
+    <div className="flex items-center gap-2">
+      <input
+        className="border rounded px-2 py-1 text-sm"
+        placeholder="Rechercher (objet, nom, chambre)"
+        value={searchObjets}
+        onChange={(e) => setSearchObjets(e.target.value)}
+      />
 
-    <button
-      onClick={() => setShowObjetModal(true)}
-      className="bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-2 rounded-md flex items-center gap-2 shadow-sm"
-    >
-      <PlusCircle className="w-4 h-4" /> Ajouter
-    </button>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={showAllObjets}
+        onClick={() => setShowAllObjets((v) => !v)}
+        className="group flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800"
+        title="Afficher tous les objets"
+      >
+        <span className="whitespace-nowrap select-none">Tout afficher</span>
+        <span
+          className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${
+            showAllObjets ? 'bg-indigo-600' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+              showAllObjets ? 'translate-x-4' : 'translate-x-1'
+            }`}
+          />
+        </span>
+      </button>
+    </div>
+
+    {/* droite : LHOST + Ajouter */}
+    <div className="flex items-center gap-2">
+      <a
+        href="https://resort.mylhost.com/login"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-orange-500 font-bold border border-orange-400 rounded px-3 py-1 text-xs hover:bg-orange-50 transition"
+      >
+        LHOST
+      </a>
+
+      <button
+        onClick={() => setShowObjetModal(true)}
+        className="bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-2 rounded-md flex items-center gap-2 shadow-sm"
+      >
+        <PlusCircle className="w-4 h-4" /> Ajouter
+      </button>
+    </div>
   </div>
 </div>
 
