@@ -81,7 +81,8 @@ export default function PlanningPage() {
   const { user, isLoading } = useAuth();
   const isAdmin = user?.role === 'admin';
 const [showMyCpModal, setShowMyCpModal] = useState(false);
-const [hasSeenMyCpNotif, setHasSeenMyCpNotif] = useState(false);
+
+
 const [showPublishModal, setShowPublishModal] = useState(false);
 const [publishSelectedUserIds, setPublishSelectedUserIds] = useState<string[]>([]);
 const [publishFrom, setPublishFrom] = useState<string>('');
@@ -284,6 +285,26 @@ useEffect(() => {
   const [users, setUsers] = useState([]);
   const [planningEntries, setPlanningEntries] = useState([]);
   const [cpRequests, setCpRequests] = useState([]);
+
+  // --- Notification CP (vu/pas vu) ---
+const decidedCount = cpRequests.filter(r =>
+  (r.user_id === (user.id_auth || user.id)) &&
+  (r.status === "approved" || r.status === "refused")
+).length;
+
+const seenKey = `cpSeenCount:${user?.id_auth || user?.id}:${hotelId}`;
+
+const [hasSeenMyCpNotif, setHasSeenMyCpNotif] = useState(() => {
+  if (typeof window === "undefined") return false;
+  const seen = Number(window.localStorage.getItem(seenKey) || "0");
+  return decidedCount <= seen;
+});
+
+useEffect(() => {
+  if (typeof window === "undefined" || !user) return;
+  const seen = Number(window.localStorage.getItem(seenKey) || "0");
+  setHasSeenMyCpNotif(decidedCount <= seen);
+}, [decidedCount, user, hotelId]);
 
 const entriesView = useMemo(
   () => (isAdmin ? planningEntries : planningEntries.filter(e => e.status === 'published')),
@@ -1215,6 +1236,9 @@ const loadInitialData = async () => {
 
         onClick={() => {
   setShowMyCpModal(true);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(seenKey, String(decidedCount));
+  }
   setHasSeenMyCpNotif(true);
 }}
 
