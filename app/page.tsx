@@ -164,37 +164,50 @@ const [newDemande, setNewDemande] = useState({
 
 
 const toggleObjetCheckbox = async (id: string, field: string, value: boolean) => {
-  const { error } = await supabase
-    .from('objets_trouves')
-    .update({ [field]: value })
-    .eq('id', id);
+  const current = objetsTrouves.find((o) => o.id === id);
+  if (!current) return;
 
+  const nextLocal = { ...current, [field]: value };
+  const allCheckedAfter =
+    !!nextLocal.ficheLhost && !!nextLocal.paiementClient && !!nextLocal.colisEnvoye;
+
+  // payload à pousser en base
+  const payload: any = { [field]: value };
+
+  // si toutes cochées maintenant → on fige completedAt (sert à masquer dès le lendemain)
+  if (allCheckedAfter && !current.completedAt) {
+    payload.completedAt = new Date().toISOString();
+  }
+  // si on décoche après coup, on peut remettre completedAt à null (optionnel)
+  if (!allCheckedAfter && current.completedAt) {
+    payload.completedAt = null;
+  }
+
+  const { error } = await supabase.from('objets_trouves').update(payload).eq('id', id);
   if (error) {
     console.error(`Erreur mise à jour du champ ${field} :`, error.message);
     return;
   }
 
-  // Mettre à jour localement
-  const updated = objetsTrouves.map((o) =>
-    o.id === id ? { ...o, [field]: value } : o
-  );
-  setObjetsTrouves(updated);
+  setObjetsTrouves((prev) => prev.map((o) => (o.id === id ? { ...o, ...payload } : o)));
 };
-
+// --- Suppression d'un objet trouvé
 const deleteObjet = async (id: string) => {
+  if (!id) return;
+  if (!confirm('Supprimer cet objet ?')) return;
+
   const { error } = await supabase
     .from('objets_trouves')
     .delete()
     .eq('id', id);
-    
 
   if (error) {
-    console.error('Erreur suppression objet trouvé :', error.message);
+    alert('Suppression impossible : ' + error.message);
     return;
   }
-
   setObjetsTrouves((prev) => prev.filter((o) => o.id !== id));
 };
+
 
 
 const formatSafeDate = (dateStr: string | undefined) => {
@@ -202,6 +215,8 @@ const formatSafeDate = (dateStr: string | undefined) => {
   return formatDate(new Date(dateStr), 'dd MMMM yyyy', { locale: frLocale });
 };
 const [objetsTrouves, setObjetsTrouves] = useState<any[]>([]);
+const [showAllObjets, setShowAllObjets] = useState(false);
+const [searchObjets, setSearchObjets] = useState('');
 
 
 
@@ -684,9 +699,14 @@ const deleteDemande = async (id: string) => {
     setEditObjetIndex(null);
   } else {
     const { data, error } = await supabase
-      .from('objets_trouves')
-      .insert({ ...newObjet, createdAt: new Date().toISOString(), hotel_id: hotelId })
-      .select();
+  .from('objets_trouves')
+  .insert({
+    ...newObjet,
+    createdAt: new Date().toISOString(),
+    completedAt: null,          // 👈 important pour “cacher dès le lendemain”
+    hotel_id: hotelId
+  })
+  .select();
 
     if (error) {
       console.error('Erreur création objet trouvé :', error.message);
@@ -895,6 +915,59 @@ const consignesVisibles = useMemo(() => {
     return (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24) <= 30;
   });
 }, [objetsTrouves]);
+
+const objetsVisibles = useMemo(() => {
+  // Jour “courant” (date système, pas le calendrier)
+  const today = new Date();
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  const todayOnly = day(today);
+
+  const q = searchObjets.trim().toLowerCase();
+
+  return objetsTrouves
+    .filter((o) => {
+      const created = o.createdAt ? new Date(o.createdAt) : (o.date ? new Date(o.date) : null);
+      if (!created || isNaN(+created)) return false;
+
+      const createdOnly = day(created);
+
+      const sameDayAsCreation = createdOnly.getTime() === todayOnly.getTime();
+      const anyChecked = !!o.ficheLhost || !!o.paiementClient || !!o.colisEnvoye;
+      const allChecked = !!o.ficheLhost && !!o.paiementClient && !!o.colisEnvoye;
+
+      // base: visible si “tout afficher” OU jour de l’ajout OU au moins une case cochée
+      let visible = showAllObjets || sameDayAsCreation || anyChecked;
+
+      // règle “masquer à partir du lendemain” si les 3 sont cochées
+      if (allChecked && !showAllObjets) {
+        const completed = o.completedAt ? new Date(o.completedAt) : createdOnly;
+        const completedOnly = day(completed);
+        const diffDays =
+          (todayOnly.getTime() - completedOnly.getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays >= 1) {
+          visible = false; // dès le lendemain de la complétion, on masque
+        }
+      }
+
+      if (!visible) return false;
+
+      // recherche (objet / nom / chambre)
+      if (q) {
+        const hay = `${o.objet || ''} ${o.nomClient || ''} ${o.chambre || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+
+      return true;
+    })
+    // tri: plus récents en haut (création descendante)
+    .sort((a, b) => {
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return db - da;
+    });
+}, [objetsTrouves, showAllObjets, searchObjets]);
+
 
   useEffect(() => {
     if (isLoading) return;
@@ -1583,9 +1656,42 @@ const consignesVisibles = useMemo(() => {
         </div>
       )}
 
-      <div className="mt-6">
-  <div className="flex justify-between items-center mb-2">
-  <h2 className="text-lg font-bold">🧳 Objets trouvés</h2>
+    
+
+  <div className="mt-8 mb-1 flex items-center justify-between w-full">
+  {/* gauche : recherche + switch */}
+  <div className="flex items-center gap-2">
+    <input
+      className="border rounded px-2 py-1 text-sm"
+      placeholder="Rechercher (objet, nom, chambre)"
+      value={searchObjets}
+      onChange={(e) => setSearchObjets(e.target.value)}
+    />
+
+    <button
+      type="button"
+      role="switch"
+      aria-checked={showAllObjets}
+      onClick={() => setShowAllObjets((v) => !v)}
+      className="group flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800"
+      title="Afficher tous les objets"
+    >
+      <span className="whitespace-nowrap select-none">Tout afficher</span>
+      <span
+        className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${
+          showAllObjets ? 'bg-indigo-600' : 'bg-gray-300'
+        }`}
+      >
+        <span
+          className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+            showAllObjets ? 'translate-x-4' : 'translate-x-1'
+          }`}
+        />
+      </span>
+    </button>
+  </div>
+
+  {/* droite : LHOST + Ajouter */}
   <div className="flex items-center gap-2">
     <a
       href="https://resort.mylhost.com/login"
@@ -1595,6 +1701,7 @@ const consignesVisibles = useMemo(() => {
     >
       LHOST
     </a>
+
     <button
       onClick={() => setShowObjetModal(true)}
       className="bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-2 rounded-md flex items-center gap-2 shadow-sm"
@@ -1604,13 +1711,15 @@ const consignesVisibles = useMemo(() => {
   </div>
 </div>
 
+
+
   <div className="space-y-2">
 
- {objetsActifs.map((o, idx) => {
+ {objetsVisibles.map((o, idx) => {
   const complet = o.ficheLhost && o.paiementClient && o.colisEnvoye;
   return (
     <div
-      key={idx}
+      key={o.id ?? idx}
       className={`flex items-center justify-between gap-4 p-3 border rounded-md ${
         complet ? 'bg-gray-200 text-gray-500' : 'bg-white'
       }`}
@@ -1626,7 +1735,7 @@ const consignesVisibles = useMemo(() => {
         <label className="flex items-center text-xs gap-1">
           <input
             type="checkbox"
-            checked={o.ficheLhost}
+            checked={!!o.ficheLhost}
             onChange={(e) => toggleObjetCheckbox(o.id, 'ficheLhost', e.target.checked)}
           />
           Fiche Lhost
@@ -1634,7 +1743,7 @@ const consignesVisibles = useMemo(() => {
         <label className="flex items-center text-xs gap-1">
           <input
             type="checkbox"
-            checked={o.paiementClient}
+            checked={!!o.paiementClient}
             onChange={(e) => toggleObjetCheckbox(o.id, 'paiementClient', e.target.checked)}
           />
           Paiement client
@@ -1642,7 +1751,7 @@ const consignesVisibles = useMemo(() => {
         <label className="flex items-center text-xs gap-1">
           <input
             type="checkbox"
-            checked={o.colisEnvoye}
+            checked={!!o.colisEnvoye}
             onChange={(e) => toggleObjetCheckbox(o.id, 'colisEnvoye', e.target.checked)}
           />
           Colis envoyé
@@ -1660,15 +1769,13 @@ const consignesVisibles = useMemo(() => {
         >
           ✏️
         </button>
-        <button title="Supprimer" onClick={() => deleteObjet(o.id)}>
-          🗑️
-        </button>
+        <button title="Supprimer" onClick={() => deleteObjet(o.id)}>🗑️</button>
       </div>
     </div>
   );
 })}
 
-</div>
+
 </div>
 
 
