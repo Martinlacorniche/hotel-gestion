@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
-import { addDays, format, startOfWeek, isWithinInterval, differenceInCalendarDays } from 'date-fns';
+import { addDays, format, startOfWeek, isWithinInterval, addWeeks, differenceInCalendarDays } from 'date-fns';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useRouter } from 'next/navigation';
@@ -983,7 +983,7 @@ const moveRow = async (index, direction) => {
 
 }
 
-
+ 
   await Promise.all(updates);
 
   // Recharge les données depuis la BDD
@@ -999,19 +999,38 @@ const loadInitialData = async () => {
 
   const myLoadId = ++lastLoadId.current; // 👈 garde anti-race
 
-  const entriesQuery = isAdmin
-  ? supabase.from('planning_entries')
-      .select('*')
-      .eq('hotel_id', hotelId)
-      .in('status', ['draft', 'published'])
-      .order('date', { ascending: true })
-  : supabase.from('planning_entries')
-      .select('*')
-      .eq('hotel_id', hotelId)
-      .eq('status', 'published')
-      .order('date', { ascending: true });
+// 🔧 bornes semaine + helpers à midi local (anti-flicker dates)
+  const weekStart = startOfWeek(currentWeekStart, { weekStartsOn: 1 });
+  const weekEnd   = addDays(weekStart, 6);
 
+  function parseYMD(str: string | null): Date | null {
+    if (!str) return null;
+    const [y,m,d] = str.split("-").map(Number);
+    return new Date(y, m-1, d, 23, 59, 59);
+  }
+  const atNoon = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
+  const fromYMDNoon = (s: string) => {
+    const [y,m,d] = s.split('-').map(Number);
+    return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0, 0);
+  };
+  const weekStartNoon = atNoon(weekStart);
+  const weekEndNoon   = atNoon(weekEnd);
 
+  // 🔎 On restreint la fenêtre des dates pour ne pas se limiter aux 1000 premières lignes
+// Ici : 2 semaines avant et 6 semaines après la semaine en cours
+const fetchFrom = format(new Date(weekStartNoon.getTime() - 14 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+const fetchTo   = format(new Date(weekEndNoon.getTime()   + 42 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+
+const entriesQuery = supabase
+  .from('planning_entries')
+  .select('*')
+  .eq('hotel_id', hotelId)
+  .in('status', isAdmin ? ['draft', 'published'] : ['published'])
+  .gte('date', fetchFrom)
+  .lte('date', fetchTo)
+  .order('date', { ascending: true });
+
+console.log('[FETCH WINDOW]', { from: fetchFrom, to: fetchTo });
   const [usersRes, configRes, entriesRes, cpRes, defaultShiftsRes] = await Promise.all([
     supabase.from('users').select(`
       id_auth, name, email, hotel_id, role, ordre,
@@ -1039,22 +1058,7 @@ const loadInitialData = async () => {
     return { ...u, ordre: conf?.ordre ?? 9999 };
   });
 
-  // 🔧 bornes semaine + helpers à midi local (anti-flicker dates)
-  const weekStart = startOfWeek(currentWeekStart, { weekStartsOn: 1 });
-  const weekEnd   = addDays(weekStart, 6);
-
-  function parseYMD(str: string | null): Date | null {
-    if (!str) return null;
-    const [y,m,d] = str.split("-").map(Number);
-    return new Date(y, m-1, d, 23, 59, 59);
-  }
-  const atNoon = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
-  const fromYMDNoon = (s: string) => {
-    const [y,m,d] = s.split('-').map(Number);
-    return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0, 0);
-  };
-  const weekStartNoon = atNoon(weekStart);
-  const weekEndNoon   = atNoon(weekEnd);
+ 
 
   // ✅ garde ta logique historique (ex-salariés visibles si shifts dans la semaine)
   const usersVisibleForWeek = usersWithOrder.filter((u) => {
@@ -1093,12 +1097,7 @@ const loadInitialData = async () => {
 
   // ✅ Applique l’état (réponse la plus récente uniquement)
   setUsers(usersWithOrder);
-  setPlanningEntries(prev => {
-  const next = safeEntries || [];
-  // Évite d’écraser un state plus "rempli" par une réponse partielle/rétrograde
-  if (prev?.length && next.length < prev.length) return prev;
-  return next;
-});
+  setPlanningEntries(safeEntries || []);
 
   setCpRequests(cpData);
   setRows(allRows);
