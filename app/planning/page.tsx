@@ -81,6 +81,32 @@ export default function PlanningPage() {
   const { user, isLoading } = useAuth();
   const isAdmin = user?.role === 'admin';
 const [showMyCpModal, setShowMyCpModal] = useState(false);
+const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+// refs pour le bouton et le popover du calendrier
+const datepickerButtonRef = useRef<HTMLButtonElement | null>(null);
+const datepickerRef = useRef<HTMLDivElement | null>(null);
+
+// fermer si clic à l'extérieur ou touche Échap
+useEffect(() => {
+  function onMouseDown(e: MouseEvent) {
+    if (!isDatePickerOpen) return;
+    const pop = datepickerRef.current;
+    const btn = datepickerButtonRef.current;
+    const target = e.target as Node;
+    if (pop && !pop.contains(target) && btn && !btn.contains(target)) {
+      setIsDatePickerOpen(false);
+    }
+  }
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape') setIsDatePickerOpen(false);
+  }
+  document.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('keydown', onKeyDown);
+  return () => {
+    document.removeEventListener('mousedown', onMouseDown);
+    document.removeEventListener('keydown', onKeyDown);
+  };
+}, [isDatePickerOpen]);
 
 
 const [showPublishModal, setShowPublishModal] = useState(false);
@@ -226,11 +252,30 @@ const reloadEntries = async () => {
 
   const myReloadId = ++lastReloadId.current; // garde anti-race
 
-  // 🔧 même logique admin/non-admin + tri par date
+  // 👇 même fenêtre que loadInitialData
+  const weekStart = startOfWeek(currentWeekStart, { weekStartsOn: 1 });
+  const weekEnd   = addDays(weekStart, 6);
+  const atNoon = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
+  const weekStartNoon = atNoon(weekStart);
+  const weekEndNoon   = atNoon(weekEnd);
+
+  const fetchFrom = format(
+    new Date(weekStartNoon.getTime() - 14 * 24 * 60 * 60 * 1000),
+    'yyyy-MM-dd'
+  );
+  const fetchTo = format(
+    new Date(weekEndNoon.getTime() + 42 * 24 * 60 * 60 * 1000),
+    'yyyy-MM-dd'
+  );
+
+  // 🔎 requête bornée + même logique admin/non-admin
   const base = supabase
     .from('planning_entries')
     .select('*')
     .eq('hotel_id', hotelId)
+    .gte('date', fetchFrom)
+    .lte('date', fetchTo)
     .order('date', { ascending: true });
 
   const q = isAdmin
@@ -243,16 +288,13 @@ const reloadEntries = async () => {
     return;
   }
 
-  // abandon si un reload plus récent a démarré depuis
+  // abandon si une réponse plus récente est arrivée entre-temps
   if (myReloadId !== lastReloadId.current) return;
 
-  // Patch B (anti-écrasement, voir étape 2) — si tu veux l’activer aussi ici :
-  setPlanningEntries(prev => {
-    const next = data || [];
-    if (prev?.length && next.length < prev.length) return prev;
-    return next;
-  });
+  // ✅ on fait confiance au serveur (pas de patch)
+  setPlanningEntries(data || []);
 };
+
 
 
 
@@ -806,7 +848,7 @@ const handleDuplicateMultiWeeks = async () => {
 
 
 const [successMessage, setSuccessMessage] = useState('');
-const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+
 const goToPreviousWeek = () => {
   const monday = startOfWeek(addDays(currentWeekStart, -7), { weekStartsOn: 1 });
   monday.setHours(0, 0, 0, 0);
@@ -1280,28 +1322,35 @@ console.log('[FETCH WINDOW]', { from: fetchFrom, to: fetchTo });
     <span className="text-lg">◀</span> Semaine précédente
   </button>
   <div className="relative">
-  <button
-    onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
-    className="text-xl font-semibold tracking-tight bg-indigo-50 px-4 py-2 rounded-full shadow hover:bg-indigo-100 transition"
-  >
-    Semaine du {format(currentWeekStart, 'dd/MM/yyyy')}
-  </button>
-  {isDatePickerOpen && (
-    <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-white border rounded-lg shadow-lg z-50">
-      <DatePicker
-        inline
-        selected={currentWeekStart}
-        onChange={(date) => {
-  const monday = startOfWeek(date, { weekStartsOn: 1 });
-  monday.setHours(0,0,0,0);
-  setCurrentWeekStart(monday);
-}}
+ <button
+  ref={datepickerButtonRef}
+  onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+  className="text-xl font-semibold tracking-tight bg-indigo-50 px-4 py-2 rounded-full shadow hover:bg-indigo-100 transition"
+>
+  Semaine du {format(currentWeekStart, 'dd/MM/yyyy')}
+</button>
 
-        locale={fr}
-        calendarStartDay={1}
-      />
-    </div>
-  )}
+  {isDatePickerOpen && (
+  <div
+    ref={datepickerRef}
+    className="absolute top-12 left-1/2 -translate-x-1/2 bg-white border rounded-lg shadow-lg z-50"
+  >
+    <DatePicker
+      inline
+      selected={currentWeekStart}
+      onChange={(date) => {
+        const monday = startOfWeek(date, { weekStartsOn: 1 });
+        monday.setHours(0,0,0,0);
+        setCurrentWeekStart(monday);
+        // fermer automatiquement après sélection
+        setIsDatePickerOpen(false);
+      }}
+      locale={fr}
+      calendarStartDay={1}
+    />
+  </div>
+)}
+
 </div>
 
   <button
