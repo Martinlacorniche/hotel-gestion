@@ -325,6 +325,7 @@ useEffect(() => {
 
   const [rows, setRows] = useState([]);
   const [users, setUsers] = useState([]);
+  const [handlerUsers, setHandlerUsers] = useState<Record<string, { id_auth: string; name?: string; email?: string }>>({});
   const [planningEntries, setPlanningEntries] = useState([]);
   const [cpRequests, setCpRequests] = useState([]);
 
@@ -367,8 +368,10 @@ const [isSendingCp, setIsSendingCp] = useState(false);
   const [shiftInput, setShiftInput] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
+  const prefillFromEntryRef = useRef(false);
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [useAsDefault, setUseAsDefault] = useState(false);
+  const [doNotTouch, setDoNotTouch] = useState(false);
   const [defaultHours, setDefaultHours] = useState({});
 const [nbWeeksSource, setNbWeeksSource] = useState(1);
 const [nbWeeksTarget, setNbWeeksTarget] = useState(1);
@@ -397,7 +400,12 @@ const handleRefuseCp = async (req) => {
 
   const { error } = await supabase
     .from('cp_requests')
-    .update({ status: 'refused' })
+    .update({
+  status: 'refused',
+  handled_by: user.id_auth,
+  handled_at: new Date().toISOString(),
+  handled_by_name: user?.name || user?.email || null,   // 👈 snapshot du nom
+})
     .eq('id', req.id);
 
   if (error) {
@@ -407,18 +415,39 @@ const handleRefuseCp = async (req) => {
   }
 };
 
+
   const [cutMode, setCutMode] = useState(false);
 
   const loadCpRequests = async () => {
   if (!hotelId || typeof hotelId !== "string" || hotelId.length < 10) return;
-  const { data, error } = await supabase
-    .from('cp_requests')
-    .select('*')
+    const { data, error } = await supabase
+    .from('cp_requests')    .select('id,user_id,start_date,end_date,status,created_at,commentaire,hotel_id,handled_by,handled_at,handled_by_name')
     .eq('hotel_id', hotelId)
     .order('created_at', { ascending: false });
   setCpRequests(data || []);
+  const handlerIds = (data || []).map(r => r.handled_by).filter(Boolean) as string[];
+loadCpHandlers(handlerIds);
 };
 
+const loadCpHandlers = async (ids: string[]) => {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return;
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('id_auth, name, email')
+    .in('id_auth', unique);
+
+  if (error) {
+    console.warn('loadCpHandlers error:', error);
+    return;
+  }
+
+  const map: Record<string, any> = {};
+  (data || []).forEach(u => { map[u.id_auth] = u; });
+
+  setHandlerUsers(prev => ({ ...prev, ...map }));
+};
 
 // Remplace la fonction existante handleAcceptCp par celle-ci
 const handleAcceptCp = async (req) => {
@@ -495,7 +524,15 @@ const handleAcceptCp = async (req) => {
   }
 
   // 6) Marquer la demande comme approved
-  await supabase.from('cp_requests').update({ status: 'approved' }).eq('id', req.id);
+ await supabase
+  .from('cp_requests')
+  .update({
+  status: 'approved',
+  handled_by: user.id_auth,
+  handled_at: new Date().toISOString(),
+  handled_by_name: user?.name || user?.email || null,   // 👈 snapshot du nom
+})
+  .eq('id', req.id);
 
   // 7) Rechargement local
   await loadCpRequests();
@@ -518,6 +555,11 @@ const openDuplicationModal = (user) => {
 };
 
 const exportPDF = () => {
+  const now = new Date();
+const moisFR = now.toLocaleDateString('fr-FR', { month: 'long' });
+// Capitaliser la 1ʳᵉ lettre (optionnel mais plus joli en FR)
+const moisCap = moisFR.charAt(0).toUpperCase() + moisFR.slice(1);
+const exportTitle = `Planning — ${moisCap}`;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const month = currentWeekStart.getMonth();
   const year = currentWeekStart.getFullYear();
@@ -617,7 +659,7 @@ const shiftColors = {
     return true;
   });
 
-  let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0;
+  let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0, repas = 0;
 
   for (const entry of entries) {
     if (!['Repos', 'CP', 'Maladie', 'Injustifié', 'École'].includes(entry.shift)) {
@@ -628,6 +670,8 @@ const shiftColors = {
         let minutes = (eh * 60 + em) - (sh * 60 + sm);
         if (minutes < 0) minutes += 24 * 60;
         workedHours += minutes / 60;
+           // Indemnité repas : > 5h (strictement au-dessus de 5h)
+   if (minutes > 5 * 60) repas += 1;
       }
     }
     if (entry.shift === 'CP') cp++;
@@ -642,6 +686,7 @@ const shiftColors = {
     cp,
     maladie,
     injustifie,
+    repas,
   };
 });
 
@@ -650,8 +695,8 @@ const shiftColors = {
   doc.text(`Récapitulatif du mois ${month + 1}/${year}`, 40, 40);
   autoTable(doc, {
     startY: 60,
-    head: [["Salarié", "Jours", "Heures", "CP", "Maladie", "Injust." ]],
-    body: userStats.map(u => [u.nom, u.workedDays, u.workedHours, u.cp, u.maladie, u.injustifie]),
+   head: [["Salarié", "Jours", "Heures", "CP", "Maladie", "Injust.", "Ind. Repas"]],
+   body: userStats.map(u => [u.nom, u.workedDays, u.workedHours, u.cp, u.maladie, u.injustifie, u.repas]),
     theme: "grid",
     styles: { fontSize: 10 },
     headStyles: { fillColor: [245, 85, 85] },
@@ -706,7 +751,7 @@ const shiftColors = {
     }
   });
 
-  doc.save(`planning-${month + 1}-${year}.pdf`);
+  doc.save(`Planning_${moisCap}_${now.getFullYear()}.pdf`);
 };
 
 
@@ -755,6 +800,7 @@ const targetWeekEnd = targetWeekStart ? addDays(targetWeekStart, 6) : null;
     end_time: sourceEntry.end_time,
     hotel_id: hotelId,
     status: 'draft',
+    do_not_touch: !!sourceEntry.do_not_touch,
   };
 
   await supabase
@@ -820,6 +866,7 @@ const handleDuplicateMultiWeeks = async () => {
             end_time: entry.end_time,
             hotel_id: hotelId,
             status: 'draft', // toujours brouillon
+            do_not_touch: !!entry.do_not_touch,
           };
         })
       );
@@ -865,12 +912,22 @@ const goToNextWeek = () => {
   const weekDates = useMemo(() => (
     Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i))
   ), [currentWeekStart]);
-const visibleRequests = showAllCp
-  ? cpRequests.filter(r => new Date(r.end_date) >= new Date(new Date().setHours(0, 0, 0, 0)))
-  : cpRequests.filter(r =>
-      r.status === 'pending' &&
-      new Date(r.end_date) >= new Date(new Date().setHours(0, 0, 0, 0))
-    );
+// Tri : pending d'abord (créées + récentes en haut), puis traitées (handled_at + récentes en haut)
+const todayMidnight = new Date(new Date().setHours(0, 0, 0, 0));
+const isActive = (r: any) => new Date(r.end_date) >= todayMidnight;
+const handledTime = (r: any) => new Date(r.handled_at || r.created_at).getTime();
+
+const pendingReqs = cpRequests
+  .filter(r => r.status === 'pending' && isActive(r))
+  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+const treatedReqs = cpRequests
+  .filter(r => r.status !== 'pending' && isActive(r))
+  .sort((a, b) => handledTime(b) - handledTime(a));
+
+// Si "Tout afficher" => pending puis traitées triées par handled_at desc. Sinon => seulement pending
+const visibleRequests = showAllCp ? [...pendingReqs, ...treatedReqs] : pendingReqs;
+
 useEffect(() => {
   // log minimal pour détecter l'écrasement
   const ymd = weekDates.map(d => format(d, 'yyyy-MM-dd'));
@@ -884,6 +941,30 @@ useEffect(() => {
 
   console.log('[DEBUG] Louane week entries in state:', have);
 }, [planningEntries, users, weekDates]);
+
+const normalizeTime = (t?: string | null) => {
+  if (!t) return '';
+  const [h = '0', m = '0'] = t.split(':');
+  const hh = String(parseInt(h, 10)).padStart(2, '0');
+  const mm = String(parseInt(m, 10)).padStart(2, '0');
+  return `${hh}:${mm}`;
+};
+// "14:30:00" -> "14:30" (pour les <select>)
+const toHHmm = (t?: string | null) => (t ? String(t).slice(0, 5) : '');
+
+// "14:30" -> "14:30:00" (pour écrire en BDD 'time')
+const toHHmmss = (t?: string | null) => {
+  if (!t) return null;
+  const s = String(t);
+  if (s.length === 8) return s;       // HH:MM:SS
+  if (s.length === 5) return s + ':00'; // HH:MM
+  const [h='0', m='0'] = s.split(':');
+  return `${String(parseInt(h,10)).padStart(2,'0')}:${String(parseInt(m,10)).padStart(2,'0')}:00`;
+};
+
+// pour que l'effet "heures par défaut" n'écrase pas ce qu'on vient de pré-remplir
+
+
 
   const calculateDuration = (start, end) => {
   if (!start || !end) return '0h00';
@@ -974,7 +1055,7 @@ useEffect(() => {
   if (isAdmin) {
     loadCpRequests();
   }
-}, [isAdmin]);
+}, [isAdmin, hotelId]);
 
 
  useEffect(() => {
@@ -1151,11 +1232,22 @@ console.log('[FETCH WINDOW]', { from: fetchFrom, to: fetchTo });
 
 
   useEffect(() => {
-    if (shiftInput && defaultHours[shiftInput]) {
-      setStartTime(defaultHours[shiftInput].start);
-      setEndTime(defaultHours[shiftInput].end);
-    }
-  }, [shiftInput]);
+  if (!shiftInput) return;
+
+  // si on vient d'ouvrir le modal depuis une entrée existante, on ne touche pas aux heures
+  if (prefillFromEntryRef.current) {
+    prefillFromEntryRef.current = false; // reset pour la prochaine fois
+    return;
+  }
+
+  // sinon, appliquer les heures par défaut du shift choisi (si configurées)
+  if (defaultHours[shiftInput]) {
+    setStartTime(defaultHours[shiftInput].start);
+    setEndTime(defaultHours[shiftInput].end);
+  }
+}, [shiftInput, defaultHours]);
+
+
 
   const handleDeleteShift = async (entryId) => {
     if (!hotelId || typeof hotelId !== "string" || hotelId.length < 10) return;
@@ -1166,63 +1258,100 @@ console.log('[FETCH WINDOW]', { from: fetchFrom, to: fetchTo });
 };
 
 
-  const handleCellClick = (userId, date, currentShift) => {
-    if (!isAdmin) return;
-    setEditingCell({ userId, date });
-    setShiftInput(currentShift);
-    setShowShiftModal(true);
-  };
+ const handleCellClick = (userId, date, currentEntry) => {
+  if (!isAdmin) return;
+
+  setEditingCell({
+    userId,
+    date,
+    entryId: currentEntry?.id ?? null,
+    status: currentEntry?.status ?? 'draft',
+  });
+
+  if (currentEntry) {
+    prefillFromEntryRef.current = true;  // ne pas écraser par les "defaultHours" juste après
+    setStartTime(toHHmm(currentEntry.start_time) || '09:00');
+    setEndTime(toHHmm(currentEntry.end_time) || '17:00');
+  } else {
+    prefillFromEntryRef.current = false;
+    setStartTime('09:00');
+    setEndTime('17:00');
+  }
+
+  setShiftInput(currentEntry?.shift || '');
+  setDoNotTouch(!!currentEntry?.do_not_touch);
+  setShowShiftModal(true);
+};
+
+
+
+
 
   const saveShift = async () => {
   if (!editingCell || !hotelId) return;
-  const { userId, date } = editingCell;
+  const { userId, date, entryId } = editingCell;
 
-  const payload = {
-    user_id: userId,
-    date,
-    shift: shiftInput,
-    start_time: startTime,
-    end_time: endTime,
-    hotel_id: hotelId,
-    status: 'draft',
-  };
+  // adapter le format "select" -> "BDD"
+  const start = toHHmmss(startTime);
+  const end   = toHHmmss(endTime);
 
-  const existing = planningEntries.find(p => p.user_id === userId && p.date === date);
+  if (entryId) {
+    // ✏️ MODIFIER la ligne cliquée (draft OU published)
+    await supabase
+      .from('planning_entries')
+      .update({
+        shift: shiftInput || null,
+        start_time: start,
+        end_time: end,
+        do_not_touch: doNotTouch,
+      })
+      .eq('id', entryId);
 
-   // On upsert par (user_id, date, status)
- const upsertShift = supabase
-   .from('planning_entries')
-   .upsert(payload, { onConflict: ['hotel_id','user_id','date','status'] });
+    // (optionnel) si tu veux garantir l'unicité par jour: supprime d'autres doublons restants
+    await supabase
+      .from('planning_entries')
+      .delete()
+      .eq('user_id', userId)
+      .eq('date', date)
+      .neq('id', entryId);
 
-  const defaultUpdate = useAsDefault && shiftInput
-    ? supabase.from('default_shift_hours').upsert({
-        shift_name: shiftInput,
-        start_time: startTime,
-        end_time: endTime,
-      }, { onConflict: ['shift_name'] })
-    : Promise.resolve();
-
-  await Promise.all([upsertShift, defaultUpdate]);
-
-  // Recharge uniquement les shifts (pas besoin de tout recharger)
-  await reloadEntries();
-
-
-
-  // Met à jour localement les horaires par défaut (optionnel mais utile)
-  if (useAsDefault && shiftInput) {
-    setDefaultHours(prev => ({
-      ...prev,
-      [shiftInput]: { start: startTime, end: endTime }
-    }));
+  } else {
+    // ➕ case vide → on crée un brouillon unique
+    const payload = {
+      user_id: userId,
+      date,
+      shift: shiftInput || null,
+      start_time: start,
+      end_time: end,
+      hotel_id: hotelId,
+      status: 'draft',
+      do_not_touch: doNotTouch,
+    };
+    await supabase
+      .from('planning_entries')
+      .upsert(payload, { onConflict: ['hotel_id','user_id','date','status'] });
   }
 
-  // Reset de l'état
+  // horaires par défaut (optionnel)
+  if (useAsDefault && shiftInput) {
+    await supabase.from('default_shift_hours').upsert(
+      { shift_name: shiftInput, start_time: start, end_time: end },
+      { onConflict: ['shift_name'] }
+    );
+  }
+
+  await reloadEntries();
+
+  // reset modal
   setEditingCell(null);
   setShiftInput('');
   setShowShiftModal(false);
   setUseAsDefault(false);
+  setDoNotTouch(false);
 };
+
+
+
 
 
   if (isLoading) return <div className="p-4">Chargement...</div>;
@@ -1462,6 +1591,32 @@ console.log('[FETCH WINDOW]', { from: fetchFrom, to: fetchTo });
                   {req.status === "pending" ? "En attente" : req.status === "approved" ? "Acceptée" : "Refusée"}
                 </span>
               </div>
+              {/* Infos “par qui” et “quand” pour les demandes traitées */}
+
+
+{(req.status === "approved" || req.status === "refused") && (
+  <div className="text-sm text-gray-600 mt-1">
+    {(() => {
+ // 1) Nom : snapshot prioritaire (trim), puis users (même hôtel), puis handlerUsers (chargés par id)
+  const snapshot = (req.handled_by_name || '').trim();
+  const fromUsers = users.find(u => u.id_auth === req.handled_by);
+  const fromCache = handlerUsers[req.handled_by];
+ const whoName =
+    snapshot ||
+    fromUsers?.name || fromUsers?.email ||
+    fromCache?.name || fromCache?.email ||
+    "—";
+
+  // 2) Date : handled_at si présent, sinon created_at (historique)
+  const whenRaw = req.handled_at || req.created_at;
+  const when = whenRaw ? format(new Date(whenRaw), 'dd/MM/yyyy') : null;
+
+  return `Demande ${req.status === 'approved' ? 'acceptée' : 'refusée'}${when ? ` le ${when}` : ''}${whoName ? ` par ${whoName}` : ''}`;
+    })()}
+  </div>
+)}
+
+
               <div className="flex gap-2 mt-2">
                 {req.status === "pending" && (
                   <>
@@ -1566,12 +1721,13 @@ const renderBubble = (entry: any, icon?: string) => (
   <div
     draggable={isAdmin}
     onDragStart={() => isAdmin && setDraggedShift({ userId: row.id_auth, date: formatted })}
-    onClick={() => isAdmin && handleCellClick(row.id_auth, formatted, entry?.shift)}
+    onClick={() => isAdmin && handleCellClick(row.id_auth, formatted, entry)}
     className="cursor-pointer leading-tight relative group flex flex-col items-center"
   >
     <div className={`inline-block px-3 py-1 rounded-xl font-medium text-sm mb-1 shadow ${getShiftColor(entry?.shift || '')}`}>
       {icon ? <span className="mr-1">{icon}</span> : null}
       {entry?.shift}
+      {entry?.do_not_touch && <span className="ml-1">⛔</span>}
     </div>
     {entry?.shift !== 'Repos' && (
       <div className="text-xs text-gray-700">
@@ -1612,7 +1768,7 @@ if (row.id_auth) {
     if (!draft && !published) {
       content = (
         <button
-          onClick={() => handleCellClick(row.id_auth, formatted, '')}
+          onClick={() => handleCellClick(row.id_auth, formatted, null)}
           className="text-gray-400 hover:text-black"
           onDragOver={(e) => e.preventDefault()}
           onDrop={() => handleShiftDrop(row.id_auth, formatted)}
@@ -1839,6 +1995,18 @@ return (
         <label htmlFor="useDefault" className="text-sm">
           Utiliser ces horaires comme valeur par défaut pour ce shift
         </label>
+        <div className="flex items-center gap-2 mt-2">
+  <input
+    type="checkbox"
+    id="doNotTouch"
+    checked={doNotTouch}
+    onChange={(e) => setDoNotTouch(e.target.checked)}
+  />
+  <label htmlFor="doNotTouch" className="text-sm">
+    Ne pas Toucher <span className="ml-1">⛔</span>
+  </label>
+</div>
+
       </div>
       {shiftInput !== 'Repos' && (
   <div className="text-sm text-gray-700 text-right">
