@@ -1232,32 +1232,42 @@ console.log('[FETCH WINDOW]', { from: fetchFrom, to: fetchTo });
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-2xl px-6 py-10 max-w-7xl mx-auto mt-10">
-      {hotels.length > 0 && (
-  <div className="mb-6 flex items-center gap-4">
-    <span className="font-semibold text-gray-700">Hôtel :</span>
-    <div className="flex gap-2 flex-wrap">
-      {hotels.map((h) => (
-        <button
-          key={h.id}
-          onClick={() => setSelectedHotelId(h.id)}
-          className={`px-4 py-2 rounded-lg shadow font-semibold border ${
-            h.id === selectedHotelId
-              ? 'bg-[#88C9B9] text-white border-[#88C9B9]'
-              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-          }`}
-        >
-          {h.nom}
-        </button>
-      ))}
+    <div className="bg-white rounded-2xl shadow-xl px-4 md:px-6 py-6 max-w-7xl mx-auto mt-4 md:mt-6">
+      {/* Header compact : sélecteur + nom centré */}
+<div className="mb-3 md:mb-4 grid grid-cols-3 items-center gap-2">
+  {/* Sélecteur d’hôtel (gauche) */}
+  {hotels.length > 0 && (
+    <div className="col-span-3 md:col-span-1 flex items-center gap-2 flex-wrap">
+      <span className="text-sm md:text-base font-medium text-gray-600">Hôtel :</span>
+      <div className="flex gap-2 flex-wrap">
+        {hotels.map((h) => (
+          <button
+            key={h.id}
+            onClick={() => setSelectedHotelId(h.id)}
+            className={`px-3 md:px-4 py-1.5 rounded-lg shadow font-semibold border text-sm md:text-base ${
+              h.id === selectedHotelId
+                ? 'bg-[#88C9B9] text-white border-[#88C9B9]'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {h.nom}
+          </button>
+        ))}
+      </div>
     </div>
-  </div>
-)}
+  )}
 
+  {/* Nom de l’hôtel (centré) */}
+  <h1 className="col-span-3 md:col-span-1 text-center text-2xl md:text-3xl font-extrabold tracking-tight">
+    <span className="bg-gradient-to-r from-indigo-600 to-teal-500 bg-clip-text text-transparent">
+      {currentHotel?.nom || ''}
+    </span>
+  </h1>
 
-<h1 className="text-3xl font-bold mb-8 tracking-tight text-indigo-500">
-  Planning {currentHotel?.nom || ''}
-</h1>
+  {/* Espace à droite pour équilibrer la grille */}
+  <div className="hidden md:block" />
+</div>
+
 
 
 {user?.role !== 'admin' && (
