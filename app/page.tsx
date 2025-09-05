@@ -16,6 +16,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { format as formatDate } from 'date-fns';
 import { fr as frLocale } from 'date-fns/locale';
 import Link from "next/link";
+import { QRCodeSVG } from "qrcode.react";
 
 
 
@@ -34,6 +35,10 @@ export default function HotelDashboard() {
 const user = rawUser as CustomUser | null;
 const [showValidatedConsignes, setShowValidatedConsignes] = useState(false);
 const [showValidatedTickets, setShowValidatedTickets] = useState(false);
+const PLAY_URL =
+    "https://play.google.com/store/apps/details?id=com.martinvitte.hotelstoulonborddemer&utm_source=emea_Med";
+  const APPLE_URL =
+    "https://apps.apple.com/app/hotels-toulon-bord-de-mer/id6751883454";
 
 
 
@@ -1979,19 +1984,42 @@ const objetsVisibles = useMemo(() => {
   </div>
 )}
 
-{/* Lien Play Store */}
-<div className="mt-8 flex justify-center">
-  <a
-    href="https://play.google.com/store/apps/details?id=com.martinvitte.hotelstoulonborddemer&utm_source=emea_Med"
-    target="_blank"
-    rel="noopener noreferrer"
-  >
-    <Button className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 text-lg shadow-lg rounded-xl">
-      App Android
-    </Button>
-  </a>
+{/* Liens + QR codes vers les apps */}
+<div className="mt-10">
+  <h3 className="text-center text-lg font-semibold">Scannez pour télécharger</h3>
+
+  <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-8 justify-items-center">
+    {/* Android */}
+    <div className="flex flex-col items-center gap-3">
+      <div className="p-4 bg-white rounded-xl shadow">
+        <QRCodeSVG value={PLAY_URL} size={100} includeMargin />
+      </div>
+      <span className="text-sm text-gray-600">App Android</span>
+      <a href={PLAY_URL} target="_blank" rel="noopener noreferrer">
+        <Button className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl shadow">
+          Ouvrir dans le Play Store
+        </Button>
+      </a>
+    </div>
+
+    {/* iPhone */}
+    <div className="flex flex-col items-center gap-3">
+      <div className="p-4 bg-white rounded-xl shadow">
+        <QRCodeSVG value={APPLE_URL} size={100} includeMargin />
+      </div>
+      <span className="text-sm text-gray-600">App iPhone</span>
+      <a href={APPLE_URL} target="_blank" rel="noopener noreferrer">
+        <Button className="bg-black hover:bg-gray-900 text-white px-6 py-3 rounded-xl shadow">
+          Ouvrir dans l’App Store
+        </Button>
+      </a>
+    </div>
+  </div>
+
+  
 </div>
-    
 </div>
+
+
   );
 }
