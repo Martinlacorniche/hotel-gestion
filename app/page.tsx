@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -42,9 +42,27 @@ const PLAY_URL =
 
 
 
+
 const isAdmin = user?.role === 'admin';
 const [showUserDropdown, setShowUserDropdown] = useState(false);
+const userDropdownRef = useRef<HTMLDivElement | null>(null);
+useEffect(() => {
+  function handleClickOutside(event: MouseEvent) {
+    if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
+      setShowUserDropdown(false);
+    }
+  }
 
+  if (showUserDropdown) {
+    document.addEventListener("mousedown", handleClickOutside);
+  } else {
+    document.removeEventListener("mousedown", handleClickOutside);
+  }
+
+  return () => {
+    document.removeEventListener("mousedown", handleClickOutside);
+  };
+}, [showUserDropdown]);
 const [hotels, setHotels] = useState([]);
 const [selectedHotelId, setSelectedHotelId] = useState(() => {
   if (typeof window !== 'undefined') {
@@ -1554,7 +1572,7 @@ const objetsVisibles = useMemo(() => {
   rows={4}
   className="w-full border rounded px-2 py-1"
 />
-            <div className="relative">
+            <div className="relative" ref={userDropdownRef}>
   <label className="block text-sm font-medium mb-1">Assigner à</label>
 
   {/* Bouton pour ouvrir/fermer */}
