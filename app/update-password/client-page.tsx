@@ -3,12 +3,16 @@
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { Eye, EyeOff } from 'lucide-react'
+
 
 export default function UpdatePasswordClientPage() {
   const searchParams = useSearchParams();
   const [newPassword, setNewPassword] = useState('');
   const [status, setStatus] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [showPwd, setShowPwd] = useState(false)
+
 
   // 🔐 Restaurer la session si access_token présent
   useEffect(() => {
@@ -68,14 +72,26 @@ export default function UpdatePasswordClientPage() {
         <h1 className="text-xl font-bold mb-4">🔐 Réinitialisation du mot de passe</h1>
         {!isSubmitted ? (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <input
-              type="password"
-              placeholder="Nouveau mot de passe"
-              className="w-full p-2 border border-gray-300 rounded"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-            />
+            <div className="relative">
+  <input
+    type={showPwd ? 'text' : 'password'}
+    placeholder="Nouveau mot de passe"
+    className="w-full p-2 pr-10 border border-gray-300 rounded"
+    value={newPassword}
+    onChange={(e) => setNewPassword(e.target.value)}
+    required
+    aria-label="Nouveau mot de passe"
+  />
+  <button
+    type="button"
+    onClick={() => setShowPwd((s) => !s)}
+    className="absolute inset-y-0 right-2 flex items-center"
+    aria-label={showPwd ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+  >
+    {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+  </button>
+</div>
+
             <button
               type="submit"
               className="w-full bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700 transition"
