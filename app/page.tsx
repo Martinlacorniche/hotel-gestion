@@ -402,8 +402,10 @@ useEffect(() => {
   chambre: '',
   dateAction: '',
   heure: '',
-  statut: 'Prévu' // 👈 ajoute cette ligne
+  prix: '',
+  statut: 'Prévu'
 });
+
 
 
 
@@ -620,9 +622,11 @@ const createDemande = async () => {
   chambre: newTaxi.chambre,
   heure: newTaxi.heure,
   date: newTaxi.dateAction,
+  prix: newTaxi.type === "VTC" ? parseFloat(newTaxi.prix) : null,
   valide: false,
   hotel_id: hotelId,
 };
+
 
   if (editDemandeIndex !== null) {
     const id = demandes[editDemandeIndex].id;
@@ -655,6 +659,7 @@ const createDemande = async () => {
   }
 
   setNewTaxi({ type: 'Taxi', chambre: '', dateAction: '', heure: '', statut: 'Prévu' });
+  setEditDemandeIndex(null);
   setShowTaxiModal(false);
 };
 
@@ -881,6 +886,18 @@ const demandesVisibles = useMemo(() => {
   return demandes.filter((d) => d.date === selected);
 }, [demandes, selectedDate]);
 
+
+const totalVTCMois = useMemo(() => {
+  const mois = selectedDate.getMonth();
+  const annee = selectedDate.getFullYear();
+  return demandes
+    .filter(d => d.type === "VTC" && d.date)
+    .filter(d => {
+      const dDate = new Date(d.date);
+      return dDate.getMonth() === mois && dDate.getFullYear() === annee;
+    })
+    .reduce((sum, d) => sum + (d.prix || 0), 0);
+}, [demandes, selectedDate]);
 
 
 
@@ -1371,7 +1388,7 @@ const objetsVisibles = useMemo(() => {
           </Card>
 
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="px-4 py-1">
               <div className="flex justify-between items-center mb-2">
                 <h2 className="text-lg font-bold">🚖 Taxis / Réveils</h2>
                 <button
@@ -1409,53 +1426,83 @@ const objetsVisibles = useMemo(() => {
     <span className="text-xs">{d.type} - #{d.chambre} à {d.heure?.slice(0, 5)}</span>
 
     <div className="flex items-center gap-2">
-      <select
-        className="text-sm border rounded px-2 py-1"
-        value={d.statut || 'À prévoir'}
-        onChange={async (e) => {
-          const newStatut = e.target.value;
-          const { error } = await supabase
-            .from('demandes')
-            .update({ statut: newStatut })
-            .eq('id', d.id);
+  {/* Statut */}
+  <select
+    className="text-sm border rounded px-2 py-1"
+    value={d.statut || 'À prévoir'}
+    onChange={async (e) => {
+      const newStatut = e.target.value;
+      const { error } = await supabase
+        .from('demandes')
+        .update({ statut: newStatut })
+        .eq('id', d.id);
 
-          if (error) {
-            console.error('Erreur modification statut :', error.message);
-            return;
-          }
+      if (error) {
+        console.error('Erreur modification statut :', error.message);
+        return;
+      }
 
-          // Mise à jour locale par id
-          const realIndex = demandes.findIndex(dd => dd.id === d.id);
-          if (realIndex === -1) return;
-          const updated = [...demandes];
-          updated[realIndex].statut = newStatut;
-          setDemandes(updated);
-        }}
-      >
-        <option value="À prévoir">À prévoir</option>
-        <option value="Prévu">Prévu</option>
-        <option value="Fait">Fait</option>
-      </select>
+      // MAJ locale par id
+      const realIndex = demandes.findIndex(dd => dd.id === d.id);
+      if (realIndex === -1) return;
+      const updated = [...demandes];
+      updated[realIndex].statut = newStatut;
+      setDemandes(updated);
+    }}
+  >
+    <option value="À prévoir">À prévoir</option>
+    <option value="Prévu">Prévu</option>
+    <option value="Fait">Fait</option>
+  </select>
 
-      {/* 🗑️ Bouton suppression */}
-      <button
-        className="text-sm px-2 py-1 border rounded hover:bg-red-50"
-        title="Supprimer"
-        onClick={() => {
-          if (confirm('Supprimer cette demande ?')) {
-            deleteDemande(d.id);
-          }
-        }}
-      >
-        🗑️
-      </button>
-    </div>
+  {/* ✏️ Modifier */}
+  <button
+    className="text-sm px-2 py-1 border rounded hover:bg-yellow-50"
+    title="Modifier"
+    onClick={() => {
+      // ✅ TROUVE l’index réel dans 'demandes' à partir de l'id
+      const realIndex = demandes.findIndex(dd => dd.id === d.id);
+      if (realIndex === -1) return;
+
+      setNewTaxi({
+        type: d.type ?? 'Taxi',
+        chambre: d.chambre ?? '',
+        heure: d.heure ?? '',
+        prix: d.prix ?? '',
+        statut: d.statut ?? 'Prévu',
+        dateAction: d.date ?? formatDate(selectedDate, 'yyyy-MM-dd'),
+      });
+
+      setEditDemandeIndex(realIndex); // ✅ on stocke l’index RÉEL
+      setShowTaxiModal(true);
+    }}
+  >
+    ✏️
+  </button>
+
+  {/* 🗑️ Supprimer */}
+  <button
+    className="text-sm px-2 py-1 border rounded hover:bg-red-50"
+    title="Supprimer"
+    onClick={() => {
+      if (confirm('Supprimer cette demande ?')) {
+        deleteDemande(d.id);
+      }
+    }}
+  >
+    🗑️
+  </button>
+</div>
+
   </div>
 ))}
 
 
 
               </div>
+              <div className="mt-4 text-sm font-semibold text-right">
+  Total VTC du mois : {totalVTCMois} €
+</div>
             </CardContent>
           </Card>
         </div>
@@ -1475,6 +1522,7 @@ const objetsVisibles = useMemo(() => {
             >
               <option value="Taxi">Taxi</option>
               <option value="Réveil">Réveil</option>
+              <option value="VTC">VTC</option>
             </select>
             <input
   type="date"
@@ -1494,6 +1542,15 @@ const objetsVisibles = useMemo(() => {
               value={newTaxi.chambre}
               onChange={(e) => setNewTaxi({ ...newTaxi, chambre: e.target.value })}
             />
+            {newTaxi.type === "VTC" && (
+  <Input
+    type="number"
+    placeholder="Prix (€)"
+    value={newTaxi.prix}
+    onChange={(e) => setNewTaxi({ ...newTaxi, prix: e.target.value })}
+  />
+)}
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowTaxiModal(false)}>Annuler</Button>
               <Button onClick={createDemande}>
