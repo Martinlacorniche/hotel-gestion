@@ -1496,13 +1496,14 @@ const objetsVisibles = useMemo(() => {
       if (realIndex === -1) return;
 
       setNewTaxi({
-        type: d.type ?? 'Taxi',
-        chambre: d.chambre ?? '',
-        heure: d.heure ?? '',
-        prix: d.prix ?? '',
-        statut: d.statut ?? 'Prévu',
-        dateAction: d.date ?? formatDate(selectedDate, 'yyyy-MM-dd'),
-      });
+  type: d.type ?? 'Taxi',
+  chambre: d.chambre ?? '',
+  heure: d.heure ?? '',
+  prix: d.prix ?? '',
+  chauffeur: d.chauffeur_id ?? '',   // 👈 ajoute ça
+  statut: d.statut ?? 'Prévu',
+  dateAction: d.date ?? formatDate(selectedDate, 'yyyy-MM-dd'),
+});
 
       setEditDemandeIndex(realIndex); // ✅ on stocke l’index RÉEL
       setShowTaxiModal(true);
