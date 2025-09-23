@@ -348,6 +348,17 @@ useEffect(() => {
   };
 }, [hotelId]);
 
+useEffect(() => {
+  if (!hotelId) return;
+  const fetchChauffeurs = async () => {
+    const { data, error } = await supabase
+      .from('chauffeurs')
+      .select('*')
+      .eq('hotel_id', hotelId);
+    if (!error) setChauffeurs(data || []);
+  };
+  fetchChauffeurs();
+}, [hotelId]);
 
 
 
@@ -403,9 +414,13 @@ useEffect(() => {
   dateAction: '',
   heure: '',
   prix: '',
+  chauffeur: '',
   statut: 'Prévu'
 });
 
+const [chauffeurs, setChauffeurs] = useState<any[]>([]);
+const [showChauffeurModal, setShowChauffeurModal] = useState(false);
+const [newChauffeur, setNewChauffeur] = useState('');
 
 
 
@@ -623,6 +638,7 @@ const createDemande = async () => {
   heure: newTaxi.heure,
   date: newTaxi.dateAction,
   prix: newTaxi.type === "VTC" ? parseFloat(newTaxi.prix) : null,
+  chauffeur_id: newTaxi.type === "VTC" ? newTaxi.chauffeur : null,
   valide: false,
   hotel_id: hotelId,
 };
@@ -695,9 +711,18 @@ const deleteDemande = async (id: string) => {
     return;
   }
 
+
   setDemandes((prev) => prev.filter((d) => d.id !== id));
 };
-
+const deleteChauffeur = async (id: string) => {
+  if (!confirm("Supprimer ce chauffeur ?")) return;
+  const { error } = await supabase.from("chauffeurs").delete().eq("id", id);
+  if (error) {
+    alert("Erreur suppression chauffeur : " + error.message);
+    return;
+  }
+  setChauffeurs((prev) => prev.filter((c) => c.id !== id));
+};
 
   const createTaxi = () => {
     if (!newTaxi.chambre || !newTaxi.dateAction) return;
@@ -887,17 +912,23 @@ const demandesVisibles = useMemo(() => {
 }, [demandes, selectedDate]);
 
 
-const totalVTCMois = useMemo(() => {
+const totalVTCMoisParChauffeur = useMemo(() => {
   const mois = selectedDate.getMonth();
   const annee = selectedDate.getFullYear();
-  return demandes
-    .filter(d => d.type === "VTC" && d.date)
-    .filter(d => {
-      const dDate = new Date(d.date);
-      return dDate.getMonth() === mois && dDate.getFullYear() === annee;
-    })
-    .reduce((sum, d) => sum + (d.prix || 0), 0);
-}, [demandes, selectedDate]);
+
+  const duMois = demandes.filter(d => {
+    if (d.type !== "VTC" || !d.date) return false;
+    const dDate = new Date(d.date);
+    return dDate.getMonth() === mois && dDate.getFullYear() === annee;
+  });
+
+  return duMois.reduce((acc, d) => {
+    const chauffeur = chauffeurs.find(c => c.id === d.chauffeur_id)?.nom || "Sans chauffeur";
+    acc[chauffeur] = (acc[chauffeur] || 0) + (d.prix || 0);
+    return acc;
+  }, {} as Record<string, number>);
+}, [demandes, selectedDate, chauffeurs]);
+
 
 
 
@@ -1500,9 +1531,15 @@ const objetsVisibles = useMemo(() => {
 
 
               </div>
-              <div className="mt-4 text-sm font-semibold text-right">
-  Total VTC du mois : {totalVTCMois} €
+              <div className="mt-4 text-sm font-semibold">
+  {Object.entries(totalVTCMoisParChauffeur).map(([chauffeur, total]) => (
+    <div key={chauffeur} className="flex justify-between">
+      <span>{chauffeur}</span>
+      <span>{total} €</span>
+    </div>
+  ))}
 </div>
+
             </CardContent>
           </Card>
         </div>
@@ -1537,19 +1574,46 @@ const objetsVisibles = useMemo(() => {
               value={newTaxi.heure}
               onChange={(e) => setNewTaxi({ ...newTaxi, heure: e.target.value })}
             />
-            <Input
-              placeholder="#"
-              value={newTaxi.chambre}
-              onChange={(e) => setNewTaxi({ ...newTaxi, chambre: e.target.value })}
-            />
+            <textarea
+  placeholder="#"
+  className="w-full border rounded px-2 py-1"
+  rows={2}   // tu peux ajuster le nombre de lignes visibles
+  value={newTaxi.chambre}
+  onChange={(e) => setNewTaxi({ ...newTaxi, chambre: e.target.value })}
+/>
+
             {newTaxi.type === "VTC" && (
-  <Input
-    type="number"
-    placeholder="Prix (€)"
-    value={newTaxi.prix}
-    onChange={(e) => setNewTaxi({ ...newTaxi, prix: e.target.value })}
-  />
+  <>
+    <Input
+      type="number"
+      placeholder="Prix (€)"
+      value={newTaxi.prix}
+      onChange={(e) => setNewTaxi({ ...newTaxi, prix: e.target.value })}
+    />
+    <div className="flex items-center gap-2">
+      <select
+        className="w-full border rounded px-2 py-1"
+        value={newTaxi.chauffeur || ""}
+        onChange={(e) => setNewTaxi({ ...newTaxi, chauffeur: e.target.value })}
+      >
+        <option value="">Choisir un chauffeur</option>
+        {chauffeurs.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.nom}
+          </option>
+        ))}
+      </select>
+      <Button
+        size="sm"
+        className="bg-indigo-500 text-white"
+        onClick={() => setShowChauffeurModal(true)}
+      >
+        +
+      </Button>
+    </div>
+  </>
 )}
+
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowTaxiModal(false)}>Annuler</Button>
@@ -1927,6 +1991,56 @@ const objetsVisibles = useMemo(() => {
     </div>
   </div>
 )}
+{showChauffeurModal && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="bg-white p-6 rounded-lg space-y-4 w-full max-w-sm">
+      <h2 className="text-xl font-bold">Gestion des Chauffeurs</h2>
+
+      {/* Liste des chauffeurs existants */}
+      <div className="space-y-2 max-h-40 overflow-y-auto">
+        {chauffeurs.map((c) => (
+          <div key={c.id} className="flex justify-between items-center border px-2 py-1 rounded">
+            <span>{c.nom}</span>
+            <button
+              className="text-red-500 text-sm"
+              onClick={() => deleteChauffeur(c.id)}
+            >
+              🗑️
+            </button>
+          </div>
+        ))}
+        {chauffeurs.length === 0 && <div className="text-sm text-gray-500">Aucun chauffeur pour l’instant</div>}
+      </div>
+
+      {/* Formulaire d’ajout */}
+      <Input
+        placeholder="Nom du chauffeur"
+        value={newChauffeur}
+        onChange={(e) => setNewChauffeur(e.target.value)}
+      />
+
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => setShowChauffeurModal(false)}>Fermer</Button>
+        <Button
+          onClick={async () => {
+            if (!newChauffeur.trim()) return;
+            const { data, error } = await supabase
+              .from('chauffeurs')
+              .insert({ nom: newChauffeur, hotel_id: hotelId })
+              .select();
+            if (!error && data) {
+              setChauffeurs([...chauffeurs, ...data]);
+              setNewChauffeur('');
+            }
+          }}
+        >
+          Ajouter
+        </Button>
+      </div>
+    </div>
+  </div>
+)}
+
 
 
 {user.role === 'admin' && (
