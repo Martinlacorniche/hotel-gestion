@@ -554,149 +554,168 @@ const openDuplicationModal = (user) => {
   setIsDuplicationModalOpen(true);
 };
 
-const exportPDF = () => {
+const exportPDF = async () => { // ⬅️ CHANGED: async
   const now = new Date();
-const moisFR = now.toLocaleDateString('fr-FR', { month: 'long' });
-// Capitaliser la 1ʳᵉ lettre (optionnel mais plus joli en FR)
-const moisCap = moisFR.charAt(0).toUpperCase() + moisFR.slice(1);
-const exportTitle = `Planning — ${moisCap}`;
+  const moisFR = now.toLocaleDateString('fr-FR', { month: 'long' });
+  const moisCap = moisFR.charAt(0).toUpperCase() + moisFR.slice(1);
+  const exportTitle = `Planning — ${moisCap}`;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+
   const month = currentWeekStart.getMonth();
   const year = currentWeekStart.getFullYear();
 
-  const start = new Date(year, month, 1);
-  const end = new Date(year, month + 1, 0);
+  // parse "YYYY-MM-DD" en locale (midi pour éviter les décalages UTC)
+  const parseYMDLocal = (s?: string | null) => {
+    if (!s) return null;
+    const [yy, mm, dd] = s.split('-').map(Number);
+    return new Date(yy, (mm || 1) - 1, dd || 1, 12, 0, 0);
+  };
 
-  const entriesForMonth = entriesView.filter(entry => {
-    const entryDate = new Date(entry.date);
-    return entryDate >= start && entryDate <= end;
-  });
   // bornes du mois affiché
-// bornes du mois exporté
-const monthStart = new Date(year, month, 1, 0, 0, 0);
-const monthEnd   = new Date(year, month + 1, 0, 23, 59, 59);
+  const monthStart = new Date(year, month, 1, 0, 0, 0);
+  const monthEnd   = new Date(year, month + 1, 0, 23, 59, 59);
+  const fromStr    = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const toStr      = `${year}-${String(month + 1).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2,'0')}`;
 
-// parse "YYYY-MM-DD" -> Date locale fin de journée (fin inclusive)
-const parseYMD = (s?: string | null) => {
-  if (!s) return null;
-  const [yy, mm, dd] = s.split('-').map(Number);
-  return new Date(yy, (mm || 1) - 1, dd || 1, 23, 59, 59);
-};
+  // ⬇️ NEW: fetch dédié du mois complet pour l’hôtel courant
+  const userIds = users.map(u => u.id_auth).filter(Boolean);
+  const { data: monthEntries, error: monthErr } = await supabase
+    .from('planning_entries')
+    .select('*')
+    .eq('hotel_id', hotelId)
+    .in('user_id', userIds)
+    .gte('date', fromStr)
+    .lte('date', toStr);
 
-// chevauchement contrat/mois
-const overlapsMonth = (u: any) => {
-  const start = u.employment_start_date ? new Date(u.employment_start_date) : null;
-  const end   = parseYMD(u.employment_end_date);
-  if (end && end < monthStart) return false;
-  if (start && start > monthEnd) return false;
-  return true;
-};
+  // Source d’entries pour l’export: DB si ok, sinon fallback au state
+  const sourceEntries = monthErr ? entriesView : (monthEntries ?? []);
 
-// ✅ Ordre identique au planning mais en partant de "users" (pas rows)
-const orderedUsersByOrd = [...users].sort((a, b) => (a.ordre ?? 9999) - (b.ordre ?? 9999));
+  // Filtre strict sur le mois (avec parsing local)
+  const filtered = sourceEntries.filter(e => {
+    const d = parseYMDLocal(e.date);
+    return d && d >= monthStart && d <= monthEnd;
+  });
 
-// ✅ Utilisateurs à exporter = ceux dont le contrat chevauche le mois
-const exportUsers = orderedUsersByOrd.filter(overlapsMonth);
-
-
-
-  
-
-  // Couleurs associées aux shifts (mêmes que dans ton planning)
-const shiftColors = {
-  'Réception matin': [173, 216, 230],      // bleu clair (très clair)
-  'Réception soir': [30, 144, 255],        // bleu soutenu (DodgerBlue)
-  'Night': [0, 0, 0],                      // noir
-  'Présence': [238, 130, 238],             // violet
-  'Housekeeping Chambre': [144, 238, 144], // vert clair
-  'Housekeeping Communs': [0, 128, 0],     // vert foncé
-  'Petit Déjeuner': [255, 255, 102],       // jaune vif
-  'Extra': [216, 191, 216],                // mauve
-  'CP': [255, 182, 193],                   // rose clair
-  'Maladie': [255, 99, 71],                // rouge
-  'Injustifié': [255, 165, 0],             // orange
-  'Repos': [220, 220, 220],                // gris clair
-  'Les Voiles': [0, 0, 0],                 // noir (texte blanc)
-  'École': [102, 205, 170],                // vert menthe
-};
-
-
-
-  const abbreviateShift = (shift) => {
-  switch (shift) {
-    case 'Réception matin': return 'RM';
-    case 'Réception soir': return 'RS';
-    case 'Night': return 'N';
-    case 'Présence': return 'P';
-    case 'Housekeeping Chambre': return 'HC';
-    case 'Housekeeping Communs': return 'HCo';
-    case 'Petit Déjeuner': return 'PD';
-    case 'Extra': return 'E';
-    case 'CP': return 'CP';
-    case 'Maladie': return 'M';
-    case 'Injustifié': return 'I';
-    case 'Repos': return 'R';
-    case 'Les Voiles': return 'LV';
-    case 'École': return 'ECO'; // nouveau
-    default: return '';
+  // Déduplication par (user_id, date) en privilégiant published
+  const byUserDate = new Map<string, any>();
+  const pickBetter = (a: any, b: any) => {
+    if (a?.status === 'published' && b?.status !== 'published') return a;
+    if (b?.status === 'published' && a?.status !== 'published') return b;
+    const ta = a?.created_at ? new Date(a.created_at).getTime() : 0;
+    const tb = b?.created_at ? new Date(b.created_at).getTime() : 0;
+    return tb >= ta ? b : a; // dernier créé
+  };
+  for (const e of filtered) {
+    const key = `${e.user_id}|${e.date}`;
+    byUserDate.set(key, byUserDate.has(key) ? pickBetter(byUserDate.get(key), e) : e);
   }
-};
+  const entriesForMonth = Array.from(byUserDate.values());
 
+  // parse "YYYY-MM-DD" -> Date locale fin de journée (fin inclusive)
+  const parseYMD = (s?: string | null) => {
+    if (!s) return null;
+    const [yy, mm, dd] = s.split('-').map(Number);
+    return new Date(yy, (mm || 1) - 1, dd || 1, 23, 59, 59);
+  };
+
+  // chevauchement contrat/mois
+  const overlapsMonth = (u: any) => {
+    const start = u.employment_start_date ? new Date(u.employment_start_date) : null;
+    const end   = parseYMD(u.employment_end_date);
+    if (end && end < monthStart) return false;
+    if (start && start > monthEnd) return false;
+    return true;
+  };
+
+  const orderedUsersByOrd = [...users].sort((a, b) => (a.ordre ?? 9999) - (b.ordre ?? 9999));
+  const exportUsers = orderedUsersByOrd.filter(overlapsMonth);
+
+  const shiftColors = {
+    'Réception matin': [173, 216, 230],
+    'Réception soir': [30, 144, 255],
+    'Night': [0, 0, 0],
+    'Présence': [238, 130, 238],
+    'Housekeeping Chambre': [144, 238, 144],
+    'Housekeeping Communs': [0, 128, 0],
+    'Petit Déjeuner': [255, 255, 102],
+    'Extra': [216, 191, 216],
+    'CP': [255, 182, 193],
+    'Maladie': [255, 99, 71],
+    'Injustifié': [255, 165, 0],
+    'Repos': [220, 220, 220],
+    'Les Voiles': [0, 0, 0],
+    'École': [102, 205, 170],
+  };
+
+  const abbreviateShift = (shift: string) => {
+    switch (shift) {
+      case 'Réception matin': return 'RM';
+      case 'Réception soir': return 'RS';
+      case 'Night': return 'N';
+      case 'Présence': return 'P';
+      case 'Housekeeping Chambre': return 'HC';
+      case 'Housekeeping Communs': return 'HCo';
+      case 'Petit Déjeuner': return 'PD';
+      case 'Extra': return 'E';
+      case 'CP': return 'CP';
+      case 'Maladie': return 'M';
+      case 'Injustifié': return 'I';
+      case 'Repos': return 'R';
+      case 'Les Voiles': return 'LV';
+      case 'École': return 'ECO';
+      default: return '';
+    }
+  };
 
   // PAGE 1 - Récapitulatif
-  // Utiliser le même ordre que l'affichage du planning
-
   const userStats = exportUsers.map(user => {
-  const uEnd = parseYMD(user.employment_end_date);
-  const uStart = user.employment_start_date ? new Date(user.employment_start_date) : null;
+    const uEnd = parseYMD(user.employment_end_date);
+    const uStart = user.employment_start_date ? new Date(user.employment_start_date) : null;
 
-  // Entries du mois ET dans la fenêtre de contrat
-  const entries = entriesForMonth.filter(e => {
-    if (e.user_id !== user.id_auth) return false;
-    const d = new Date(e.date);
-    if (uStart && d < uStart) return false;
-    if (uEnd && d > uEnd) return false;
-    return true;
-  });
+    const entries = entriesForMonth.filter(e => {
+      if (e.user_id !== user.id_auth) return false;
+      const d = parseYMDLocal(e.date)!;
+      if (uStart && d < uStart) return false;
+      if (uEnd && d > uEnd) return false;
+      return true;
+    });
 
-  let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0, repas = 0;
+    let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0, repas = 0;
 
-  for (const entry of entries) {
-    if (!['Repos', 'CP', 'Maladie', 'Injustifié', 'École'].includes(entry.shift)) {
-      workedDays++;
-      if (entry.start_time && entry.end_time) {
-        const [sh, sm] = entry.start_time.split(":").map(Number);
-        const [eh, em] = entry.end_time.split(":").map(Number);
-        let minutes = (eh * 60 + em) - (sh * 60 + sm);
-        if (minutes < 0) minutes += 24 * 60;
-        workedHours += minutes / 60;
-           // Indemnité repas : > 5h (strictement au-dessus de 5h)
-   if (minutes > 5 * 60) repas += 1;
+    for (const entry of entries) {
+      if (!['Repos', 'CP', 'Maladie', 'Injustifié', 'École'].includes(entry.shift)) {
+        workedDays++;
+        if (entry.start_time && entry.end_time) {
+          const [sh, sm] = entry.start_time.split(":").map(Number);
+          const [eh, em] = entry.end_time.split(":").map(Number);
+          let minutes = (eh * 60 + em) - (sh * 60 + sm);
+          if (minutes < 0) minutes += 24 * 60;
+          workedHours += minutes / 60;
+          if (minutes > 5 * 60) repas += 1;
+        }
       }
+      if (entry.shift === 'CP') cp++;
+      if (entry.shift === 'Maladie') maladie++;
+      if (entry.shift === 'Injustifié') injustifie++;
     }
-    if (entry.shift === 'CP') cp++;
-    if (entry.shift === 'Maladie') maladie++;
-    if (entry.shift === 'Injustifié') injustifie++;
-  }
 
-  return {
-    nom: user.name || user.email,
-    workedDays,
-    workedHours: Math.round(workedHours * 100) / 100,
-    cp,
-    maladie,
-    injustifie,
-    repas,
-  };
-});
-
+    return {
+      nom: user.name || user.email,
+      workedDays,
+      workedHours: Math.round(workedHours * 100) / 100,
+      cp,
+      maladie,
+      injustifie,
+      repas,
+    };
+  });
 
   doc.setFontSize(14);
   doc.text(`Récapitulatif du mois ${month + 1}/${year}`, 40, 40);
   autoTable(doc, {
     startY: 60,
-   head: [["Salarié", "Jours", "Heures", "CP", "Maladie", "Injust.", "Ind. Repas"]],
-   body: userStats.map(u => [u.nom, u.workedDays, u.workedHours, u.cp, u.maladie, u.injustifie, u.repas]),
+    head: [["Salarié", "Jours", "Heures", "CP", "Maladie", "Injust.", "Ind. Repas"]],
+    body: userStats.map(u => [u.nom, u.workedDays, u.workedHours, u.cp, u.maladie, u.injustifie, u.repas]),
     theme: "grid",
     styles: { fontSize: 10 },
     headStyles: { fillColor: [245, 85, 85] },
@@ -704,31 +723,27 @@ const shiftColors = {
 
   // PAGE 2 - Planning avec couleurs
   doc.addPage('a4', 'landscape');
-  const daysInMonth = Array.from({ length: end.getDate() }, (_, i) => i + 1);
+  const daysInMonth = Array.from({ length: monthEnd.getDate() }, (_, i) => i + 1);
 
   const planningTable = exportUsers.map(user => {
-  const row = [user.name || user.email];
-  const uEnd = parseYMD(user.employment_end_date);
-  const uStart = user.employment_start_date ? new Date(user.employment_start_date) : null;
+    const row = [user.name || user.email];
+    const uEnd = parseYMD(user.employment_end_date);
+    const uStart = user.employment_start_date ? new Date(user.employment_start_date) : null;
 
-  for (let d = 1; d <= daysInMonth.length; d++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const day = new Date(year, month, d, 12, 0, 0);
+    for (let d = 1; d <= daysInMonth.length; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const day = new Date(year, month, d, 12, 0, 0);
 
-    // hors fenêtre de contrat -> vide
-    if ((uStart && day < uStart) || (uEnd && day > uEnd)) {
-      row.push('');
-      continue;
+      if ((uStart && day < uStart) || (uEnd && day > uEnd)) {
+        row.push('');
+        continue;
+      }
+
+      const entry = entriesForMonth.find(e => e.user_id === user.id_auth && e.date === dateStr);
+      row.push(entry ? abbreviateShift(entry.shift) : '');
     }
-
-    const entry = entriesForMonth.find(e => e.user_id === user.id_auth && e.date === dateStr);
-    row.push(entry ? abbreviateShift(entry.shift) : '');
-  }
-  return row;
-});
-
-
-  
+    return row;
+  });
 
   const headRow = ["Salarié", ...daysInMonth.map(d => String(d))];
   doc.setFontSize(12);
@@ -753,6 +768,7 @@ const shiftColors = {
 
   doc.save(`Planning_${moisCap}_${now.getFullYear()}.pdf`);
 };
+
 
 
 
