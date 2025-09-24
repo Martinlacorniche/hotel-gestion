@@ -554,15 +554,17 @@ const openDuplicationModal = (user) => {
   setIsDuplicationModalOpen(true);
 };
 
-const exportPDF = async () => { // ⬅️ CHANGED: async
-  const now = new Date();
-  const moisFR = now.toLocaleDateString('fr-FR', { month: 'long' });
+const exportPDF = async () => {
+  // ➜ Utiliser le mois affiché, pas "now"
+  const month = currentWeekStart.getMonth();
+  const year  = currentWeekStart.getFullYear();
+  const displayDate = new Date(year, month, 1);
+
+  const moisFR  = displayDate.toLocaleDateString('fr-FR', { month: 'long' });
   const moisCap = moisFR.charAt(0).toUpperCase() + moisFR.slice(1);
   const exportTitle = `Planning — ${moisCap}`;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
 
-  const month = currentWeekStart.getMonth();
-  const year = currentWeekStart.getFullYear();
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
 
   // parse "YYYY-MM-DD" en locale (midi pour éviter les décalages UTC)
   const parseYMDLocal = (s?: string | null) => {
@@ -766,7 +768,8 @@ const exportPDF = async () => { // ⬅️ CHANGED: async
     }
   });
 
-  doc.save(`Planning_${moisCap}_${now.getFullYear()}.pdf`);
+  doc.save(`Planning_${moisCap}_${year}.pdf`);
+
 };
 
 
