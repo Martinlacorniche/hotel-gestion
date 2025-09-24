@@ -10,7 +10,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car, NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car, NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut, Stamp } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import { format as formatDate } from 'date-fns';
@@ -246,7 +246,8 @@ const [searchObjets, setSearchObjets] = useState('');
 
 
 useEffect(() => {
-  supabase.from('hotels').select('id, nom, has_parking').then(({ data }) => {
+  supabase.from('hotels').select('id, nom, has_parking, has_coworking')
+.then(({ data }) => {
     setHotels(data || []);
     // NE TOUCHE PAS selectedHotelId ici !
     // Le setSelectedHotelId ne doit JAMAIS être ici
@@ -258,7 +259,8 @@ useEffect(() => {
 
 useEffect(() => {
   if (hotelId) {
-    supabase.from('hotels').select('id, nom, has_parking').eq('id', hotelId).single()
+    supabase.from('hotels').select('id, nom, has_parking, has_coworking')
+.eq('id', hotelId).single()
       .then(({ data }) => setCurrentHotel(data));
   }
 }, [hotelId]);
@@ -1102,6 +1104,16 @@ const objetsVisibles = useMemo(() => {
       </Button>
     </a>
   )}
+{currentHotel?.has_coworking && (
+  <a href="/fidelite" target="_blank" rel="noopener noreferrer">
+    <Button
+      className="bg-[#88C9B9] hover:bg-[#6FB9A6] text-white text-sm shadow flex items-center justify-center"
+      title="Fidélité"
+    >
+      <Stamp className="w-5 h-5" />
+    </Button>
+  </a>
+)}
 
   {/* Commandes */}
   <a href="/commandes" target="_blank" rel="noopener noreferrer">
