@@ -6,9 +6,13 @@ import { AuthProvider } from '@/context/AuthContext';
 import { Toaster } from 'react-hot-toast';
 
 export const metadata: Metadata = {
-  title: 'Mon Application',
-  description: 'Application de planning',
+  title: 'Consignes HTBM',
+  description: 'Gestions des consignes',
+  icons: {
+    icon: '/favicon.png',   // ton fichier placé dans /public
+  },
 };
+
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
