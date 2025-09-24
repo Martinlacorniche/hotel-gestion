@@ -4,233 +4,356 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/context/AuthContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useAuth } from '@/context/AuthContext'; // adapte le chemin si besoin
+
 export default function PageCommandes() {
- 
-
-  const { user } = useAuth(); // ← C'est CA qui te donne l'user courant !
+  const { user } = useAuth();
   const [selectedHotelId, setSelectedHotelId] = useState(() => {
-  if (typeof window !== "undefined") {
-    const fromStorage = window.localStorage.getItem('selectedHotelId');
-    if (fromStorage) return fromStorage;
-  }
-  if (user && user.hotel_id) return user.hotel_id;
-  return '';
-});
+    if (typeof window !== "undefined") {
+      const fromStorage = window.localStorage.getItem('selectedHotelId');
+      if (fromStorage) return fromStorage;
+    }
+    if (user && user.hotel_id) return user.hotel_id;
+    return '';
+  });
 
+  useEffect(() => {
+    if (selectedHotelId && typeof window !== "undefined") {
+      window.localStorage.setItem('selectedHotelId', selectedHotelId);
+    }
+  }, [selectedHotelId]);
 
-
-useEffect(() => {
-  if (selectedHotelId && typeof window !== "undefined") {
-    window.localStorage.setItem('selectedHotelId', selectedHotelId);
-  }
-}, [selectedHotelId]);
-
-  const isAdmin = user?.role === 'admin';
-  const [hotels, setHotels] = useState([]);
-  const [currentHotel, setCurrentHotel] = useState(null);
+  const [hotels, setHotels] = useState<any[]>([]);
   const hotelId = selectedHotelId || user?.hotel_id;
 
-  const [commandes, setCommandes] = useState([]);
-  const [lignes, setLignes] = useState([]);
-  const [showModal, setShowModal] = useState(false);
+  const [commandes, setCommandes] = useState<any[]>([]);
+  const [lignes, setLignes] = useState<any[]>([]);
   const [newCommande, setNewCommande] = useState({ fournisseur: '', urgence: false });
-  const [selectedCommandeId, setSelectedCommandeId] = useState(null);
-  const [showLigneModal, setShowLigneModal] = useState(false);
-  const [newLigne, setNewLigne] = useState({ produit: '', quantite: 1, unite: '', commentaire: '' });
   const [showArchived, setShowArchived] = useState(false);
 
-  useEffect(() => {
-  supabase.from('hotels').select('id, nom').then(({ data }) => {
-    setHotels(data || []);
-  });
-}, []);
+  const [newLignes, setNewLignes] = useState<Record<string, { produit: string; commentaire: string }>>({});
+  const [editingLigneId, setEditingLigneId] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<{ produit: string; commentaire: string }>({ produit: '', commentaire: '' });
 
-useEffect(() => {
-  const hotelName = currentHotel?.nom ? ` — ${currentHotel.nom}` : '';
-  document.title = `Commandes${hotelName}`; // adapte “Planning” -> “Parking”, “Commandes”, ...
-}, [currentHotel]);
-
-useEffect(() => {
-  if (hotelId) fetchCommandes();
-  // eslint-disable-next-line
-}, [hotelId]);
-
-useEffect(() => {
-  if (selectedHotelId) {
-    supabase.from('hotels').select('id, nom').eq('id', selectedHotelId).single()
-      .then(({ data }) => setCurrentHotel(data));
-  }
-}, [selectedHotelId]);
-
+  const [editCommande, setEditCommande] = useState<any | null>(null);
+  const [showEditCommande, setShowEditCommande] = useState(false);
 
   useEffect(() => {
-    fetchCommandes();
-    fetchLignes();
+    supabase.from('hotels').select('id, nom').then(({ data }) => setHotels(data || []));
   }, []);
 
+  useEffect(() => {
+    if (hotelId) {
+      fetchCommandes();
+      fetchLignes();
+    }
+  }, [hotelId]);
+
   async function fetchCommandes() {
-    const { data, error } = await supabase.from('commandes').select('*')
-    .eq('hotel_id', hotelId)
-    .order('date_creation', { ascending: false });
-    if (!error) setCommandes(data);
+    const { data } = await supabase.from('commandes').select('*').eq('hotel_id', hotelId).order('date_creation', { ascending: false });
+    setCommandes(data || []);
   }
 
   async function fetchLignes() {
-    const { data, error } = await supabase.from('commandes_lignes').select('*');
-    if (!error) setLignes(data);
+    const { data } = await supabase.from('commandes_lignes').select('*');
+    setLignes(data || []);
   }
 
-  async function confirmAndUpdateStatut(id, newStatut) {
-    const emojis = {
-      'commandée': '🛎️',
-      'reçue': '📦'
-    };
-    const messages = {
-      'commandée': "Tu confirmes que tu viens de commander cette pépite ? 😎",
-      'reçue': "C’est arrivé ? Bien reçu ? 😏"
-    };
-    if (confirm(`${emojis[newStatut]} ${messages[newStatut]}`)) {
-      await supabase.from('commandes').update({ statut: newStatut }).eq('id', id);
-      fetchCommandes();
-    }
+  async function confirmAndUpdateStatut(id: string, newStatut: string) {
+    await supabase.from('commandes').update({ statut: newStatut }).eq('id', id);
+    fetchCommandes();
   }
 
   async function createCommande() {
-    const { error } = await supabase.from('commandes').insert({
+    if (!newCommande.fournisseur.trim()) return;
+    await supabase.from('commandes').insert({
       fournisseur: newCommande.fournisseur,
       urgence: newCommande.urgence,
       statut: 'en attente',
       hotel_id: hotelId,
     });
-    if (!error) {
-      setShowModal(false);
-      setNewCommande({ fournisseur: '', urgence: false });
-      fetchCommandes();
-    }
+    setNewCommande({ fournisseur: '', urgence: false });
+    fetchCommandes();
   }
 
-  async function addLigne() {
-    if (!selectedCommandeId) return;
-    const { error } = await supabase.from('commandes_lignes').insert({
-      ...newLigne,
-      commande_id: selectedCommandeId,
+  async function addLigne(commandeId: string) {
+    const ligne = newLignes[commandeId];
+    if (!ligne || !ligne.produit.trim()) return;
+    await supabase.from('commandes_lignes').insert({
+      produit: ligne.produit,
+      commentaire: ligne.commentaire,
+      commande_id: commandeId,
     });
-    if (!error) {
-      setShowLigneModal(false);
-      setNewLigne({ produit: '', quantite: 1, unite: '', commentaire: '' });
-      fetchLignes();
-    }
+    setNewLignes((prev) => ({ ...prev, [commandeId]: { produit: '', commentaire: '' } }));
+    fetchLignes();
   }
 
-  async function deleteLigne(id) {
+  async function deleteLigne(id: string) {
     await supabase.from('commandes_lignes').delete().eq('id', id);
     fetchLignes();
   }
 
+  async function updateLigne(ligneId: string, data: { produit: string; commentaire: string }) {
+    await supabase.from('commandes_lignes').update(data).eq('id', ligneId);
+    setEditingLigneId(null);
+    fetchLignes();
+  }
+
+  async function deleteCommande(id: string) {
+    await supabase.from('commandes').delete().eq('id', id);
+    fetchCommandes();
+  }
+
+  async function updateCommande(id: string, data: { fournisseur: string; urgence: boolean }) {
+    await supabase.from('commandes').update(data).eq('id', id);
+    setShowEditCommande(false);
+    fetchCommandes();
+  }
+
+  const grouped = {
+    attente: commandes.filter(c => c.statut === 'en attente'),
+    commandee: commandes.filter(c => c.statut === 'commandée'),
+    recue: commandes.filter(c => c.statut === 'reçue'),
+  };
+
   return (
     <div className="p-6">
       {hotels.length > 0 && (
-  <div className="mb-6 flex items-center gap-2">
-  <label htmlFor="select-hotel" className="font-semibold text-gray-700"> Hôtel :</label>
-  <div className="flex gap-2 flex-wrap">
-  {hotels.map(h => (
-    <button
-      key={h.id}
-      onClick={() => setSelectedHotelId(h.id)}
-      className={`px-4 py-2 rounded-lg shadow font-semibold border transition ${
-        h.id === selectedHotelId
-          ? 'bg-[#88C9B9] text-white border-[#88C9B9]'
-          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-      }`}
-    >
-      {h.nom}
-    </button>
-  ))}
-</div>
-
-</div>
-)}
-
+        <div className="mb-6 flex items-center gap-2 flex-wrap">
+          <label className="font-semibold text-gray-700">Hôtel :</label>
+          {hotels.map(h => (
+            <Button
+              key={h.id}
+              variant={h.id === selectedHotelId ? "default" : "outline"}
+              className={h.id === selectedHotelId ? "bg-[#88C9B9] text-white" : ""}
+              onClick={() => setSelectedHotelId(h.id)}
+            >
+              {h.nom}
+            </Button>
+          ))}
+        </div>
+      )}
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">🛒 Besoin d'un truc ?</h1>
-        <Button className="bg-indigo-600 hover:bg-indigo-700 text-white shadow" onClick={() => setShowModal(true)}>➕ Nouvelle commande</Button>
+        <h1 className="text-2xl font-bold">🛒 Commandes</h1>
+        <div className="flex gap-2">
+          <Input
+            placeholder="Fournisseur"
+            value={newCommande.fournisseur}
+            onChange={(e) => setNewCommande({ ...newCommande, fournisseur: e.target.value })}
+            className="w-48"
+          />
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={newCommande.urgence}
+              onChange={(e) => setNewCommande({ ...newCommande, urgence: e.target.checked })}
+            />
+            Urgence
+          </label>
+          <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={createCommande}>
+            ➕ Ajouter
+          </Button>
+        </div>
       </div>
 
-      <div className="flex justify-end items-center mb-4">
+      <div className="flex justify-end mb-4">
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
           Afficher les commandes reçues
         </label>
       </div>
 
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {commandes.filter(c => showArchived || c.statut !== 'reçue').map(commande => (
-          <div
-  key={commande.id}
-  className={`rounded-lg shadow p-4 w-full min-h-[180px] max-h-[500px] overflow-auto relative flex flex-col justify-between transition-colors duration-200
-    ${commande.statut === 'commandée' ? 'bg-green-100 border border-green-300' : commande.statut === 'reçue' ? 'bg-gray-200 border border-gray-300' : 'bg-yellow-100 border border-yellow-300'}`}
->
+      <Section
+        title="⏳ En attente"
+        color="bg-blue-50 border border-blue-200"
+        commandes={grouped.attente}
+        lignes={lignes}
+        newLignes={newLignes}
+        setNewLignes={setNewLignes}
+        addLigne={addLigne}
+        deleteLigne={deleteLigne}
+        confirmAndUpdateStatut={confirmAndUpdateStatut}
+        editingLigneId={editingLigneId}
+        setEditingLigneId={setEditingLigneId}
+        editValues={editValues}
+        setEditValues={setEditValues}
+        updateLigne={updateLigne}
+        deleteCommande={deleteCommande}
+        setEditCommande={setEditCommande}
+        setShowEditCommande={setShowEditCommande}
+      />
 
-            <div>
-              <h2 className="font-bold text-lg truncate">{commande.fournisseur}</h2>
-              {commande.urgence && <div className="text-red-600 text-sm">⚠️ Urgence</div>}
-              <div className="text-xs text-gray-600 mb-2">Statut : {commande.statut}</div>
-              <ul className="space-y-1 overflow-y-auto max-h-[160px] pr-2">
-                {lignes.filter(l => l.commande_id === commande.id).map(ligne => (
-                  <li key={ligne.id} className="text-sm flex justify-between items-center">
-                    <div className="break-words whitespace-pre-line">
-                      <strong>{ligne.produit}</strong> - {ligne.quantite} {ligne.unite}
-                      {ligne.commentaire && <span className="text-xs text-gray-500 ml-1">({ligne.commentaire})</span>}
-                    </div>
-                    <Button size="sm" variant="ghost" onClick={() => deleteLigne(ligne.id)}>🗑️</Button>
-                  </li>
-                ))}
-              </ul>
+      <Section
+        title="✅ Commandées"
+        color="bg-indigo-50 border border-indigo-200"
+        commandes={grouped.commandee}
+        lignes={lignes}
+        readOnly
+        confirmAndUpdateStatut={confirmAndUpdateStatut}
+        deleteCommande={deleteCommande}
+        setEditCommande={setEditCommande}
+        setShowEditCommande={setShowEditCommande}
+      />
+
+      {showArchived && (
+        <Section
+          title="📦 Reçues"
+          color="bg-gray-100 border border-gray-200"
+          commandes={grouped.recue}
+          lignes={lignes}
+          readOnly
+          deleteCommande={deleteCommande}
+          setEditCommande={setEditCommande}
+          setShowEditCommande={setShowEditCommande}
+        />
+      )}
+
+      {/* Dialog modifier commande */}
+      <Dialog open={showEditCommande} onOpenChange={setShowEditCommande}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifier commande</DialogTitle>
+          </DialogHeader>
+          {editCommande && (
+            <>
+              <Input
+                placeholder="Fournisseur"
+                value={editCommande.fournisseur}
+                onChange={(e) => setEditCommande({ ...editCommande, fournisseur: e.target.value })}
+                className="mb-2"
+              />
+              <label className="flex items-center gap-2 mb-4">
+                <input
+                  type="checkbox"
+                  checked={editCommande.urgence}
+                  onChange={(e) => setEditCommande({ ...editCommande, urgence: e.target.checked })}
+                />
+                Urgence
+              </label>
+              <Button onClick={() => updateCommande(editCommande.id, { fournisseur: editCommande.fournisseur, urgence: editCommande.urgence })}>
+                Sauvegarder
+              </Button>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// --- sous composant Section ---
+function Section({
+  title, color, commandes, lignes,
+  newLignes, setNewLignes, addLigne,
+  deleteLigne, confirmAndUpdateStatut,
+  editingLigneId, setEditingLigneId, editValues, setEditValues, updateLigne,
+  deleteCommande, setEditCommande, setShowEditCommande,
+  readOnly = false
+}: any) {
+  return (
+    <div className="mb-8">
+      <h2 className="text-xl font-semibold mb-4">{title}</h2>
+      <div className="space-y-4">
+        {commandes.map((commande: any) => (
+          <div key={commande.id} className={`${color} border rounded-lg p-4 shadow`}>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="font-bold text-lg">{commande.fournisseur}</h3>
+              <div className="flex items-center gap-2">
+                {commande.urgence && <span className="text-red-600 text-sm">⚠️ Urgence</span>}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm">⋮</Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <Button variant="ghost" className="w-full justify-start text-red-600" onClick={() => deleteCommande(commande.id)}>
+                      Supprimer commande
+                    </Button>
+                    <Button variant="ghost" className="w-full justify-start" onClick={() => { setEditCommande(commande); setShowEditCommande(true); }}>
+                      Modifier fournisseur / urgence
+                    </Button>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
-            <div className="flex gap-2 mt-2 flex-wrap">
+
+            <div className="flex flex-col gap-1 mb-2">
+              {lignes.filter(l => l.commande_id === commande.id).map(ligne => (
+                <div key={ligne.id} className="flex justify-between items-center text-sm">
+                  {editingLigneId === ligne.id ? (
+                    <div className="flex gap-2 w-full">
+                      <Input
+                        value={editValues.produit}
+                        onChange={(e) => setEditValues({ ...editValues, produit: e.target.value })}
+                      />
+                      <Input
+                        value={editValues.commentaire}
+                        onChange={(e) => setEditValues({ ...editValues, commentaire: e.target.value })}
+                      />
+                      <Button size="sm" onClick={() => updateLigne(ligne.id, editValues)}>💾</Button>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <strong>{ligne.produit}</strong>
+                        {ligne.commentaire && <span className="text-xs text-gray-500 ml-1">({ligne.commentaire})</span>}
+                      </div>
+                      {!readOnly && (
+                        <div className="flex gap-2">
+                          {commande.statut === 'en attente' && (
+                            <Button size="sm" variant="ghost" onClick={() => { setEditingLigneId(ligne.id); setEditValues({ produit: ligne.produit, commentaire: ligne.commentaire }); }}>✏️</Button>
+                          )}
+                          {commande.statut === 'en attente' && (
+                            <Button size="sm" variant="ghost" onClick={() => deleteLigne(ligne.id)}>🗑️</Button>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {!readOnly && commande.statut === 'en attente' && (
+              <div className="flex gap-2 mb-2">
+                <Input
+                  placeholder="Produit"
+                  value={newLignes[commande.id]?.produit || ''}
+                  onChange={(e) => setNewLignes((prev: any) => ({
+                    ...prev,
+                    [commande.id]: { ...prev[commande.id], produit: e.target.value }
+                  }))}
+                />
+                <Input
+                  placeholder="Commentaire"
+                  value={newLignes[commande.id]?.commentaire || ''}
+                  onChange={(e) => setNewLignes((prev: any) => ({
+                    ...prev,
+                    [commande.id]: { ...prev[commande.id], commentaire: e.target.value }
+                  }))}
+                />
+                <Button onClick={() => addLigne(commande.id)}>➕</Button>
+              </div>
+            )}
+
+            <div className="flex gap-2">
               {commande.statut === 'en attente' && (
-                <Button className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => confirmAndUpdateStatut(commande.id, 'commandée')}>✅ Commandée</Button>
+                <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => confirmAndUpdateStatut(commande.id, 'commandée')}>Marquer commandée</Button>
               )}
               {commande.statut !== 'reçue' && (
-                <Button className="text-xs bg-green-600 hover:bg-green-700 text-white" onClick={() => confirmAndUpdateStatut(commande.id, 'reçue')}>📦 Reçue</Button>
-              )}
-              {(commande.statut === 'en attente') && (
-                <Button className="text-xs bg-blue-200 hover:bg-blue-300 text-blue-800" onClick={() => { setSelectedCommandeId(commande.id); setShowLigneModal(true); }}>➕ Produit</Button>
+                <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => confirmAndUpdateStatut(commande.id, 'reçue')}>Marquer reçue</Button>
               )}
             </div>
           </div>
         ))}
+        {commandes.length === 0 && <p className="text-sm text-gray-500">Aucune commande</p>}
       </div>
-
-      <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Nouvelle commande</DialogTitle>
-          </DialogHeader>
-          <Input placeholder="Fournisseur" value={newCommande.fournisseur} onChange={(e) => setNewCommande({ ...newCommande, fournisseur: e.target.value })} className="mb-2" />
-          <label className="flex items-center gap-2 mb-4">
-            <input type="checkbox" checked={newCommande.urgence} onChange={(e) => setNewCommande({ ...newCommande, urgence: e.target.checked })} />
-            Urgence
-          </label>
-          <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={createCommande}>Valider</Button>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showLigneModal} onOpenChange={setShowLigneModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Ajouter un produit</DialogTitle>
-          </DialogHeader>
-          <Input placeholder="Produit" value={newLigne.produit} onChange={(e) => setNewLigne({ ...newLigne, produit: e.target.value })} className="mb-2" />
-          <Input placeholder="Quantité" type="number" value={newLigne.quantite} onChange={(e) => setNewLigne({ ...newLigne, quantite: parseInt(e.target.value) })} className="mb-2" />
-          <Input placeholder="Unité (ex: kg, boîte...)" value={newLigne.unite} onChange={(e) => setNewLigne({ ...newLigne, unite: e.target.value })} className="mb-2" />
-          <Input placeholder="Commentaire (optionnel)" value={newLigne.commentaire} onChange={(e) => setNewLigne({ ...newLigne, commentaire: e.target.value })} className="mb-2" />
-          <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={addLigne}>Ajouter</Button>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

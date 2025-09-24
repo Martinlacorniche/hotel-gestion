@@ -10,7 +10,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car, NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut, Stamp, Grid, Save } from 'lucide-react';
+import { ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car, NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut, Stamp, Grid } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import { format as formatDate } from 'date-fns';
@@ -88,12 +88,7 @@ useEffect(() => {
 const [currentHotel, setCurrentHotel] = useState(null);
 const hotelId = selectedHotelId || user?.hotel_id;
 
-const formatNumber = (n: number | null, suffix: string = "") => {
-  if (n === null || n === undefined || isNaN(n)) return "-";
-  return new Intl.NumberFormat("fr-FR", {
-    maximumFractionDigits: 0,
-  }).format(n) + suffix;
-};
+
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [tickets, setTickets] = useState<any[]>([]);
@@ -183,7 +178,6 @@ const reactivateUser = async (u: any) => {
   alert("Utilisateur réactivé ✅");
 };
 
-const [showCalendar, setShowCalendar] = useState(false);
 
 
 const [editIndex, setEditIndex] = useState<number | null>(null);
@@ -244,25 +238,6 @@ const deleteObjet = async (id: string) => {
   setObjetsTrouves((prev) => prev.filter((o) => o.id !== id));
 };
 
-const [kpis, setKpis] = useState<any | null>(null);
-
-useEffect(() => {
-  const fetchKpis = async () => {
-    if (!hotelId) return;
-    const { data, error } = await supabase
-      .from("kpis")
-      .select("*")
-      .eq("hotel_id", hotelId)
-      .eq("mois", selectedDate.getMonth() + 1)
-      .eq("annee", selectedDate.getFullYear())
-      .single();
-
-    if (!error) setKpis(data);
-    else setKpis(null);
-  };
-
-  fetchKpis();
-}, [hotelId, selectedDate]);
 
 
 const formatSafeDate = (dateStr: string | undefined) => {
@@ -1226,13 +1201,9 @@ const objetsVisibles = useMemo(() => {
           <Button variant="outline" size="icon" onClick={() => changeDay(-1)}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <button
-  onClick={() => setShowCalendar(true)}
-  className="text-lg font-medium px-3 py-1 rounded hover:bg-gray-100"
->
-  {format(selectedDate, 'eeee d MMMM yyyy', { locale: fr })}
-</button>
-
+          <div className="text-lg font-medium">
+            {format(selectedDate, 'eeee d MMMM yyyy', { locale: fr })}
+          </div>
        
 
           <Button variant="outline" size="icon" onClick={() => changeDay(1)}>
@@ -1455,31 +1426,39 @@ const objetsVisibles = useMemo(() => {
     </div>
 
     <div className="flex gap-2 justify-end mt-2">
-  <button
-  onClick={() => {
-    const realIndex = tickets.findIndex(ticket => ticket.id === t.id);
-    if (realIndex === -1) return;
-    setNewTicket({ ...t });
-    setEditTicketIndex(realIndex);
-    setShowTicketModal(true);
-  }}
-  className="text-sm"
-  title="Modifier"
->
-  ✏️
-</button>
-
-<Button
+  <Button
   size="sm"
   variant="outline"
   onClick={() => {
     const realIndex = tickets.findIndex(ticket => ticket.id === t.id);
-    if (realIndex !== -1) validerTicket(realIndex);
+    if (realIndex === -1) return;
+
+    setNewTicket({
+  titre: t.titre,
+  service: t.service,
+  dateAction: t.date_action,
+  priorite: t.priorite,
+  date_fin: t.date_fin || ''
+});
+
+    setEditTicketIndex(realIndex);
+    setShowTicketModal(true);
   }}
+>
+  ✏️ 
+</Button>
+
+
+  <Button
+  size="sm"
+  className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+  onClick={() => {
+  const realIndex = tickets.findIndex(ticket => ticket.id === t.id);
+  if (realIndex !== -1) validerTicket(realIndex);
+}}
 >
   Valider
 </Button>
-
 </div>
 
   </div>
@@ -1490,104 +1469,13 @@ const objetsVisibles = useMemo(() => {
 
         {/* Calendrier et Taxis/Réveils */}
         <div className="space-y-4">
-          {/* Tableau de bord KPIs */}
-{/* Tableau de bord KPIs */}
-<Card>
-  <CardContent className="p-4">
-    <h2 className="text-lg font-bold mb-4">📊 Tableau de bord</h2>
-
-    {[
-      { key: "ca", label: "CA", suffix: "€" },
-      { key: "taux_occupation", label: "Taux d’occupation", suffix: "%" },
-      { key: "prix_moyen", label: "Prix moyen", suffix: "€" },
-      { key: "guest_review", label: "Guest review", suffix: "/10" },
-    ].map((def, i) => {
-      const value = kpis?.[def.key];
-      const target = kpis?.[`${def.key}_objectif`];
-      const progress = value && target ? Math.min(100, (value / target) * 100) : 0;
-
-      return (
-        <div key={i} className="mb-3">
-          <div className="flex justify-between text-sm mb-1">
-            <span>{def.label}</span>
-
-            {isAdmin ? (
-              <div className="flex gap-2 items-center">
-                <input
-                  type="number"
-                  className="border rounded px-2 py-1 w-20 text-sm"
-                  value={value ?? ""}
-                  onChange={(e) =>
-                    setKpis((prev) => ({ ...prev, [def.key]: Number(e.target.value) }))
-                  }
-                />
-                /
-                <input
-                  type="number"
-                  className="border rounded px-2 py-1 w-20 text-sm"
-                  value={target ?? ""}
-                  onChange={(e) =>
-                    setKpis((prev) => ({ ...prev, [`${def.key}_objectif`]: Number(e.target.value) }))
-                  }
-                />
-                
+          <Card>
+            <CardContent className="p-2 flex flex-col items-center gap-2 !h-fit">
+                            <div className="scale-95">
+                <Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate} locale={fr} />
               </div>
-            ) : (
-              <span>
-  {formatNumber(value, def.suffix)} / {formatNumber(target, def.suffix)}
-</span>
-
-            )}
-          </div>
-
-          <div className="relative w-full bg-gray-200 rounded-full h-3 mt-1 overflow-hidden">
-  <div
-    className={`h-3 rounded-full transition-all duration-500 ${
-      progress >= 100
-        ? "bg-green-500"
-        : "bg-gradient-to-r from-indigo-500 to-purple-500"
-    }`}
-    style={{ width: `${progress}%` }}
-  />
-  <span className="absolute right-1 top-0 text-[10px] text-white font-bold">
-    
-  </span>
-</div>
-
-        </div>
-      );
-    })}
-    {isAdmin && (
-  <div className="flex justify-end mt-4">
-    <Button
-  className="bg-indigo-600 hover:bg-indigo-700 text-white shadow flex items-center gap-2"
-  onClick={async () => {
-    const payload = {
-      hotel_id: hotelId,
-      mois: selectedDate.getMonth() + 1,
-      annee: selectedDate.getFullYear(),
-      ...kpis,
-    };
-    const { error } = await supabase
-      .from("kpis")
-      .upsert(payload, { onConflict: "hotel_id,mois,annee" });
-    if (error) {
-      alert("Erreur sauvegarde: " + error.message);
-    } 
-  }}
->
-  <Save className="w-5 h-5" />
-  
-</Button>
-
-
-  </div>
-)}
-
-  </CardContent>
-</Card>
-
-
+            </CardContent>
+          </Card>
 
           <Card>
             <CardContent className="px-4 py-1">
@@ -2344,29 +2232,6 @@ const objetsVisibles = useMemo(() => {
     </div>
   </div>
 )}
-
-{showCalendar && (
-  <div className="fixed inset-0 backdrop-blur-sm bg-white/30 flex items-center justify-center z-50">
-
-    <div className="bg-white p-6 rounded-lg shadow-lg">
-      <Calendar
-        mode="single"
-        selected={selectedDate}
-        onSelect={(d) => {
-          setSelectedDate(d ?? new Date());
-          setShowCalendar(false);
-        }}
-        locale={fr}
-      />
-      <div className="flex justify-end mt-4">
-        <Button variant="outline" onClick={() => setShowCalendar(false)}>
-          Fermer
-        </Button>
-      </div>
-    </div>
-  </div>
-)}
-
 
 {/* Liens + QR codes vers les apps */}
 <div className="mt-10">
