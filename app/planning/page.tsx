@@ -120,19 +120,18 @@ const lastReloadId = useRef(0);
 const handlePublish = async () => {
   if (publishSelectedUserIds.length === 0 || !hotelId) return;
 
-  // 1) Construire la requête de lecture des drafts à publier
+  // 1) Lire les drafts à publier (uniquement l’hôtel courant)
   let q = supabase
     .from('planning_entries')
     .select('*')
-    .eq('hotel_id', hotelId)
+    .eq('hotel_id', hotelId)                 // ✅ filtre hôtel
     .eq('status', 'draft')
     .in('user_id', publishSelectedUserIds);
 
-  if (publishFrom) q = q.gte('date', publishFrom);   // borne de début (optionnelle)
-  if (publishUntil) q = q.lte('date', publishUntil); // borne de fin (optionnelle)
+  if (publishFrom) q = q.gte('date', publishFrom);
+  if (publishUntil) q = q.lte('date', publishUntil);
 
   const { data: drafts, error: draftsErr } = await q;
-
   if (draftsErr) {
     toast.error("Erreur lecture brouillons");
     return;
@@ -151,7 +150,7 @@ const handlePublish = async () => {
   };
   const map = new Map<string, any>();
   for (const d of drafts) {
-    const key = `${d.hotel_id}|${d.user_id}|${d.date}|published`;
+    const key = `${d.hotel_id}|${d.user_id}|${d.date}|published`; // ✅ inclut hotel_id
     map.set(key, map.has(key) ? pickLatest(map.get(key), d) : d);
   }
 
@@ -161,11 +160,11 @@ const handlePublish = async () => {
     published_at: new Date().toISOString(),
   }));
 
-  // 3) Upsert des publiées
+  // 3) Upsert des publiées (sécurisé par hotel_id inclus dans onConflict)
   const { error: insErr } = await supabase
     .from('planning_entries')
     .upsert(toPublish, {
-      onConflict: ['hotel_id', 'user_id', 'date', 'status'],
+      onConflict: ['hotel_id', 'user_id', 'date', 'status'], // ✅ clé multi-colonnes
     });
 
   if (insErr) {
@@ -174,11 +173,11 @@ const handlePublish = async () => {
     return;
   }
 
-  // 4) Suppression des drafts publiés (avec mêmes bornes dynamiques)
+  // 4) Supprimer uniquement les drafts du même hôtel
   let del = supabase
     .from('planning_entries')
     .delete()
-    .eq('hotel_id', hotelId)
+    .eq('hotel_id', hotelId)                 // ✅ filtre hôtel
     .eq('status', 'draft')
     .in('user_id', publishSelectedUserIds);
 
@@ -193,6 +192,7 @@ const handlePublish = async () => {
   await reloadEntries();
   toast.success("Publication effectuée ✅");
 };
+
 
 
 
@@ -939,7 +939,6 @@ useEffect(() => {
     .map(e => `${e.date}:${e.shift}/${e.status}`)
     .sort();
 
-  console.log('[DEBUG] Louane week entries in state:', have);
 }, [planningEntries, users, weekDates]);
 
 const normalizeTime = (t?: string | null) => {
@@ -1083,7 +1082,7 @@ const moveRow = async (index, direction) => {
   for (const row of newRows) {
   if (row.id_auth) {
   // Employé
-  console.log('Update service', {service_id: row.id, hotelId, ordre});
+  console.log('Update employé', {user_id: row.id_auth, hotelId, ordre});
   updates.push(
     supabase
       .from('planning_config')
