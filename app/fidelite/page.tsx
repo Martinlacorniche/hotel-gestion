@@ -94,9 +94,12 @@ export default function FidelitePage() {
     setCarte(Array(10).fill(null));
   };
 
-  const filteredClients = clients.filter(c =>
+  const filteredClients = clients
+  .filter(c =>
     `${c.nom} ${c.prenom}`.toLowerCase().includes(search.toLowerCase())
-  );
+  )
+  .sort((a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }));
+
 
   return (
     <div className="p-4">
@@ -106,12 +109,14 @@ export default function FidelitePage() {
         <Button onClick={() => setShowClientModal(true)}>➕ Nouveau client</Button>
       </div>
 
-      <div className="grid grid-cols-[250px_1fr] gap-4">
+      <div className="grid grid-cols-[250px_1fr] gap-4 h-[calc(100vh-100px)]">
+
         {/* Colonne gauche */}
-        <Card>
-          <CardContent className="p-4 space-y-2">
+        <Card className="h-full overflow-y-auto">
+
+          <CardContent className="p-4 space-y-2 h-full flex flex-col">
             <Input placeholder="Rechercher..." value={search} onChange={e => setSearch(e.target.value)} />
-            <div className="space-y-1">
+            <div className="space-y-1 overflow-y-auto flex-1 pr-1">
               {filteredClients.map(c => (
                 <div
                   key={c.id}
@@ -127,7 +132,8 @@ export default function FidelitePage() {
 
         {/* Zone droite */}
 {selectedClient && (
-  <Card>
+  <Card className="h-full overflow-y-auto">
+
     <CardContent className="p-6 space-y-6">
       {/* Header client */}
       <div className="flex items-center justify-between">
