@@ -132,10 +132,14 @@ export default function FidelitePage() {
 
         {/* Zone droite */}
 {selectedClient ? (
-  // --- AFFICHAGE CARTE FIDÉLITÉ ---
   <Card className="h-full overflow-y-auto">
-
     <CardContent className="p-6 space-y-6">
+      {/* Bouton retour */}
+      <div>
+        <Button variant="outline" onClick={() => setSelectedClient(null)}>
+          ⬅ 
+        </Button>
+      </div>
       {/* Header client */}
       <div className="flex items-center justify-between">
   <div>
@@ -264,10 +268,10 @@ export default function FidelitePage() {
   </Card>
 ) : (
   // --- AFFICHAGE TOP 10 ---
-  <Card className="h-full overflow-y-auto flex items-center justify-center">
-  <CardContent className="p-6 space-y-4 w-full max-w-lg mx-auto">
-    <h2 className="text-xl font-bold text-center">🏆 Les Best ! </h2>
-    <p className="text-sm text-gray-600 text-center">Classés par nombre de passages</p>
+ <Card className="h-full overflow-y-auto flex">
+  <CardContent className="flex flex-col items-center justify-center w-full max-w-lg mx-auto">
+    <h2 className="text-2xl font-bold text-center mb-2">🏆 Les Best !</h2>
+    <p className="text-sm text-gray-600 text-center mb-4">Classés par nombre de passages</p>
 
     <div className="space-y-3">
       {clients
