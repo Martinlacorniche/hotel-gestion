@@ -751,22 +751,36 @@ const exportPDF = async () => {
   doc.setFontSize(12);
   doc.text(`Planning détaillé - ${month + 1}/${year}`, 40, 40);
   autoTable(doc, {
-    startY: 60,
-    head: [headRow],
-    body: planningTable,
-    theme: "grid",
-    styles: { fontSize: 7, cellWidth: 'wrap' },
-    headStyles: { fillColor: [66, 133, 244] },
-    didParseCell: function (data) {
-      if (data.section === 'body' && data.column.index > 0) {
-        const shiftName = data.cell.raw;
-        const fullShiftName = Object.keys(shiftColors).find(key => abbreviateShift(key) === shiftName);
-        if (fullShiftName && shiftColors[fullShiftName]) {
-          data.cell.styles.fillColor = shiftColors[fullShiftName];
-        }
+  startY: 60,
+  head: [headRow],
+  body: planningTable,
+  theme: "grid",
+  styles: { fontSize: 7, cellWidth: 'wrap' },
+  headStyles: { fillColor: [66, 133, 244] },
+  didParseCell: function (data) {
+    // Coloration des shifts (déjà présent)
+    if (data.section === 'body' && data.column.index > 0) {
+      const shiftName = data.cell.raw;
+      const fullShiftName = Object.keys(shiftColors).find(
+        key => abbreviateShift(key) === shiftName
+      );
+      if (fullShiftName && shiftColors[fullShiftName]) {
+        data.cell.styles.fillColor = shiftColors[fullShiftName];
       }
     }
-  });
+
+    // ➜ Griser les colonnes samedi et dimanche (dans l’en-tête)
+    if (data.section === 'head' && data.column.index > 0) {
+      const dayIndex = data.column.index; // 1 = 1er du mois, etc.
+      const date = new Date(year, month, dayIndex);
+      const dow = date.getDay(); // 0 = dimanche, 6 = samedi
+      if (dow === 0 || dow === 6) {
+        data.cell.styles.fillColor = [200, 200, 200]; // gris clair
+      }
+    }
+  }
+});
+
 
   doc.save(`Planning_${moisCap}_${year}.pdf`);
 
