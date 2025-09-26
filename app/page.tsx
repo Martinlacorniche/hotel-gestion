@@ -90,8 +90,13 @@ const hotelId = selectedHotelId || user?.hotel_id;
 
 const formatNumber = (n: number | null, suffix: string = "") => {
   if (n === null || n === undefined || isNaN(n)) return "-";
+
+  // Si c'est le guest_review → garder 1 décimale
+  const isGuestReview = suffix.includes("/10");
+
   return new Intl.NumberFormat("fr-FR", {
-    maximumFractionDigits: 0,
+    minimumFractionDigits: isGuestReview ? 1 : 0,
+    maximumFractionDigits: isGuestReview ? 1 : 0,
   }).format(n) + suffix;
 };
   const router = useRouter();
@@ -1494,7 +1499,7 @@ const objetsVisibles = useMemo(() => {
 {/* Tableau de bord KPIs */}
 <Card>
   <CardContent className="p-4">
-    <h2 className="text-lg font-bold mb-4">📊 Objectifs du mois</h2>
+    <h2 className="text-lg font-bold mb-4">📊 Tableau de bord</h2>
 
     {[
       { key: "ca", label: "CA", suffix: "€" },
@@ -1542,7 +1547,7 @@ const objetsVisibles = useMemo(() => {
 
           <div className="relative w-full bg-gray-200 rounded-full h-3 mt-1 overflow-hidden">
   <div
-    className={`h-3 transition-all duration-500 ${
+    className={`h-3 rounded-full transition-all duration-500 ${
       progress >= 100
         ? "bg-green-500"
         : "bg-gradient-to-r from-indigo-500 to-purple-500"
