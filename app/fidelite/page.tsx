@@ -131,7 +131,8 @@ export default function FidelitePage() {
         </Card>
 
         {/* Zone droite */}
-{selectedClient && (
+{selectedClient ? (
+  // --- AFFICHAGE CARTE FIDÉLITÉ ---
   <Card className="h-full overflow-y-auto">
 
     <CardContent className="p-6 space-y-6">
@@ -261,6 +262,51 @@ export default function FidelitePage() {
       </div>
     </CardContent>
   </Card>
+) : (
+  // --- AFFICHAGE TOP 10 ---
+  <Card className="h-full overflow-y-auto flex items-center justify-center">
+  <CardContent className="p-6 space-y-4 w-full max-w-lg mx-auto">
+    <h2 className="text-xl font-bold text-center">🏆 Les Best ! </h2>
+    <p className="text-sm text-gray-600 text-center">Classés par nombre de passages</p>
+
+    <div className="space-y-3">
+      {clients
+        .sort((a, b) => b.total_passages - a.total_passages)
+        .slice(0, 10)
+        .map((c, i, arr) => {
+          const max = arr[0]?.total_passages || 1;
+          const percent = Math.round((c.total_passages / max) * 100);
+          const medal =
+            i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`;
+
+          return (
+            <div
+              key={c.id}
+              className="p-3 border rounded-lg flex items-center gap-3 cursor-pointer hover:bg-gray-50"
+              onClick={() => selectClient(c)}
+            >
+              <div className="text-2xl w-10 text-center">{medal}</div>
+
+              <div className="flex-1">
+                <div className="font-bold">{c.nom} {c.prenom}</div>
+                <div className="w-full bg-gray-200 h-2 rounded mt-1">
+                  <div
+                    className="bg-indigo-500 h-2 rounded"
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="text-sm text-gray-600 min-w-[50px] text-right">
+                {c.total_passages} ✨
+              </div>
+            </div>
+          );
+        })}
+    </div>
+  </CardContent>
+</Card>
+
 )}
 
 
