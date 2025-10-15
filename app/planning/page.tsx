@@ -34,8 +34,9 @@ const SHIFT_OPTIONS = [
   { label: "Night", value: "Night", color: "bg-gray-800 text-white" },
   { label: "Présence", value: "Présence", color: "bg-violet-400 text-violet-900" },
   { label: "Housekeeping Chambre", value: "Housekeeping Chambre", color: "bg-green-100 text-green-800" },
-  { label: "Housekeeping Communs", value: "Housekeeping Communs", color: "bg-green-200 text-green-900" },
   { label: "Petit Déjeuner", value: "Petit Déjeuner", color: "bg-yellow-100 text-yellow-900" },
+  { label: "Maintenance", value: "Maintenance", color: "bg-orange-200 text-orange-900" },
+  { label: "Housekeeping Communs", value: "Housekeeping Communs", color: "bg-green-200 text-green-900" },
   { label: "Extra", value: "Extra", color: "bg-purple-100 text-purple-900" },
   { label: "CP", value: "CP", color: "bg-pink-100 text-pink-700" },
   { label: "Maladie", value: "Maladie", color: "bg-red-100 text-red-800" },
@@ -44,6 +45,8 @@ const SHIFT_OPTIONS = [
   { label: "Les Voiles", value: "Les Voiles", color: "bg-White-200 text-black-400" },
   // Nouveau shift
   { label: "École", value: "École", color: "bg-green-300 text-green-900" },
+  
+
 ];
 
 
@@ -647,6 +650,8 @@ const exportPDF = async () => {
     'Repos': [220, 220, 220],
     'Les Voiles': [0, 0, 0],
     'École': [102, 205, 170],
+    'Maintenance': [255, 215, 180],
+
   };
 
   const abbreviateShift = (shift: string) => {
@@ -665,6 +670,8 @@ const exportPDF = async () => {
       case 'Repos': return 'R';
       case 'Les Voiles': return 'LV';
       case 'École': return 'ECO';
+      case 'Maintenance': return 'MAI';
+
       default: return '';
     }
   };
@@ -1922,21 +1929,29 @@ return (
         </div>
 
         <div className="max-h-48 overflow-y-auto border rounded p-2 space-y-1">
-          {users.map(u => (
-            <label key={u.id_auth} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={publishSelectedUserIds.includes(u.id_auth)}
-                onChange={e => {
-                  setPublishSelectedUserIds(prev =>
-                    e.target.checked ? [...prev, u.id_auth] : prev.filter(id => id !== u.id_auth)
-                  );
-                }}
-              />
-              <span>{u.name || u.email}</span>
-            </label>
-          ))}
-        </div>
+  {[...users]
+    .filter(u => u && (u.name || u.email)) // on évite les valeurs nulles
+    .sort((a, b) =>
+      (a.name || a.email || '').localeCompare(b.name || b.email || '', 'fr', { sensitivity: 'base' })
+    )
+    .map(u => (
+      <label key={u.id_auth} className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={publishSelectedUserIds.includes(u.id_auth)}
+          onChange={e => {
+            setPublishSelectedUserIds(prev =>
+              e.target.checked
+                ? [...prev, u.id_auth]
+                : prev.filter(id => id !== u.id_auth)
+            );
+          }}
+        />
+        <span>{u.name || u.email}</span>
+      </label>
+    ))}
+</div>
+
       </div>
 
       <div className="flex justify-end gap-2">
