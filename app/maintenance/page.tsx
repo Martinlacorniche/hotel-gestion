@@ -1,6 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+export const dynamic = 'force-dynamic';
+
+
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -120,7 +123,8 @@ const toISO = (frStr: string) => {
 
 
 
-export default function MaintenancePage() {
+function MaintenancePageInner() {
+
   const { user: rawUser } = useAuth();
   const user = rawUser as any;
   const search = useSearchParams();
@@ -723,6 +727,15 @@ const histByRoom = useMemo(() => {
     </div>
   );
 }
+
+export default function MaintenancePage() {
+  return (
+    <Suspense fallback={<div className="p-4 text-sm text-gray-600">Chargement…</div>}>
+      <MaintenancePageInner />
+    </Suspense>
+  );
+}
+
 
 function CloseModal({ item, onCancel, onConfirm }:{
   item: MaintItem,
