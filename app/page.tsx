@@ -1213,6 +1213,22 @@ const objetsVisibles = useMemo(() => {
       <span className="text-xs text-gray-700">Process</span>
     </Button>
   </a>
+
+  {/* Maintenance — visible uniquement pour La Corniche */}
+{currentHotel?.nom?.toLowerCase().includes("corniche") && (
+  <a href={`/maintenance?hotel_id=${hotelId}`} target="_blank" rel="noopener noreferrer">
+    <Button
+      onClick={() => setOpen(false)}
+      className="w-full h-16 flex flex-col items-center justify-center gap-1 bg-yellow-50 hover:bg-yellow-100"
+    >
+      <span className="text-xl">🛠️</span>
+      <span className="text-xs text-yellow-700">Maintenance</span>
+    </Button>
+  </a>
+)}
+
+
+
 </DropdownMenuContent>
 
 
