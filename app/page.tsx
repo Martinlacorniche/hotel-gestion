@@ -1171,7 +1171,7 @@ const objetsVisibles = useMemo(() => {
         className="w-full h-16 flex flex-col items-center justify-center gap-1 bg-purple-50 hover:bg-purple-100"
       >
         <Stamp className="w-5 h-5 text-purple-600" />
-        <span className="text-xs text-purple-700">Fidélité</span>
+        <span className="text-xs text-purple-700">Co-Work</span>
       </Button>
     </a>
   )}
