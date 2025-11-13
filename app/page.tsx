@@ -35,11 +35,26 @@ interface CustomUser {
   role: string;
   service?: string; // si tu l’utilises
 }
+function windDirectionToText(deg: number) {
+  const dirs = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+
+
+function bgColorForWeather(code: number) {
+  if (code === 0) return "bg-yellow-50";
+  if ([1, 2, 3].includes(code)) return "bg-gray-100";
+  if (code >= 80 && code <= 82) return "bg-blue-100";
+  if (code >= 95) return "bg-purple-50";
+  return "bg-gray-100";
+}
 
 
 export default function HotelDashboard() {
   const { user: rawUser, logout, isLoading } = useAuth();
     const [open, setOpen] = useState(false);
+const [sunTimes, setSunTimes] = useState<{sunrise:string, sunset:string} | null>(null);
 
 const user = rawUser as CustomUser | null;
 const [showValidatedConsignes, setShowValidatedConsignes] = useState(false);
@@ -48,6 +63,45 @@ const PLAY_URL =
     "https://play.google.com/store/apps/details?id=com.martinvitte.hotelstoulonborddemer&utm_source=emea_Med";
   const APPLE_URL =
     "https://apps.apple.com/app/hotels-toulon-bord-de-mer/id6751883454";
+
+const [meteo, setMeteo] = useState(null);
+const [seaTemp, setSeaTemp] = useState(null);
+
+useEffect(() => {
+  async function load() {
+    try {
+      const res = await fetch(
+        "https://api.open-meteo.com/v1/forecast?latitude=43.117&longitude=5.933&current_weather=true"
+      );
+      const data = await res.json();
+
+      const sea = await fetch(
+        "https://marine-api.open-meteo.com/v1/marine?latitude=43.117&longitude=5.933&hourly=sea_surface_temperature"
+      );
+      const seaData = await sea.json();
+
+      const nowIso = new Date().toISOString().slice(0, 13) + ":00";
+      const nowIndex = seaData.hourly.time.indexOf(nowIso);
+
+      const sun = await fetch(
+        "https://api.open-meteo.com/v1/forecast?latitude=43.117&longitude=5.933&daily=sunrise,sunset&timezone=Europe%2FParis"
+      );
+      const sunData = await sun.json();
+
+      setSunTimes({
+        sunrise: sunData.daily.sunrise[0].slice(11, 16),
+        sunset: sunData.daily.sunset[0].slice(11, 16),
+      });
+
+      setMeteo(data.current_weather);
+      setSeaTemp(seaData.hourly.sea_surface_temperature[nowIndex]);
+    } catch (e) {
+      console.error("Erreur météo :", e);
+    }
+  }
+
+  load();
+}, []);
 
 
 
@@ -1513,10 +1567,49 @@ const objetsVisibles = useMemo(() => {
 
         {/* Calendrier et Taxis/Réveils */}
         <div className="space-y-4">
-          {/* Tableau de bord KPIs */}
+
+<Card className={meteo ? bgColorForWeather(meteo.weathercode) : ""}>
+  <CardContent className="px-3 py-2 flex flex-col items-center text-center">
+    <h2 className="text-lg font-bold mb-1 leading-none">🌤️ Météo — Toulon</h2>
+
+
+    {meteo ? (
+      <div className="space-y-0.5 text-sm flex flex-col items-center text-center">
+        <div className="text-xl font-semibold">
+          {meteo.temperature}°C {meteo.weathercode === 0 ? "☀️" : "⛅"}
+        </div>
+
+        <div className="text-gray-600">
+          Vent : {meteo.windspeed} km/h
+        </div>
+
+        <div className="text-gray-600">
+          Orientation : {windDirectionToText(meteo.winddirection)}
+        </div>
+
+        {seaTemp !== null && (
+          <div className="text-blue-600 font-medium">
+            🌊 Mer : {seaTemp.toFixed(1)}°C
+          </div>
+        )}
+
+        {sunTimes && (
+          <div className="text-gray-600 mt-1">
+            🌅 {sunTimes.sunrise} — 🌇 {sunTimes.sunset}
+          </div>
+        )}
+      </div>
+    ) : (
+      <div className="text-gray-500 text-sm">Chargement...</div>
+    )}
+  </CardContent>
+</Card>
+
+
 {/* Tableau de bord KPIs */}
 <Card>
-  <CardContent className="p-4">
+
+  <CardContent className="p-1">
     <h2 className="text-lg font-bold mb-4">📊 Tableau de bord</h2>
 
     {[
