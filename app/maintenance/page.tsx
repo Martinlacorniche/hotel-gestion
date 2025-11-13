@@ -141,6 +141,21 @@ function MaintenancePageInner() {
   const [showCreate, setShowCreate] = useState(false);
   const [showClose, setShowClose] = useState<null | MaintItem>(null);
 
+    // Modal édition
+  const [editItem, setEditItem] = useState<MaintItem | null>(null);
+  const [editForm, setEditForm] = useState<{
+    titre: string;
+    type: string;
+    chambre: string;
+    commentaire: string;
+  }>({
+    titre: '',
+    type: TYPE_OPTIONS[0],
+    chambre: '',
+    commentaire: '',
+  });
+
+
   // Form création
   const [newItem, setNewItem] = useState<Partial<MaintItem>>({
     titre: '',
@@ -324,6 +339,53 @@ const histByRoom = useMemo(() => {
     if (selected?.id === id) setSelected(null);
   };
 
+  const openEdit = (it: MaintItem) => {
+    const room = getRooms(it)[0] || '';
+    setEditItem(it);
+    setEditForm({
+      titre: it.titre,
+      type: it.type,
+      chambre: room,
+      commentaire: it.commentaire || '',
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editItem) return;
+    const titre = editForm.titre.trim();
+    if (!titre) {
+      alert('Titre obligatoire');
+      return;
+    }
+
+    const payload = {
+      titre,
+      type: editForm.type,
+      chambre: editForm.chambre || null,
+      chambres: editForm.chambre ? [editForm.chambre] : [], // compat
+      commentaire: editForm.commentaire || null,
+    };
+
+    const { data, error } = await supabase
+      .from('maintenance')
+      .update(payload)
+      .eq('id', editItem.id)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setItems(prev =>
+      prev.map(x => (x.id === editItem.id ? { ...x, ...payload } : x))
+    );
+    setSelected(s => (s && s.id === editItem.id ? { ...s, ...payload } : s));
+    setEditItem(null);
+  };
+
+
   // ===== Colonne gauche (recherche / liste) =====
   const leftList = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -419,33 +481,40 @@ const histByRoom = useMemo(() => {
                       <div className="text-sm text-gray-500">Rien à faire dans ce type.</div>
                     )}
                     {enCours.map(it => (
-                      <div key={it.id} className="flex items-center justify-between border rounded-md p-2">
-                        <div className="text-sm">
-                          <div className="font-medium">{it.titre}</div>
-                          <div className="text-xs text-gray-600 flex items-center gap-2">
-  <span>Créé le {toFr(it.date_creation)}</span>
-  <span>•</span>
-  <div className="flex items-center gap-1">
-    {getRooms(it).map((r) => <RoomChip key={r} r={r} />)}
+  <div
+    key={it.id}
+    className="flex items-center justify-between border rounded-md p-2"
+  >
+    <div className="text-sm">
+      <div className="font-medium">{it.titre}</div>
+      <div className="text-xs text-gray-600 flex items-center gap-2">
+        <span>Créé le {toFr(it.date_creation)}</span>
+        <span>•</span>
+        <div className="flex items-center gap-1">
+          {getRooms(it).map((r) => (
+            <RoomChip key={r} r={r} />
+          ))}
+        </div>
+      </div>
+      {it.commentaire && (
+        <div className="mt-1 text-xs text-gray-500">{it.commentaire}</div>
+      )}
+    </div>
+
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="outline" onClick={() => openEdit(it)}>
+        Modifier
+      </Button>
+      <Button size="sm" variant="outline" onClick={() => openCloseModal(it)}>
+        Job Done !
+      </Button>
+      <Button size="sm" variant="destructive" onClick={() => removeItem(it.id)}>
+        🗑️
+      </Button>
+    </div>
   </div>
-</div>
+))}
 
-
-                          {it.commentaire && (
-                            <div className="text-xs text-gray-700 mt-1 whitespace-pre-line">{it.commentaire}</div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Button size="sm" variant="outline" onClick={() => openCloseModal(it)}>
-                            Job Done !
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={() => removeItem(it.id)}>
-                            🗑️
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -482,30 +551,36 @@ const histByRoom = useMemo(() => {
                       <div className="text-sm text-gray-500">Rien à faire dans cette chambre.</div>
                     )}
                     {enCours.map(it => (
-                      <div key={it.id} className="flex items-center justify-between border rounded-md p-2">
-                        <div className="text-sm">
-                          <div className="font-medium">{it.titre}</div>
-                          <div className="text-xs text-gray-600 flex items-center gap-2">
-  <TypeBadge type={it.type} />
-  <span>•</span>
-  <span>Créé le {toFr(it.date_creation)}</span>
-</div>
+  <div
+    key={it.id}
+    className="flex items-center justify-between border rounded-md p-2"
+  >
+    <div className="text-sm">
+      <div className="font-medium">{it.titre}</div>
+      <div className="text-xs text-gray-600 flex items-center gap-2">
+        <TypeBadge type={it.type} />
+        <span>•</span>
+        <span>Créé le {toFr(it.date_creation)}</span>
+      </div>
+      {it.commentaire && (
+        <div className="mt-1 text-xs text-gray-500">{it.commentaire}</div>
+      )}
+    </div>
 
-                          {it.commentaire && (
-                            <div className="text-xs text-gray-700 mt-1 whitespace-pre-line">{it.commentaire}</div>
-                          )}
-                        </div>
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="outline" onClick={() => openEdit(it)}>
+        Modifier
+      </Button>
+      <Button size="sm" variant="outline" onClick={() => openCloseModal(it)}>
+        Job Done
+      </Button>
+      <Button size="sm" variant="destructive" onClick={() => removeItem(it.id)}>
+        🗑️
+      </Button>
+    </div>
+  </div>
+))}
 
-                        <div className="flex items-center gap-2">
-                          <Button size="sm" variant="outline" onClick={() => openCloseModal(it)}>
-                            Job Done
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={() => removeItem(it.id)}>
-                            🗑️
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -716,7 +791,7 @@ const histByRoom = useMemo(() => {
         </div>
       )}
 
-      {/* Modal clôture */}
+            {/* Modal clôture */}
       {showClose && (
         <CloseModal
           item={showClose}
@@ -724,9 +799,21 @@ const histByRoom = useMemo(() => {
           onConfirm={closeItem}
         />
       )}
+
+      {/* Modal édition */}
+      {editItem && (
+        <EditModal
+          item={editItem}
+          form={editForm}
+          setForm={setEditForm}
+          onCancel={() => setEditItem(null)}
+          onSave={saveEdit}
+        />
+      )}
     </div>
   );
 }
+
 
 export default function MaintenancePage() {
   return (
@@ -767,3 +854,94 @@ function CloseModal({ item, onCancel, onConfirm }:{
     </div>
   );
 }
+
+function EditModal({
+  item,
+  form,
+  setForm,
+  onCancel,
+  onSave,
+}: {
+  item: MaintItem;
+  form: { titre: string; type: string; chambre: string; commentaire: string };
+  setForm: React.Dispatch<
+    React.SetStateAction<{
+      titre: string;
+      type: string;
+      chambre: string;
+      commentaire: string;
+    }>
+  >;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg w-full max-w-lg space-y-3">
+        <h2 className="text-lg font-semibold">Modifier la maintenance</h2>
+
+        <div className="text-xs text-gray-500">
+          ID: {item.id} • Créé le {toFr(item.date_creation)}
+        </div>
+
+        <Input
+          placeholder="Titre / description"
+          value={form.titre}
+          onChange={(e) => setForm((f) => ({ ...f, titre: e.target.value }))}
+        />
+
+        <select
+          className="w-full border rounded px-2 py-2 text-sm"
+          value={form.type}
+          onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+        >
+          {TYPE_OPTIONS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+
+        <div>
+          <div className="text-sm font-medium mb-1">Chambre / zone</div>
+          <select
+            className="w-full border rounded px-2 py-2 text-sm"
+            value={form.chambre}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, chambre: e.target.value }))
+            }
+          >
+            <option value="">—</option>
+            {ROOM_OPTIONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col">
+          <label className="text-xs text-gray-600 mb-1">
+            Commentaire (optionnel)
+          </label>
+          <textarea
+            rows={3}
+            className="w-full border rounded px-2 py-1 text-sm"
+            value={form.commentaire}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, commentaire: e.target.value }))
+            }
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onCancel}>
+            Annuler
+          </Button>
+          <Button onClick={onSave}>Enregistrer</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
