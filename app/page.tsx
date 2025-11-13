@@ -1192,7 +1192,7 @@ const objetsVisibles = useMemo(() => {
       className="w-full h-16 flex flex-col items-center justify-center gap-1 bg-cyan-50 hover:bg-cyan-100"
     >
       <KeyRound className="w-5 h-5 text-cyan-600" />
-      <span className="text-xs text-cyan-700">Trousseau</span>
+      <span className="text-xs text-cyan-700">Identifiants</span>
     </Button>
   </a>
 
@@ -1202,7 +1202,7 @@ const objetsVisibles = useMemo(() => {
       className="w-full h-16 flex flex-col items-center justify-center gap-1 bg-blue-50 hover:bg-blue-100"
     >
       <NotebookText className="w-5 h-5 text-blue-600" />
-      <span className="text-xs text-blue-700">Répertoire</span>
+      <span className="text-xs text-blue-700">Contacts</span>
     </Button>
   </a>
 
