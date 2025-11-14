@@ -43,12 +43,27 @@ function windDirectionToText(deg: number) {
 
 
 function bgColorForWeather(code: number) {
-  if (code === 0) return "bg-yellow-50";
-  if ([1, 2, 3].includes(code)) return "bg-gray-100";
-  if (code >= 80 && code <= 82) return "bg-blue-100";
-  if (code >= 95) return "bg-purple-50";
-  return "bg-gray-100";
+  // Gradient doux style "Apple Weather"
+  if (code === 0) {
+    // grand soleil
+    return "bg-gradient-to-br from-amber-50 via-white to-sky-100";
+  }
+  if ([1, 2, 3].includes(code)) {
+    // peu nuageux / nuageux
+    return "bg-gradient-to-br from-slate-50 via-white to-sky-50";
+  }
+  if (code >= 80 && code <= 82) {
+    // averses
+    return "bg-gradient-to-br from-sky-100 via-white to-slate-200";
+  }
+  if (code >= 95) {
+    // orage
+    return "bg-gradient-to-br from-purple-100 via-white to-slate-300";
+  }
+  // fallback
+  return "bg-gradient-to-br from-slate-50 via-white to-slate-100";
 }
+
 
 
 export default function HotelDashboard() {
@@ -64,27 +79,69 @@ const PLAY_URL =
   const APPLE_URL =
     "https://apps.apple.com/app/hotels-toulon-bord-de-mer/id6751883454";
 
-const [meteo, setMeteo] = useState(null);
-const [seaTemp, setSeaTemp] = useState(null);
+const [meteoMorning, setMeteoMorning] = useState<any | null>(null);
+const [meteoAfternoon, setMeteoAfternoon] = useState<any | null>(null);
+const [seaTemp, setSeaTemp] = useState<number | null>(null);
+const [selectedDate, setSelectedDate] = useState(new Date());
+
+
 
 useEffect(() => {
   async function load() {
     try {
+      const dateStr = formatDate(selectedDate, "yyyy-MM-dd");
+
+      // 🌤️ Prévisions horaires pour ce jour
       const res = await fetch(
-        "https://api.open-meteo.com/v1/forecast?latitude=43.117&longitude=5.933&current_weather=true"
+        `https://api.open-meteo.com/v1/forecast?latitude=43.117&longitude=5.933&hourly=temperature_2m,weathercode,windspeed_10m,winddirection_10m&timezone=Europe%2FParis&start_date=${dateStr}&end_date=${dateStr}`
       );
       const data = await res.json();
 
+      const morningTime = `${dateStr}T09:00`;
+      const afternoonTime = `${dateStr}T15:00`;
+
+      const idxMorning = data.hourly.time.indexOf(morningTime);
+      const idxAfternoon = data.hourly.time.indexOf(afternoonTime);
+
+      if (idxMorning !== -1) {
+        setMeteoMorning({
+          temperature: data.hourly.temperature_2m[idxMorning],
+          weathercode: data.hourly.weathercode[idxMorning],
+          windspeed: data.hourly.windspeed_10m[idxMorning],
+          winddirection: data.hourly.winddirection_10m[idxMorning],
+        });
+      } else {
+        setMeteoMorning(null);
+      }
+
+      if (idxAfternoon !== -1) {
+        setMeteoAfternoon({
+          temperature: data.hourly.temperature_2m[idxAfternoon],
+          weathercode: data.hourly.weathercode[idxAfternoon],
+          windspeed: data.hourly.windspeed_10m[idxAfternoon],
+          winddirection: data.hourly.winddirection_10m[idxAfternoon],
+        });
+      } else {
+        setMeteoAfternoon(null);
+      }
+
+      // 🌊 Mer à 12:00
       const sea = await fetch(
-        "https://marine-api.open-meteo.com/v1/marine?latitude=43.117&longitude=5.933&hourly=sea_surface_temperature"
+        `https://marine-api.open-meteo.com/v1/marine?latitude=43.117&longitude=5.933&hourly=sea_surface_temperature&timezone=Europe%2FParis&start_date=${dateStr}&end_date=${dateStr}`
       );
       const seaData = await sea.json();
 
-      const nowIso = new Date().toISOString().slice(0, 13) + ":00";
-      const nowIndex = seaData.hourly.time.indexOf(nowIso);
+      const seaTime = `${dateStr}T12:00`;
+      const seaIdx = seaData.hourly.time.indexOf(seaTime);
+      if (seaIdx !== -1) {
+        setSeaTemp(seaData.hourly.sea_surface_temperature[seaIdx]);
+      } else {
+        setSeaTemp(null);
+      }
 
+      // 🌅 Lever / coucher
       const sun = await fetch(
-        "https://api.open-meteo.com/v1/forecast?latitude=43.117&longitude=5.933&daily=sunrise,sunset&timezone=Europe%2FParis"
+        `https://api.open-meteo.com/v1/forecast?latitude=43.117&longitude=5.933&daily=sunrise,sunset&timezone=Europe%2FParis&start_date=${dateStr}&end_date=${dateStr}`
       );
       const sunData = await sun.json();
 
@@ -92,17 +149,21 @@ useEffect(() => {
         sunrise: sunData.daily.sunrise[0].slice(11, 16),
         sunset: sunData.daily.sunset[0].slice(11, 16),
       });
-
-      setMeteo(data.current_weather);
-      setSeaTemp(seaData.hourly.sea_surface_temperature[nowIndex]);
     } catch (e) {
       console.error("Erreur météo :", e);
+      setMeteoMorning(null);
+      setMeteoAfternoon(null);
+      setSeaTemp(null);
+      setSunTimes(null);
     }
   }
 
   load();
-}, []);
+}, [selectedDate]);
 
+
+const mainMeteo = meteoAfternoon || meteoMorning;
+const hasMeteo = !!(meteoMorning || meteoAfternoon);
 
 
 
@@ -156,7 +217,6 @@ const formatNumber = (n: number | null, suffix: string = "") => {
   }).format(n) + suffix;
 };
   const router = useRouter();
-  const [selectedDate, setSelectedDate] = useState(new Date());
   const [tickets, setTickets] = useState<any[]>([]);
   const [consignes, setConsignes] = useState<any[]>([]);
   const [consignesLoading, setConsignesLoading] = useState(false);
@@ -1567,43 +1627,128 @@ const objetsVisibles = useMemo(() => {
 
         {/* Calendrier et Taxis/Réveils */}
         <div className="space-y-4">
+{/* Widget Météo */}
+<Card
+  className={
+    mainMeteo
+      ? bgColorForWeather(mainMeteo.weathercode) + " rounded-2xl border border-slate-100 shadow-sm"
+      : "bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-2xl border border-slate-100 shadow-sm"
+  }
+>
+  <CardContent className="p-3 pb-2">
+    {/* En-tête */}
+    <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 rounded-full bg-white/70 flex items-center justify-center shadow-sm">
+          <span className="text-[13px]">☀️</span>
+        </div>
+        <h2 className="text-sm font-semibold tracking-wide leading-none">
+          Météo — Toulon
+        </h2>
+      </div>
+      <div className="text-[11px] text-slate-500">
+        {formatDate(selectedDate, "dd/MM")}
+      </div>
+    </div>
 
-<Card className={meteo ? bgColorForWeather(meteo.weathercode) : ""}>
-  <CardContent className="px-3 py-2 flex flex-col items-center text-center">
-    <h2 className="text-lg font-bold mb-1 leading-none">🌤️ Météo — Toulon</h2>
+    {hasMeteo ? (
+      <div className="text-xs leading-tight w-full flex flex-col items-center">
+
+        {/* Grille matin / après-midi */}
+        <div className="grid grid-cols-2 gap-3 w-full text-center">
+
+          {/* Matin */}
+          {meteoMorning && (
+            <div className="bg-white/70 rounded-xl px-2 py-1.5 shadow-inner flex flex-col items-center gap-0.5">
+              <div className="font-semibold text-[11px] uppercase tracking-wide text-slate-500">
+                Matin
+              </div>
+              <div className="text-base font-semibold leading-none text-slate-900">
+                {meteoMorning.temperature}°C
+              </div>
+              <div className="flex items-center justify-center gap-1 mt-0.5">
+                <svg
+  width="18"
+  height="18"
+  viewBox="0 0 24 24"
+  className="text-slate-700"
+style={{ transform: `rotate(${meteoMorning.winddirection + 180}deg)` }}
 
 
-    {meteo ? (
-      <div className="space-y-0.5 text-sm flex flex-col items-center text-center">
-        <div className="text-xl font-semibold">
-          {meteo.temperature}°C {meteo.weathercode === 0 ? "☀️" : "⛅"}
+>
+  <path
+    d="M12 2 L15 8 H9 L12 2 Z M11 8 V20 H13 V8 H11 Z"
+    fill="currentColor"
+  />
+</svg>
+
+                <span className="text-[11px] text-slate-700">
+                  {windDirectionToText(meteoMorning.winddirection)} —{" "}
+                  {Math.round(meteoMorning.windspeed)} km/h
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Après-midi */}
+          {meteoAfternoon && (
+            <div className="bg-white/70 rounded-xl px-2 py-1.5 shadow-inner flex flex-col items-center gap-0.5">
+              <div className="font-semibold text-[11px] uppercase tracking-wide text-slate-500">
+                Après-midi
+              </div>
+              <div className="text-base font-semibold leading-none text-slate-900">
+                {meteoAfternoon.temperature}°C
+              </div>
+              <div className="flex items-center justify-center gap-1 mt-0.5">
+                <svg
+  width="18"
+  height="18"
+  viewBox="0 0 24 24"
+  className="text-slate-700"
+  style={{ transform: `rotate(${meteoAfternoon.winddirection + 180}deg)` }}
+
+
+>
+  <path
+    d="M12 2 L15 8 H9 L12 2 Z M11 8 V20 H13 V8 H11 Z"
+    fill="currentColor"
+  />
+</svg>
+
+                <span className="text-[11px] text-slate-700">
+                  {windDirectionToText(meteoAfternoon.winddirection)} —{" "}
+                  {Math.round(meteoAfternoon.windspeed)} km/h
+                </span>
+              </div>
+            </div>
+          )}
+
         </div>
 
-        <div className="text-gray-600">
-          Vent : {meteo.windspeed} km/h
+        {/* Mer + lever/coucher */}
+        <div className="mt-2 flex flex-col items-center gap-1 text-[11px] text-slate-700">
+          {seaTemp !== null && (
+            <div className="text-blue-700 font-medium">
+              🌊 Mer : {seaTemp.toFixed(1)}°C
+            </div>
+          )}
+
+          {sunTimes && (
+            <div className="flex items-center justify-center gap-3">
+              <span>🌅 {sunTimes.sunrise}</span>
+              <span>🌇 {sunTimes.sunset}</span>
+            </div>
+          )}
         </div>
-
-        <div className="text-gray-600">
-          Orientation : {windDirectionToText(meteo.winddirection)}
-        </div>
-
-        {seaTemp !== null && (
-          <div className="text-blue-600 font-medium">
-            🌊 Mer : {seaTemp.toFixed(1)}°C
-          </div>
-        )}
-
-        {sunTimes && (
-          <div className="text-gray-600 mt-1">
-            🌅 {sunTimes.sunrise} — 🌇 {sunTimes.sunset}
-          </div>
-        )}
       </div>
     ) : (
-      <div className="text-gray-500 text-sm">Chargement...</div>
+      <div className="text-slate-500 text-xs text-center">Chargement...</div>
     )}
   </CardContent>
 </Card>
+
+
+
 
 
 {/* Tableau de bord KPIs */}
