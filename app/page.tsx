@@ -64,6 +64,71 @@ function bgColorForWeather(code: number) {
   return "bg-gradient-to-br from-slate-50 via-white to-slate-100";
 }
 
+function weatherLabel(code: number) {
+  if (code === 0) return "Ensoleillé";
+  if ([1, 2].includes(code)) return "Peu nuageux";
+  if (code === 3) return "Nuageux";
+  if (code >= 45 && code <= 48) return "Brume / brouillard";
+  if (code >= 51 && code <= 67) return "Pluie fine";
+  if (code >= 71 && code <= 77) return "Neige";
+  if (code >= 80 && code <= 82) return "Averses";
+  if (code >= 95) return "Orageux";
+  return "Conditions variables";
+}
+
+function weatherIconSVG(code: number) {
+  // Soleil
+  if (code === 0) {
+    return (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="5" fill="#FDB813" />
+      </svg>
+    );
+  }
+
+  // Peu nuageux
+  if ([1, 2].includes(code)) {
+    return (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="10" r="4" fill="#FDB813" />
+        <ellipse cx="14" cy="15" rx="6" ry="3.5" fill="#BCCCDC" />
+      </svg>
+    );
+  }
+
+  // Nuageux
+  if (code === 3) {
+    return (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <ellipse cx="12" cy="13" rx="7" ry="4" fill="#A0AEC0" />
+      </svg>
+    );
+  }
+
+  // Averses / Pluie
+  if (code >= 51 && code <= 82) {
+    return (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <ellipse cx="12" cy="11" rx="7" ry="4" fill="#A0AEC0" />
+        <line x1="9" y1="16" x2="9" y2="20" stroke="#2563EB" strokeWidth="2" />
+        <line x1="13" y1="16" x2="13" y2="20" stroke="#2563EB" strokeWidth="2" />
+        <line x1="17" y1="16" x2="17" y2="20" stroke="#2563EB" strokeWidth="2" />
+      </svg>
+    );
+  }
+
+  // Orage
+  if (code >= 95) {
+    return (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <ellipse cx="12" cy="10" rx="7" ry="4" fill="#A0AEC0" />
+        <polygon points="10,14 14,14 12,20" fill="#F59E0B" />
+      </svg>
+    );
+  }
+
+  return null;
+}
 
 
 export default function HotelDashboard() {
@@ -1640,8 +1705,9 @@ const objetsVisibles = useMemo(() => {
     <div className="flex items-center justify-between mb-2">
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 rounded-full bg-white/70 flex items-center justify-center shadow-sm">
-          <span className="text-[13px]">☀️</span>
-        </div>
+  {mainMeteo ? weatherIconSVG(mainMeteo.weathercode) : null}
+</div>
+
         <h2 className="text-sm font-semibold tracking-wide leading-none">
           Météo — Toulon
         </h2>
@@ -1664,29 +1730,30 @@ const objetsVisibles = useMemo(() => {
                 Matin
               </div>
               <div className="text-base font-semibold leading-none text-slate-900">
-                {meteoMorning.temperature}°C
-              </div>
-              <div className="flex items-center justify-center gap-1 mt-0.5">
-                <svg
-  width="18"
-  height="18"
-  viewBox="0 0 24 24"
-  className="text-slate-700"
-style={{ transform: `rotate(${meteoMorning.winddirection + 180}deg)` }}
+  {meteoMorning.temperature}°C
+</div>
+<div className="text-[11px] text-slate-600 mt-0.5">
+  {weatherLabel(meteoMorning.weathercode)}
+</div>
+<div className="flex items-center justify-center gap-1 mt-0.5">
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    className="text-slate-700"
+    style={{ transform: `rotate(${meteoMorning.winddirection + 180}deg)` }}
+  >
+    <path
+      d="M12 2 L15 8 H9 L12 2 Z M11 8 V20 H13 V8 H11 Z"
+      fill="currentColor"
+    />
+  </svg>
+  <span className="text-[11px] text-slate-700">
+    {windDirectionToText(meteoMorning.winddirection)} —{" "}
+    {Math.round(meteoMorning.windspeed)} km/h
+  </span>
+</div>
 
-
->
-  <path
-    d="M12 2 L15 8 H9 L12 2 Z M11 8 V20 H13 V8 H11 Z"
-    fill="currentColor"
-  />
-</svg>
-
-                <span className="text-[11px] text-slate-700">
-                  {windDirectionToText(meteoMorning.winddirection)} —{" "}
-                  {Math.round(meteoMorning.windspeed)} km/h
-                </span>
-              </div>
             </div>
           )}
 
@@ -1699,6 +1766,10 @@ style={{ transform: `rotate(${meteoMorning.winddirection + 180}deg)` }}
               <div className="text-base font-semibold leading-none text-slate-900">
                 {meteoAfternoon.temperature}°C
               </div>
+              <div className="text-[11px] text-slate-600 mt-0.5">
+  {weatherLabel(meteoAfternoon.weathercode)}
+</div>
+
               <div className="flex items-center justify-center gap-1 mt-0.5">
                 <svg
   width="18"
