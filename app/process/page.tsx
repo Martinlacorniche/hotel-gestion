@@ -2,24 +2,33 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/context/AuthContext";
+import { 
+  Search, Plus, FileText, ChevronLeft, Trash2, Save, Edit2, BookOpen 
+} from 'lucide-react';
+
+// --- TYPES ---
+type Process = { id: string; title: string; body: string; hotel_id: string };
 
 export default function ProcessPage() {
   const { user } = useAuth();
 
-  // Sélecteur hôtel
+  // --- ÉTATS GLOBAUX ---
   const [hotels, setHotels] = useState<any[]>([]);
   const [selectedHotelId, setSelectedHotelId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return window.localStorage.getItem("selectedHotelId") || "";
-    }
+    if (typeof window !== "undefined") return window.localStorage.getItem("selectedHotelId") || "";
     return "";
   });
   const [currentHotel, setCurrentHotel] = useState<any | null>(null);
+  const [processes, setProcesses] = useState<Process[]>([]);
+  const [search, setSearch] = useState("");
+  
+  // --- ÉTATS ÉDITION / SÉLECTION ---
+  const [selectedProcess, setSelectedProcess] = useState<Process | null>(null);
+  const [isEditing, setIsEditing] = useState(false); // Mode lecture vs écriture
+  const [form, setForm] = useState({ title: "", body: "" });
 
+  // --- EFFETS ---
   useEffect(() => {
     const hotelName = currentHotel?.nom ? ` — ${currentHotel.nom}` : "";
     document.title = `Process${hotelName}`;
@@ -32,32 +41,20 @@ export default function ProcessPage() {
   }, [selectedHotelId]);
 
   useEffect(() => {
-    supabase.from("hotels").select("id, nom").then(({ data }) => setHotels(data || []));
+    supabase.from("hotels").select("id, nom").then(({ data }) => {
+        setHotels(data || []);
+        if(!selectedHotelId && data && data.length > 0) setSelectedHotelId(data[0].id);
+    });
   }, []);
 
   useEffect(() => {
     if (selectedHotelId) {
-      supabase
-        .from("hotels")
-        .select("id, nom")
-        .eq("id", selectedHotelId)
-        .single()
-        .then(({ data }) => setCurrentHotel(data));
+      supabase.from("hotels").select("id, nom").eq("id", selectedHotelId).single().then(({ data }) => setCurrentHotel(data));
+      fetchProcesses();
     }
   }, [selectedHotelId]);
 
-  // Data
-  type Process = { id: string; title: string; body: string; hotel_id: string };
-  const [processes, setProcesses] = useState<Process[]>([]);
-  const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ title: "", body: "" });
-
-  useEffect(() => {
-    if (!selectedHotelId) return;
-    fetchProcesses();
-  }, [selectedHotelId]);
+  // --- FONCTIONS ---
 
   async function fetchProcesses() {
     const { data } = await supabase
@@ -68,46 +65,56 @@ export default function ProcessPage() {
     setProcesses(data || []);
   }
 
-  function openCreate() {
-    setEditingId(null);
-    setForm({ title: "", body: "" });
-    setModalOpen(true);
+  function handleSelect(p: Process) {
+      setSelectedProcess(p);
+      setForm({ title: p.title, body: p.body });
+      setIsEditing(false);
   }
-  function openEdit(p: Process) {
-    setEditingId(p.id);
-    setForm({ title: p.title, body: p.body });
-    setModalOpen(true);
+
+  function handleCreate() {
+      setSelectedProcess(null);
+      setForm({ title: "", body: "" });
+      setIsEditing(true);
   }
 
   async function saveProcess() {
     if (!form.title.trim() || !form.body.trim()) return;
-    if (!editingId) {
-      await supabase.from("processes").insert({
+    
+    let newId = selectedProcess?.id;
+
+    if (!selectedProcess) {
+      // Création
+      const { data, error } = await supabase.from("processes").insert({
         title: form.title.trim(),
         body: form.body,
         hotel_id: selectedHotelId,
-      });
+      }).select().single();
+      if(data) newId = data.id;
     } else {
+      // Mise à jour
       await supabase.from("processes").update({
         title: form.title.trim(),
         body: form.body,
-      }).eq("id", editingId);
+      }).eq("id", selectedProcess.id);
     }
-    setModalOpen(false);
-    fetchProcesses();
+    
+    await fetchProcesses();
+    // Si c'était une création, on le sélectionne
+    if (newId) {
+        const { data } = await supabase.from("processes").select("*").eq("id", newId).single();
+        if(data) setSelectedProcess(data);
+    }
+    setIsEditing(false);
   }
 
- // --- Fonction suppression mise à jour ---
-async function deleteProcess(id: string) {
-  if (!confirm("Supprimer ce process ?")) return;
-  await supabase.from("processes").delete().eq("id", id);
-  fetchProcesses();
-  // ✅ Fermeture modal + reset
-  setModalOpen(false);
-  setEditingId(null);
-  setForm({ title: "", body: "" });
-}
-
+  async function deleteProcess() {
+    if (!selectedProcess) return;
+    if (!confirm("Supprimer définitivement ce process ?")) return;
+    await supabase.from("processes").delete().eq("id", selectedProcess.id);
+    fetchProcesses();
+    setSelectedProcess(null);
+    setIsEditing(false);
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -120,118 +127,148 @@ async function deleteProcess(id: string) {
   }, [search, processes]);
 
   return (
-    <div className="p-6">
-      {/* Sélecteur hôtel */}
-      {hotels.length > 0 && (
-        <div className="mb-6 flex items-center gap-2">
-          <label className="font-semibold text-gray-700">Hôtel :</label>
-          <div className="flex gap-2 flex-wrap">
-            {hotels.map(h => (
-              <button
-                key={h.id}
-                onClick={() => setSelectedHotelId(h.id)}
-                className={`px-4 py-2 rounded-lg shadow font-semibold border transition ${
-                  h.id === selectedHotelId
-                    ? "bg-[#88C9B9] text-white border-[#88C9B9]"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                }`}
-              >
-                {h.nom}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">📚 Process</h1>
-        <Button
-          className="bg-indigo-600 hover:bg-indigo-700 text-white shadow"
-          onClick={openCreate}
-        >
-          ➕ Nouveau process
-        </Button>
-      </div>
-
-      {/* Recherche */}
-      <div className="relative mb-6">
-        <Input
-          placeholder=" Rechercher un process..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-10"
-        />
-        <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
-      </div>
-
-      {/* Bulles */}
-      {filtered.length === 0 ? (
-        <p className="text-gray-500 italic">Aucun process pour cet hôtel.</p>
-      ) : (
-        <div className="flex flex-wrap gap-3">
-  {filtered.map(p => (
-    <button
-      key={p.id}
-      onClick={() => openEdit(p)}
-      className="px-5 py-2 rounded-2xl bg-white/60 backdrop-blur-md border border-gray-200 shadow-sm
-                 hover:shadow-lg hover:bg-indigo-50 hover:border-indigo-300
-                 transition-all duration-200 transform hover:scale-105
-                 text-sm font-medium text-gray-800 max-w-xs truncate"
-    >
-      {p.title}
-    </button>
-          ))}
-        </div>
-      )}
-
-      {/* Modal */}
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="sm:max-w-[700px]">
-          <DialogHeader>
-            <DialogTitle>
-              {editingId ? "Modifier le process" : "Nouveau process"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              placeholder="Nom du process"
-              value={form.title}
-              onChange={e => setForm({ ...form, title: e.target.value })}
-            />
-            <textarea
-              placeholder="Description détaillée"
-              className="w-full min-h-[240px] border border-gray-300 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              value={form.body}
-              onChange={e => setForm({ ...form, body: e.target.value })}
-            />
-            <div className="flex justify-between pt-4">
-              {editingId ? (
-                <Button
-                  variant="outline"
-                  className="text-red-600 border-red-300 hover:bg-red-50"
-                  onClick={() => deleteProcess(editingId)}
-                >
-                  🗑️ Supprimer
-                </Button>
-              ) : (
-                <span />
-              )}
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setModalOpen(false)}>
-                  Annuler
-                </Button>
-                <Button
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                  onClick={saveProcess}
-                >
-                  {editingId ? "Mettre à jour" : "Valider"}
-                </Button>
-              </div>
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+      
+      {/* --- SIDEBAR GAUCHE (Liste) --- */}
+      <div className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 z-20 shadow-sm">
+         
+         {/* Header Sidebar */}
+         <div className="p-4 border-b border-slate-100 space-y-4">
+            {/* Titre + Selecteur Hôtel (si plusieurs) */}
+            <div>
+                <div className="flex items-center justify-between mb-2">
+                    <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
+                        <BookOpen className="w-6 h-6 text-indigo-600" /> Process
+                    </h1>
+                    <button onClick={handleCreate} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition" title="Nouveau process">
+                        <Plus className="w-5 h-5" />
+                    </button>
+                </div>
+                {hotels.length > 1 && (
+                    <select 
+                        className="w-full bg-slate-50 border border-slate-200 text-xs font-bold py-2 px-3 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-slate-600"
+                        value={selectedHotelId}
+                        onChange={(e) => { setSelectedHotelId(e.target.value); setSelectedProcess(null); setIsEditing(false); }}
+                    >
+                        {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
+                    </select>
+                )}
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+
+            {/* Recherche */}
+            <div className="relative group">
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                <input 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all" 
+                    placeholder="Chercher un process..." 
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                />
+            </div>
+         </div>
+
+         {/* Liste Scrollable */}
+         <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {filtered.length === 0 && <div className="text-center text-xs text-slate-400 py-8 italic">Aucun process trouvé.</div>}
+            
+            {filtered.map(p => (
+                <div 
+                    key={p.id}
+                    onClick={() => handleSelect(p)}
+                    className={`
+                        group p-3 rounded-xl cursor-pointer transition-all border border-transparent
+                        ${selectedProcess?.id === p.id 
+                            ? 'bg-indigo-50 border-indigo-100 text-indigo-900' 
+                            : 'hover:bg-slate-50 text-slate-700 hover:border-slate-100'
+                        }
+                    `}
+                >
+                    <div className="flex items-start gap-3">
+                        <FileText className={`w-5 h-5 mt-0.5 shrink-0 ${selectedProcess?.id === p.id ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-500'}`} />
+                        <div className="overflow-hidden">
+                            <h3 className={`font-bold text-sm truncate ${selectedProcess?.id === p.id ? 'text-indigo-700' : 'text-slate-800'}`}>{p.title}</h3>
+                            <p className="text-xs text-slate-400 truncate mt-0.5">{p.body.substring(0, 50)}...</p>
+                        </div>
+                    </div>
+                </div>
+            ))}
+         </div>
+      </div>
+
+      {/* --- MAIN CONTENT (Éditeur / Lecteur) --- */}
+      <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50 relative">
+          
+          {(selectedProcess || isEditing) ? (
+              <div className="flex-1 flex flex-col h-full max-w-4xl mx-auto w-full bg-white shadow-xl shadow-slate-200/50 my-0 md:my-6 md:rounded-2xl border-x md:border border-slate-200 overflow-hidden">
+                  
+                  {/* Toolbar Header */}
+                  <div className="h-16 border-b border-slate-100 flex items-center justify-between px-6 shrink-0 bg-white">
+                      <div className="flex items-center gap-4">
+                          {/* Retour Mobile */}
+                          <button onClick={() => { setSelectedProcess(null); setIsEditing(false); }} className="md:hidden p-2 -ml-2 text-slate-400">
+                              <ChevronLeft className="w-6 h-6" />
+                          </button>
+                          
+                          {isEditing ? (
+                              <input 
+                                  className="text-lg font-bold text-slate-900 placeholder:text-slate-300 outline-none bg-transparent w-full min-w-[200px]"
+                                  placeholder="Titre du process..."
+                                  value={form.title}
+                                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                                  autoFocus
+                              />
+                          ) : (
+                              <h2 className="text-xl font-bold text-slate-900 truncate max-w-md">{selectedProcess?.title}</h2>
+                          )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                          {isEditing ? (
+                              <>
+                                  <button onClick={() => { if(selectedProcess) { setIsEditing(false); setForm({title: selectedProcess.title, body: selectedProcess.body}); } else { setSelectedProcess(null); setIsEditing(false); } }} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg transition">
+                                      Annuler
+                                  </button>
+                                  <button onClick={saveProcess} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-md shadow-indigo-200 transition transform active:scale-95">
+                                      <Save className="w-4 h-4" /> Enregistrer
+                                  </button>
+                              </>
+                          ) : (
+                              <>
+                                  <button onClick={deleteProcess} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Supprimer">
+                                      <Trash2 className="w-5 h-5" />
+                                  </button>
+                                  <button onClick={() => { setForm({ title: selectedProcess!.title, body: selectedProcess!.body }); setIsEditing(true); }} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition">
+                                      <Edit2 className="w-4 h-4" /> Modifier
+                                  </button>
+                              </>
+                          )}
+                      </div>
+                  </div>
+
+                  {/* Content Body */}
+                  <div className="flex-1 overflow-y-auto p-6 md:p-10">
+                      {isEditing ? (
+                          <textarea 
+                              className="w-full h-full resize-none outline-none text-base text-slate-700 leading-relaxed placeholder:text-slate-300 bg-transparent"
+                              placeholder="Écrivez votre procédure ici..."
+                              value={form.body}
+                              onChange={(e) => setForm({ ...form, body: e.target.value })}
+                          />
+                      ) : (
+                          <div className="prose prose-slate max-w-none text-slate-700 leading-relaxed whitespace-pre-wrap">
+                              {selectedProcess?.body}
+                          </div>
+                      )}
+                  </div>
+              </div>
+          ) : (
+              // EMPTY STATE
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-300">
+                  <BookOpen className="w-24 h-24 mb-4 opacity-20" />
+                  <p className="text-lg font-medium">Sélectionnez ou créez un process</p>
+              </div>
+          )}
+      </div>
     </div>
   );
 }
