@@ -650,11 +650,17 @@ export default function HotelDashboard() {
     const consigne = consignesVisibles[indexVisible];
     const originalIndex = consignes.findIndex(c => c.id === consigne.id);
     if (originalIndex === -1) return;
+
     setNewConsigne({
-      texte: consigne.texte ?? '', service: consigne.service ?? 'Tous les services',
-      date: consigne.date ?? consigne.date_creation ?? '', valide: !!consigne.valide,
+      texte: consigne.texte ?? '', 
+      service: consigne.service ?? 'Tous les services',
+      date: consigne.date ?? consigne.date_creation ?? '', 
+      valide: !!consigne.valide,
       date_fin: consigne.date_fin ?? '',
-      utilisateurs_ids: [], // Reset à vide dans l'UI
+      // RESTAURATION DE LA LOGIQUE D'ASSIGNATION :
+      utilisateurs_ids: Array.isArray(consigne.utilisateurs_ids) 
+        ? consigne.utilisateurs_ids 
+        : (consigne.utilisateur_id ? [String(consigne.utilisateur_id)] : []),
     });
     setEditConsigneIndex(originalIndex);
     setShowConsigneModal(true);
@@ -1502,43 +1508,103 @@ export default function HotelDashboard() {
         </div>
       )}
 
-      {/* Modal Consigne */}
+      {/* Modal Consigne (Corrigé : Filtre Actifs + Tri Alpha) */}
       {showConsigneModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md space-y-4 animate-in fade-in zoom-in duration-200">
             <h2 className="text-xl font-bold text-slate-800">Passer une consigne</h2>
+            
+            {/* Zone de texte */}
             <textarea 
                 placeholder="Écrivez votre message ici..." 
                 value={newConsigne.texte} 
                 onChange={(e) => setNewConsigne({ ...newConsigne, texte: e.target.value })} 
                 rows={5} 
-                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none"
+                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none text-sm bg-slate-50"
             />
             
-            <div className="flex justify-end gap-2 mt-4">
+            {/* Sélecteur Utilisateurs */}
+            <div className="relative" ref={userDropdownRef}>
+                <label className="text-xs text-slate-500 font-bold uppercase mb-1 block">Assigner à (Verrouiller)</label>
+                <Button variant="outline" className="w-full justify-between text-slate-600 font-normal text-sm h-10 bg-white border-slate-200" onClick={() => setShowUserDropdown((prev) => !prev)}>
+                    {newConsigne.utilisateurs_ids.length > 0 ? `${newConsigne.utilisateurs_ids.length} personne(s)` : "Sélectionner..."}
+                    <span className="ml-2 text-xs">▼</span>
+                </Button>
+                
+                {/* Liste déroulante FILTRÉE et TRIÉE */}
+                {showUserDropdown && (
+                    <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto border rounded-lg bg-white shadow-xl p-1">
+                        {users
+                            // 1. FILTRE : Uniquement les actifs
+                            .filter(u => {
+                                const isClosed = u.active === false || (u.employment_end_date && new Date(u.employment_end_date) < new Date());
+                                return !isClosed;
+                            })
+                            // 2. TRI : Alphabétique
+                            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                            .map((u) => (
+                            <label key={u.id_auth} className="flex items-center gap-2 px-2 py-2 hover:bg-slate-50 rounded cursor-pointer text-sm">
+                                <input 
+                                    type="checkbox" 
+                                    className="rounded text-indigo-600 focus:ring-indigo-500" 
+                                    checked={newConsigne.utilisateurs_ids.includes(u.id_auth)} 
+                                    onChange={(e) => {
+                                        if (e.target.checked) setNewConsigne({ ...newConsigne, utilisateurs_ids: [...newConsigne.utilisateurs_ids, u.id_auth] });
+                                        else setNewConsigne({ ...newConsigne, utilisateurs_ids: newConsigne.utilisateurs_ids.filter((id) => id !== u.id_auth) });
+                                    }}
+                                />
+                                <span>{u.name}</span>
+                            </label>
+                        ))}
+                        {users.filter(u => u.active !== false).length === 0 && (
+                            <div className="text-xs text-slate-400 text-center py-2">Aucun utilisateur actif</div>
+                        )}
+                    </div>
+                )}
+
+                {/* Badges des utilisateurs sélectionnés (On affiche tout le monde ici, même les anciens s'ils étaient déjà sélectionnés) */}
+                {newConsigne.utilisateurs_ids.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                        {newConsigne.utilisateurs_ids.map((id) => {
+                            const user = users.find((u) => u.id_auth === id);
+                            return (
+                                <span key={id} className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full text-[10px] font-bold border border-indigo-100">
+                                    {user?.name || "Inconnu"}
+                                </span>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Date de fin */}
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input 
+                        type="checkbox" 
+                        className="rounded text-indigo-600 focus:ring-indigo-500"
+                        checked={!!newConsigne.date_fin} 
+                        onChange={(e) => setNewConsigne({...newConsigne, date_fin: e.target.checked ? formatDate(selectedDate, 'yyyy-MM-dd') : ''})}
+                    />
+                    <span className="font-medium">Répéter cette consigne jusqu'au...</span>
+                </label>
+                {newConsigne.date_fin && (
+                    <Input 
+                        type="date" 
+                        className="mt-2 bg-white h-9" 
+                        value={newConsigne.date_fin} 
+                        onChange={(e) => setNewConsigne({ ...newConsigne, date_fin: e.target.value })} 
+                    />
+                )}
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4 pt-2 border-t border-slate-100">
               <Button variant="ghost" onClick={() => { setShowConsigneModal(false); setEditConsigneIndex(null); }}>Annuler</Button>
-              <Button onClick={createConsigne} className="bg-indigo-600 text-white hover:bg-indigo-700">{editConsigneIndex !== null ? 'Modifier' : 'Envoyer'}</Button>
+              <Button onClick={createConsigne} className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-md">
+                  {editConsigneIndex !== null ? 'Modifier' : 'Envoyer'}
+              </Button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Modal Objet */}
-      {showObjetModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-2xl space-y-4 animate-in fade-in zoom-in duration-200">
-                <h2 className="text-xl font-bold text-slate-800">Objet trouvé</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><label className="text-xs font-bold uppercase text-slate-500">Date</label><Input type="date" value={newObjet.date} onChange={(e) => setNewObjet({ ...newObjet, date: e.target.value })} /></div>
-                    <div><label className="text-xs font-bold uppercase text-slate-500">Chambre</label><Input placeholder="#" value={newObjet.chambre} onChange={(e) => setNewObjet({ ...newObjet, chambre: e.target.value })} /></div>
-                    <div><label className="text-xs font-bold uppercase text-slate-500">Client</label><Input placeholder="Nom" value={newObjet.nomClient} onChange={(e) => setNewObjet({ ...newObjet, nomClient: e.target.value })} /></div>
-                    <div><label className="text-xs font-bold uppercase text-slate-500">Objet</label><Input placeholder="Description" value={newObjet.objet} onChange={(e) => setNewObjet({ ...newObjet, objet: e.target.value })} /></div>
-                </div>
-                <div className="flex justify-end gap-2 mt-4">
-                    <Button variant="ghost" onClick={() => { setShowObjetModal(false); setEditObjetIndex(null); }}>Annuler</Button>
-                    <Button onClick={createObjetTrouve} className="bg-indigo-600 text-white hover:bg-indigo-700">{editObjetIndex !== null ? 'Enregistrer' : 'Créer'}</Button>
-                </div>
-            </div>
         </div>
       )}
 
