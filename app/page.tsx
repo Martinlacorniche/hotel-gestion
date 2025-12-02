@@ -1293,9 +1293,13 @@ export default function HotelDashboard() {
                         <a href="https://resort.mylhost.com/login" target="_blank" className="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-2 rounded-full hover:bg-orange-100 transition flex items-center gap-1">
                              LHOST <ExternalLink className="w-3 h-3"/>
                         </a>
-                        <Button size="sm" onClick={() => setShowObjetModal(true)} className="bg-slate-900 text-white rounded-full">
-                            <PlusCircle className="w-4 h-4 mr-1"/> Ajouter
-                        </Button>
+                        <Button 
+    size="sm" 
+    onClick={() => setShowObjetModal(true)} 
+    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow shadow-indigo-200"
+>
+    <PlusCircle className="w-4 h-4 mr-1"/> Ajouter
+</Button>
                     </div>
                 </div>
              </div>
@@ -1328,7 +1332,18 @@ export default function HotelDashboard() {
                                  ))}
                                  <div className="w-px h-4 bg-slate-200 mx-2 hidden sm:block"></div>
                                  <div className="flex gap-2">
-                                    <button onClick={() => { setNewObjet({ ...o }); setEditObjetIndex(idx); setShowObjetModal(true); }} className="text-slate-400 hover:text-indigo-600"><Edit2 className="w-4 h-4"/></button>
+                                    <button 
+    onClick={() => { 
+        setNewObjet({ ...o }); 
+        // CORRECTION : On cherche le vrai index dans la liste principale 'objetsTrouves'
+        const realIndex = objetsTrouves.findIndex(item => item.id === o.id);
+        setEditObjetIndex(realIndex); 
+        setShowObjetModal(true); 
+    }} 
+    className="text-slate-400 hover:text-indigo-600"
+>
+    <Edit2 className="w-4 h-4"/>
+</button>
                                     <button onClick={() => deleteObjet(o.id)} className="text-slate-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button>
                                  </div>
                              </div>
@@ -1602,6 +1617,57 @@ export default function HotelDashboard() {
               <Button variant="ghost" onClick={() => { setShowConsigneModal(false); setEditConsigneIndex(null); }}>Annuler</Button>
               <Button onClick={createConsigne} className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-md">
                   {editConsigneIndex !== null ? 'Modifier' : 'Envoyer'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+{/* Modal Objet Trouvé (MANQUANT RÉINTÉGRÉ) */}
+      {showObjetModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md space-y-4 animate-in fade-in zoom-in duration-200">
+            <h2 className="text-xl font-bold text-slate-800">Nouvel objet trouvé</h2>
+            
+            <div className="grid grid-cols-2 gap-3">
+               <Input 
+                 type="date" 
+                 value={newObjet.date} 
+                 onChange={(e) => setNewObjet({ ...newObjet, date: e.target.value })} 
+               />
+               <Input 
+                 placeholder="Chambre" 
+                 value={newObjet.chambre} 
+                 onChange={(e) => setNewObjet({ ...newObjet, chambre: e.target.value })} 
+               />
+            </div>
+            
+            <Input 
+              placeholder="Nom du client" 
+              value={newObjet.nomClient} 
+              onChange={(e) => setNewObjet({ ...newObjet, nomClient: e.target.value })} 
+            />
+            <Input 
+              placeholder="Description de l'objet" 
+              value={newObjet.objet} 
+              onChange={(e) => setNewObjet({ ...newObjet, objet: e.target.value })} 
+            />
+
+            <div className="flex justify-end gap-2 mt-4">
+              <Button 
+                variant="ghost" 
+                onClick={() => { 
+                  setShowObjetModal(false); 
+                  setEditObjetIndex(null); 
+                }}
+              >
+                Annuler
+              </Button>
+              <Button 
+                onClick={createObjetTrouve} 
+                className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
+              >
+                {editObjetIndex !== null ? 'Modifier' : 'Créer'}
               </Button>
             </div>
           </div>
