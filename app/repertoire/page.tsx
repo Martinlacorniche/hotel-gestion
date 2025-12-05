@@ -38,7 +38,7 @@ export default function RepertoirePage() {
   // --- EFFETS ---
   useEffect(() => {
     const hotelName = currentHotel?.nom ? ` — ${currentHotel.nom}` : "";
-    document.title = `Répertoire${hotelName}`;
+    document.title = `Contacts${hotelName}`;
   }, [currentHotel]);
 
   useEffect(() => {

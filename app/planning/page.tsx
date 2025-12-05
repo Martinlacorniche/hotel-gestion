@@ -815,7 +815,7 @@ export default function PlanningPage() {
                     {weekDates.map(date => {
                        const formatted = format(date, 'yyyy-MM-dd');
                        
-                       const renderBubble = (entry, icon) => (
+                       const renderBubble = (entry, icon, isDraft = false) => (
                           <div 
                              draggable={isAdmin}
                              onDragStart={() => isAdmin && setDraggedShift({ userId: row.id_auth, date: formatted })}
@@ -852,6 +852,11 @@ export default function PlanningPage() {
                                    <Trash2 className="w-3 h-3"/>
                                 </button>
                              )}
+
+                        {isAdmin && isDraft && (
+                                <span className="absolute top-0.5 left-1 text-[8px] opacity-90 text-amber-900 bg-amber-200/50 px-1 rounded-full border border-amber-300 font-bold">📝</span>
+                             )}
+
                           </div>
                        );
 
@@ -862,7 +867,12 @@ export default function PlanningPage() {
                              if (!draft && !published) {
                                 content = <div onClick={() => handleCellClick(row.id_auth, formatted, null)} onDrop={() => handleShiftDrop(row.id_auth, formatted)} onDragOver={(e) => e.preventDefault()} className="h-full w-full min-h-[40px] rounded-lg border border-dashed border-slate-200 hover:bg-white/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer"><Plus className="w-4 h-4 text-slate-300"/></div>;
                              } else {
-                                content = <div className="flex flex-col gap-1">{draft && renderBubble(draft, '📝')} {published && renderBubble(published, '')}</div>;
+                                content = (
+    <div className="flex flex-col gap-1">
+        {draft && renderBubble(draft, '📝', true)} {/* <-- Passer true pour isDraft */}
+        {published && renderBubble(published, '')}
+    </div>
+);
                              }
                           } else {
                              const entry = getEntry(entriesView, row.id_auth, formatted, false, false);
@@ -915,12 +925,24 @@ export default function PlanningPage() {
                      </div>
                   </div>
                   <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-xl p-2 bg-slate-50/50">
-                     {[...users].sort((a,b) => (a.name||'').localeCompare(b.name||'')).map(u => (
-                        <label key={u.id_auth} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg cursor-pointer transition">
-                           <input type="checkbox" className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300" checked={publishSelectedUserIds.includes(u.id_auth)} onChange={e => setPublishSelectedUserIds(prev => e.target.checked ? [...prev, u.id_auth] : prev.filter(id => id !== u.id_auth))} />
-                           <span className="text-sm text-slate-700 font-medium">{u.name || u.email}</span>
-                        </label>
-                     ))}
+                     {users
+  .filter(u => {
+    // Garder seulement les utilisateurs sans date de fin OU avec une date de fin dans le futur/aujourd'hui
+    const endDate = u.employment_end_date ? new Date(u.employment_end_date) : null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Comparaison à la journée
+    
+    // Si la date de fin n'existe pas OU si la date de fin est >= à aujourd'hui, on garde l'utilisateur
+    return !endDate || endDate >= today;
+  })
+  .sort((a,b) => (a.name||'').localeCompare(b.name||''))
+  .map(u => (
+    <label key={u.id_auth} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg cursor-pointer transition">
+      <input type="checkbox" className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300" checked={publishSelectedUserIds.includes(u.id_auth)} onChange={e => setPublishSelectedUserIds(prev => e.target.checked ? [...prev, u.id_auth] : prev.filter(id => id !== u.id_auth))} />
+      <span className="text-sm text-slate-700 font-medium">{u.name || u.email}</span>
+    </label>
+  ))
+}
                   </div>
                </div>
                <div className="flex justify-end gap-3">

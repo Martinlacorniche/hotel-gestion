@@ -48,7 +48,7 @@ export default function TrousseauPage() {
   // --- EFFETS ---
   useEffect(() => {
     const hotelName = currentHotel?.nom ? ` — ${currentHotel.nom}` : '';
-    document.title = `Trousseau${hotelName}`;
+    document.title = `Identifiants${hotelName}`;
   }, [currentHotel]);
 
   useEffect(() => {
@@ -183,7 +183,7 @@ export default function TrousseauPage() {
             <div>
                 <div className="flex items-center justify-between mb-2">
                     <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                        <Key className="w-6 h-6 text-indigo-600" /> Trousseau
+                        <Key className="w-6 h-6 text-indigo-600" /> Identifiants
                     </h1>
                     <button onClick={handleCreate} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition" title="Nouvelle clé">
                         <Plus className="w-5 h-5" />
