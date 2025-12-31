@@ -227,13 +227,15 @@ export default function HotelDashboard() {
   const hotelId = selectedHotelId || user?.hotel_id;
 
   const formatNumber = (n: number | null, suffix: string = "") => {
-    if (n === null || n === undefined || isNaN(n)) return "-";
-    const isGuestReview = suffix.includes("/10");
-    return new Intl.NumberFormat("fr-FR", {
-      minimumFractionDigits: isGuestReview ? 1 : 0,
-      maximumFractionDigits: isGuestReview ? 1 : 0,
-    }).format(n) + suffix;
-  };
+  if (n === null || n === undefined || isNaN(n)) return "-";
+  // On détecte si c'est une note Guest pour garder 1 décimale
+  const isGuestReview = suffix.includes("/10");
+  
+  return new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits: isGuestReview ? 1 : 0,
+    maximumFractionDigits: isGuestReview ? 1 : 0,
+  }).format(n);
+};
 
   const router = useRouter();
   const [tickets, setTickets] = useState<any[]>([]);
@@ -1200,37 +1202,42 @@ export default function HotelDashboard() {
 
                                 <div className="flex items-baseline gap-1.5">
                                     {/* VALEUR ACTUELLE (Editable si Admin) */}
-                                    <div className="relative group">
-                                        {isAdmin ? (
-                                            <input 
-                                                type="number" 
-                                                className="w-24 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 text-xl font-bold text-slate-800 outline-none transition-all p-0 m-0" 
-                                                value={value ?? ""} 
-                                                placeholder="0"
-                                                onChange={(e) => setKpis((prev:any) => ({ ...prev, [def.key]: Number(e.target.value) }))} 
-                                            />
-                                        ) : (
-                                            <span className="text-xl font-bold text-slate-800">{formatNumber(value)}</span>
-                                        )}
-                                        <span className="text-sm text-slate-500 font-medium ml-0.5">{def.suffix}</span>
-                                    </div>
+<div className="relative group">
+    {isAdmin ? (
+        <input 
+            type="number" 
+            className="w-24 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 text-xl font-bold text-slate-800 outline-none transition-all p-0 m-0" 
+            value={value ?? ""} 
+            placeholder="0"
+            onChange={(e) => setKpis((prev:any) => ({ ...prev, [def.key]: Number(e.target.value) }))} 
+        />
+    ) : (
+        // MODIFICATION ICI : on passe def.suffix en 2ème argument
+        <span className="text-xl font-bold text-slate-800">{formatNumber(value, def.suffix)}</span>
+    )}
+    <span className="text-sm text-slate-500 font-medium ml-0.5">
+  {/* On n'affiche pas le suffixe si c'est la note guest, pour éviter le "8.9/10/9" */}
+  {def.key === 'guest_review' ? '' : def.suffix}
+</span>
+</div>
 
-                                    {/* SEPARATEUR & OBJECTIF */}
-                                    <span className="text-slate-300 text-lg font-light">/</span>
-                                    
-                                    <div className="relative group">
-                                         {isAdmin ? (
-                                            <input 
-                                                type="number" 
-                                                className="w-16 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 text-sm font-medium text-slate-400 outline-none transition-all p-0 m-0" 
-                                                value={target ?? ""} 
-                                                placeholder="Obj"
-                                                onChange={(e) => setKpis((prev:any) => ({ ...prev, [`${def.key}_objectif`]: Number(e.target.value) }))} 
-                                            />
-                                        ) : (
-                                            <span className="text-sm font-medium text-slate-400">{formatNumber(target)}</span>
-                                        )}
-                                    </div>
+{/* SEPARATEUR & OBJECTIF */}
+<span className="text-slate-300 text-lg font-light">/</span>
+
+<div className="relative group">
+     {isAdmin ? (
+        <input 
+            type="number" 
+            className="w-16 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 text-sm font-medium text-slate-400 outline-none transition-all p-0 m-0" 
+            value={target ?? ""} 
+            placeholder="Obj"
+            onChange={(e) => setKpis((prev:any) => ({ ...prev, [`${def.key}_objectif`]: Number(e.target.value) }))} 
+        />
+    ) : (
+        // MODIFICATION ICI AUSSI (optionnel mais recommandé pour la cohérence)
+        <span className="text-sm font-medium text-slate-400">{formatNumber(target, def.suffix)}</span>
+    )}
+</div>
                                 </div>
 
                                 {/* Barre de progression */}
