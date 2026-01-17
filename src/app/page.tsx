@@ -804,7 +804,22 @@ export default function HotelDashboard() {
   if (!user) return <div className="p-10 text-center text-gray-500 flex items-center justify-center min-h-screen">Chargement de l'application...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 p-4 md:p-6 font-sans">
+    
+    <div className="min-h-screen relative text-slate-900 p-4 md:p-6 font-sans overflow-hidden">
+      
+      {/* --- EFFET AQUARELLE (ARRIÈRE-PLAN) --- */}
+      {/* Ce bloc est fixé au fond (-z-10) et ne bougera pas */}
+      <div className="fixed inset-0 -z-10 h-full w-full bg-slate-50">
+        {/* Tache 1 : Indigo doux en haut à gauche */}
+        <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-indigo-200/40 blur-[120px]" />
+        
+        {/* Tache 2 : Bleu cyan (rappel mer) en bas à droite */}
+        <div className="absolute bottom-[-10%] right-[-10%] h-[600px] w-[600px] rounded-full bg-sky-200/40 blur-[120px]" />
+        
+        {/* Tache 3 : Une touche de violet très léger au centre pour lier le tout */}
+        <div className="absolute top-[40%] left-[40%] h-[400px] w-[400px] rounded-full bg-purple-100/50 blur-[100px]" />
+      </div>
+      {/* -------------------------------------- */}
       
       {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between w-full mb-8 gap-4">
