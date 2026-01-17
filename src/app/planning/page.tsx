@@ -8,7 +8,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useRouter } from 'next/navigation';
 import { 
-  Lock, Unlock, ArrowDown, ArrowUp, Plus, Calendar as CalendarIcon, 
+  Lock, Unlock, ArrowDown, CheckCircle, ArrowUp, Plus, Calendar as CalendarIcon, 
   ChevronLeft, ChevronRight, Filter, Printer, Share2, Scissors, Trash2, 
   User, Clock, AlertCircle, Wrench, Copy // <--- AJOUTE "Copy" ICI
 } from 'lucide-react';
