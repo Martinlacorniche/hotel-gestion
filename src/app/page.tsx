@@ -900,11 +900,15 @@ export default function HotelDashboard() {
                <a href={`/process?hotel_id=${hotelId}`} target="_blank" className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-gray-700 gap-1">
                 <Settings className="w-5 h-5" /> <span className="text-xs font-medium">Process</span>
               </a>
+              <a href={`/commercial?hotel_id=${hotelId}`} target="_blank" className="flex flex-col items-center justify-center p-3 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-700 gap-1">
+  <ShoppingCart className="w-5 h-5" /> <span className="text-xs font-medium">Commercial</span>
+</a>
               {/* Maintenance - Corniche uniquement */}
               {currentHotel?.nom?.toLowerCase().includes("corniche") && (
                 <a href={`/maintenance?hotel_id=${hotelId}`} target="_blank" className="flex flex-col items-center justify-center p-3 bg-yellow-50 hover:bg-yellow-100 rounded-lg text-yellow-700 gap-1">
                   <Wrench className="w-5 h-5" /> <span className="text-xs font-medium">Maintenance</span>
                 </a>
+                
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -942,7 +946,7 @@ export default function HotelDashboard() {
                             setShowConsigneModal(true);
                         }}
                     >
-                        <PlusCircle className="w-4 h-4 mr-1" /> Ajouter
+                        <PlusCircle className="w-4 h-4 mr-1" />
                     </Button>
                 </div>
             </div>
