@@ -1,11 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Ignore les erreurs ESLint (variables inutilisées, etc.) pendant le build
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  // Ignore les erreurs TypeScript (types 'any', etc.) pendant le build
+  /* Note : Le bloc 'eslint' a été retiré car il n'est plus supporté 
+     directement ici dans les dernières versions de Next.js.
+  */
+  
+  // On garde TypeScript si tu as vraiment besoin d'ignorer les erreurs au build
   typescript: {
     ignoreBuildErrors: true,
   },

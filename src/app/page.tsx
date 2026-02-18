@@ -257,11 +257,12 @@ export default function HotelDashboard() {
   
   const [showUserModal, setShowUserModal] = useState(false);
   const [newUser, setNewUser] = useState<{
-    name: string; email: string; role: string; password: string; hotel_id?: string;
-  }>({
-    name: '', email: '', role: 'employe', password: '',
-    hotel_id: selectedHotelId || hotels[0]?.id || '',
-  });
+  name: string; email: string; role: string; password: string; hotel_id?: string; birth_date: string; // Ajout ici
+}>({
+  name: '', email: '', role: 'employe', password: '',
+  hotel_id: selectedHotelId || hotels[0]?.id || '',
+  birth_date: '', // Initialisation vide
+});
   const [showUsersList, setShowUsersList] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
 
@@ -507,18 +508,26 @@ export default function HotelDashboard() {
   };
 
   const handleCreateUser = async () => {
-    const { email, password, name, role } = newUser;
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { name, role, hotel_id: newUser.hotel_id } }
-    });
-    if (authError || !authData.user) { alert("Erreur Auth : " + (authError?.message ?? '')); return; }
-    if (!newUser.hotel_id) { alert('Merci de sélectionner un hôtel.'); return; }
+  const { email, password, name, role, birth_date } = newUser; // Récupère birth_date
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email, password,
+    options: { data: { name, role, hotel_id: newUser.hotel_id } }
+  });
+  
+  if (authError || !authData.user) { alert("Erreur Auth : " + (authError?.message ?? '')); return; }
+  if (!newUser.hotel_id) { alert('Merci de sélectionner un hôtel.'); return; }
 
-    const { error: insertError } = await supabase.from('users').insert([{
-      email, name, role, id_auth: authData.user.id, hotel_id: newUser.hotel_id,
-    }]);
-    if (insertError) { alert("Erreur table users : " + insertError.message); return; }
+  // On ajoute birth_date ici
+  const { error: insertError } = await supabase.from('users').insert([{
+    email, 
+    name, 
+    role, 
+    birth_date: birth_date || null, // On l'envoie ou null si vide
+    id_auth: authData.user.id, 
+    hotel_id: newUser.hotel_id,
+  }]);
+
+  if (insertError) { alert("Erreur table users : " + insertError.message); return; }
 
     const { data: configs } = await supabase.from('planning_config').select('ordre');
     const maxOrdre = configs && configs.length ? Math.max(...configs.map(cfg => cfg.ordre || 0)) : 0;
@@ -792,6 +801,41 @@ export default function HotelDashboard() {
     });
   }, [objetsTrouves, showAllObjets, searchObjets]);
 
+const birthdayMessage = useMemo(() => {
+  if (!user || !selectedDate) return null;
+  
+  const selectedMD = format(selectedDate, 'MM-dd');
+  const currentYear = selectedDate.getFullYear();
+  
+  // On filtre les utilisateurs qui fêtent leur anniversaire ce jour-là
+  const celebratingUsers = users.filter(u => u.birth_date && u.birth_date.slice(5) === selectedMD);
+
+  if (celebratingUsers.length === 0) return null;
+
+  // CORRECTION : On compare u.id_auth avec user.id (issu de useAuth)
+  const isItMe = celebratingUsers.find(u => u.id_auth === (user?.id));
+
+  if (isItMe) {
+    const age = currentYear - parseInt(isItMe.birth_date.split('-')[0]);
+    return {
+      type: 'me',
+      text: `🎂 Joyeux anniversaire ! Tu fêtes tes ${age} ans aujourd'hui !`
+    };
+  }
+
+  // Cas pour les autres collègues
+  const others = celebratingUsers.map(u => {
+    const birthYear = parseInt(u.birth_date.split('-')[0]);
+    const age = currentYear - birthYear;
+    return `${u.name} (${age} ans)`;
+  });
+
+  return {
+    type: 'others',
+    text: `🎉 Aujourd'hui, anniversaire de ${others.join(' & ')}`
+  };
+}, [users, selectedDate, user]);
+
   useEffect(() => {
     if (isLoading) return;
     if (typeof window !== 'undefined') {
@@ -822,16 +866,30 @@ export default function HotelDashboard() {
       {/* -------------------------------------- */}
       
       {/* --- HEADER --- */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between w-full mb-8 gap-4">
-        
-        <div className="flex flex-col">
-           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Bonjour, {user.name}
-           </h1>
-           <p className="text-sm text-slate-500">
-             Voici ce qui se passe aujourd'hui à l'hôtel.
-           </p>
-        </div>
+<div className="flex flex-col md:flex-row items-start md:items-center justify-between w-full mb-8 gap-4">
+  
+  <div className="flex flex-col gap-1">
+     {/* BANDEAU ANNIVERSAIRE */}
+     {birthdayMessage && (
+  <div className={`mb-4 px-5 py-3 rounded-2xl text-sm font-bold flex items-center gap-3 shadow-lg transition-all border-l-4 ${
+    birthdayMessage.type === 'me' 
+    ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 text-white border-white animate-pulse" 
+    : "bg-white text-slate-700 border-amber-400 shadow-amber-100/50"
+  }`}>
+    <span className="text-xl">
+      {birthdayMessage.type === 'me' ? '👑' : '🎈'}
+    </span>
+    {birthdayMessage.text}
+  </div>
+)}
+
+     <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+      Bonjour, {user.name}
+     </h1>
+     <p className="text-sm text-slate-500">
+       Voici ce qui se passe aujourd'hui à l'hôtel.
+     </p>
+  </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
           {/* Navigation Date */}
@@ -1390,63 +1448,95 @@ export default function HotelDashboard() {
                     </div>
                 </div>
                 {showUsersList && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3"> {/* RETOUR AUX 2 COLONNES ICI */}
-                         {[...users].sort((a, b) => {
-                             // 1. Déterminer si clôturé
-                             const isClosedA = a.active === false || (a.employment_end_date && new Date(a.employment_end_date) < new Date());
-                             const isClosedB = b.active === false || (b.employment_end_date && new Date(b.employment_end_date) < new Date());
-                             
-                             // 2. Tri par Statut (Actifs en premier)
-                             if (isClosedA !== isClosedB) return isClosedA ? 1 : -1;
-                             
-                             // 3. Tri Alphabétique sur le nom
-                             return (a.name || '').localeCompare(b.name || '');
-                         }).map((u, idx) => {
-                             const isClosed = u.active === false || (u.employment_end_date && new Date(u.employment_end_date) < new Date());
-                             
-                             return (
-                                 <div key={u.id || idx} className={`p-3 rounded-lg border flex flex-col gap-2 shadow-sm transition-all ${isClosed ? 'bg-slate-200 border-slate-300 opacity-70' : 'bg-white border-slate-200'}`}>
-                                     <div className="flex justify-between items-start">
-                                         <div>
-                                             <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                                                {u.name}
-                                                {isClosed && <span className="text-[10px] bg-slate-300 text-slate-600 px-1.5 rounded">Clôturé</span>}
-                                             </div>
-                                             <div className="text-xs text-slate-500">{u.email}</div>
-                                         </div>
-                                         <div className="text-xs font-medium bg-slate-50 px-2 py-1 rounded text-slate-600 border border-slate-100">
-                                             {u.role}
-                                         </div>
-                                     </div>
-                                     
-                                     <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100/50 mt-1">
-                                         {/* Sélecteur d'hôtel */}
-                                         <select
-                                            className="text-[11px] border border-slate-200 rounded px-2 py-1 bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none w-full max-w-[120px]"
-                                            value={u.hotel_id || ""}
-                                            onChange={async (e) => {
-                                              const newHotelId = e.target.value;
-                                              const { error } = await supabase.from('users').update({ hotel_id: newHotelId }).eq('id_auth', u.id_auth);
-                                              if (error) { alert("Erreur update: " + error.message); return; }
-                                              setUsers(prev => prev.map((user) => user.id_auth === u.id_auth ? { ...user, hotel_id: newHotelId } : user));
-                                            }}
-                                          >
-                                            {hotels.map((h: any) => (
-                                              <option value={h.id} key={h.id}>{h.nom}</option>
-                                            ))}
-                                          </select>
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+    {[...users].sort((a, b) => {
+      const isClosedA = a.active === false || (a.employment_end_date && new Date(a.employment_end_date) < new Date());
+      const isClosedB = b.active === false || (b.employment_end_date && new Date(b.employment_end_date) < new Date());
+      if (isClosedA !== isClosedB) return isClosedA ? 1 : -1;
+      return (a.name || '').localeCompare(b.name || '');
+    }).map((u, idx) => {
+      const isClosed = u.active === false || (u.employment_end_date && new Date(u.employment_end_date) < new Date());
+      
+      return (
+        <div key={u.id || idx} className={`p-3 rounded-lg border flex flex-col gap-2 shadow-sm transition-all ${isClosed ? 'bg-slate-200 border-slate-300 opacity-70' : 'bg-white border-slate-200'}`}>
+          <div className="flex justify-between items-start">
+            <div>
+              <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                {u.name}
+                {isClosed && <span className="text-[10px] bg-slate-300 text-slate-600 px-1.5 rounded">Clôturé</span>}
+              </div>
+              <div className="text-xs text-slate-500">{u.email}</div>
+            </div>
+            <div className="text-xs font-medium bg-slate-50 px-2 py-1 rounded text-slate-600 border border-slate-100">
+              {u.role}
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100/50 mt-1">
+            {/* Date de naissance */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-bold text-slate-400 uppercase ml-1">Naissance</label>
+              <input
+  type="date"
+  className="text-[11px] border border-slate-200 rounded px-2 py-1 bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none"
+  value={u.birth_date || ""}
+  onChange={(e) => {
+    const val = e.target.value;
+    // On met à jour l'état local UNIQUEMENT pour que les chiffres s'affichent pendant la frappe
+    setUsers(prev => prev.map((user) => 
+      user.id_auth === u.id_auth ? { ...user, birth_date: val } : user
+    ));
+  }}
+  onBlur={async (e) => {
+    const val = e.target.value;
+    // On ne sauvegarde en base que si la date est complète (10 caractères) ou si on l'efface
+    if (val.length === 10 || val === "") {
+      const { error } = await supabase
+        .from('users')
+        .update({ birth_date: val || null })
+        .eq('id_auth', u.id_auth);
+      
+      if (error) {
+        alert("Erreur sauvegarde BDD : " + error.message);
+      } else {
+        console.log("Date de naissance synchronisée ✅");
+      }
+    }
+  }}
+/>
+            </div>
 
-                                         {/* Boutons Actions */}
-                                         {!isClosed ? 
-                                            <Button size="sm" variant="destructive" className="h-7 text-[10px] px-2" onClick={() => openCloseModal(u)}>Clôturer</Button> :
-                                            <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-green-600 border-green-200 hover:bg-green-50 bg-white" onClick={() => reactivateUser(u)}>Réactiver</Button>
-                                         }
-                                     </div>
-                                 </div>
-                             );
-                         })}
-                    </div>
-                )}
+            {/* Sélecteur d'hôtel */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-bold text-slate-400 uppercase ml-1">Hôtel</label>
+              <select
+                className="text-[11px] border border-slate-200 rounded px-2 py-1 bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none w-full max-w-[120px]"
+                value={u.hotel_id || ""}
+                onChange={async (e) => {
+                  const newHotelId = e.target.value;
+                  const { error } = await supabase.from('users').update({ hotel_id: newHotelId }).eq('id_auth', u.id_auth);
+                  if (error) { alert("Erreur update: " + error.message); return; }
+                  setUsers(prev => prev.map((user) => user.id_auth === u.id_auth ? { ...user, hotel_id: newHotelId } : user));
+                }}
+              >
+                {hotels.map((h: any) => (
+                  <option value={h.id} key={h.id}>{h.nom}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="self-end">
+              {!isClosed ? 
+                <Button size="sm" variant="destructive" className="h-7 text-[10px] px-2" onClick={() => openCloseModal(u)}>Clôturer</Button> :
+                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-green-600 border-green-200 hover:bg-green-50 bg-white" onClick={() => reactivateUser(u)}>Réactiver</Button>
+              }
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+)}
             </div>
          )}
 
@@ -1706,6 +1796,10 @@ export default function HotelDashboard() {
             <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md space-y-4">
                 <h2 className="text-xl font-bold text-slate-800">Créer un utilisateur</h2>
                 <Input placeholder="Nom complet" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} />
+                <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Date de naissance</label>
+            <Input type="date" value={newUser.birth_date} onChange={(e) => setNewUser({ ...newUser, birth_date: e.target.value })} />
+          </div>
                 <Input type="email" placeholder="Email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} />
                 <Input type="password" placeholder="Mot de passe" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
                 <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className="w-full border rounded px-3 py-2">

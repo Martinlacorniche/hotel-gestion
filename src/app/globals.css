@@ -1,10 +1,7 @@
-@tailwind base;
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
-@tailwind components;
-@tailwind utilities;
-
 @import "tailwindcss";
 
+/* Polices et Plugins */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -127,11 +124,12 @@
   }
 }
 
+/* Overrides Globaux */
 body, html, input, textarea, select, button {
   font-family: 'Inter', Arial, sans-serif !important;
 }
+
 body {
   background: #f9f9fb !important;
   color: #23272f !important;
 }
-
