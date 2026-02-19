@@ -7,7 +7,8 @@ import { format, isBefore, isToday, parseISO, getYear } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { 
   Search, PlusCircle, Phone, Mail, Clock, 
-  Edit2, Trash2, XCircle, CalendarDays, ChevronDown, User, MessageSquareText, CreditCard, Wallet, Check 
+  Edit2, Trash2,Layout, XCircle, CalendarDays, ChevronDown, User, 
+  MessageSquareText, CreditCard, Wallet, Check, Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,6 +51,7 @@ const PAYMENT_COLORS: Record<string, string> = {
 
 export default function CommercialDashboard() {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'tarifs'>('pipeline');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -162,7 +164,6 @@ export default function CommercialDashboard() {
         (l.email && l.email.toLowerCase().includes(searchTerm.toLowerCase()))
       );
       
-      // LOGIQUE DES FILTRES REGROUPÉS
       let matchFilter = false;
       if (filterStatut === 'Tous') matchFilter = true;
       else if (filterStatut === 'Pipeline') matchFilter = ['Nouveau', 'Devis envoyé', 'En négo'].includes(l.statut);
@@ -180,8 +181,14 @@ export default function CommercialDashboard() {
       const statusB = getRelanceStatus(b.date_relance, b.statut);
       const isUrgentA = statusA === 'late' || statusA === 'today';
       const isUrgentB = statusB === 'late' || statusB === 'today';
+
       if (isUrgentA && !isUrgentB) return -1;
       if (!isUrgentA && isUrgentB) return 1;
+
+      const timeA = a.date_evenement ? new Date(a.date_evenement).getTime() : Infinity;
+      const timeB = b.date_evenement ? new Date(b.date_evenement).getTime() : Infinity;
+      if (timeA !== timeB) return timeA - timeB;
+
       const dateA = a.updated_at ? new Date(a.updated_at).getTime() : new Date(a.created_at).getTime();
       const dateB = b.updated_at ? new Date(b.updated_at).getTime() : new Date(b.created_at).getTime();
       return dateB - dateA;
@@ -208,289 +215,293 @@ export default function CommercialDashboard() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-900" onClick={handleGlobalClick}>
       
-      {/* HEADER & KPIS */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end mb-8 gap-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Suivi Commercial</h1>
-          <p className="text-sm text-slate-500 mt-1">Actions prioritaires en haut de liste.</p>
-        </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 w-full xl:w-auto">
-           <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center">
-             <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">En retard</span>
-             <span className="text-xl font-bold text-slate-800">{stats.lateCount}</span>
-          </div>
-          <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center">
-             <span className="text-[10px] font-bold text-orange-500 uppercase tracking-wider">À relancer</span>
-             <span className="text-xl font-bold text-slate-800">{stats.todayCount}</span>
-          </div>
-          <div className="bg-white p-3 rounded-xl shadow-sm border border-blue-100 flex flex-col items-center justify-center relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-             <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Pipeline</span>
-             <span className="text-lg font-bold text-slate-800">{stats.pipeline.toLocaleString()} €</span>
-          </div>
-          <div className="bg-white p-3 rounded-xl shadow-sm border border-emerald-100 flex flex-col items-center justify-center relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-             <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Gagné (An)</span>
-             <span className="text-lg font-bold text-emerald-700">+{stats.won.toLocaleString()} €</span>
-          </div>
-          <div className="bg-white p-3 rounded-xl shadow-sm border border-red-50 flex flex-col items-center justify-center relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-1 h-full bg-red-400"></div>
-             <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">Perdu (An)</span>
-             <span className="text-lg font-bold text-red-400">-{stats.lost.toLocaleString()} €</span>
-          </div>
-        </div>
+      {/* TABS SELECTION */}
+      <div className="flex items-center gap-8 mb-8">
+        <button 
+          onClick={() => setActiveTab('pipeline')}
+          className={`text-2xl font-bold transition-colors ${activeTab === 'pipeline' ? 'text-slate-800' : 'text-slate-300 hover:text-slate-400'}`}
+        >
+          Suivi Commercial
+        </button>
+        <button 
+          onClick={() => setActiveTab('tarifs')}
+          className={`text-2xl font-bold transition-colors ${activeTab === 'tarifs' ? 'text-slate-800' : 'text-slate-300 hover:text-slate-400'}`}
+        >
+          Offres & Tarifs
+        </button>
       </div>
 
-      {/* FILTRES REGROUPÉS */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6 justify-between items-center">
-        <div className="flex gap-2 w-full md:w-auto">
-            {['Tous', 'Pipeline', 'Gagné', 'Perdu'].map(st => (
-                <button 
-                    key={st}
-                    onClick={(e) => { e.stopPropagation(); setFilterStatut(st); }}
-                    className={`px-5 py-2 rounded-full text-xs font-bold transition-all ${filterStatut === st ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-                >
-                    {st}
-                </button>
-            ))}
-        </div>
-        
-        <div className="flex gap-2 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <Input placeholder="Rechercher..." className="pl-9 bg-white rounded-full shadow-sm border-slate-200" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+      {activeTab === 'pipeline' ? (
+        <>
+          {/* HEADER KPIS */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+            <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center">
+              <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">En retard</span>
+              <span className="text-xl font-bold text-slate-800">{stats.lateCount}</span>
             </div>
-            <Button 
-                onClick={(e) => { e.stopPropagation(); setCurrentLead({ statut: 'Nouveau', etat_paiement: 'À demander', budget_estime: 0, montant_paye: 0, date_relance: '', date_evenement: '' }); setShowModal(true); }} 
-                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg shadow-indigo-200 px-6 whitespace-nowrap"
-            >
-                <PlusCircle className="mr-2 h-4 w-4" /> Nouveau
-            </Button>
-        </div>
-      </div>
+            <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center">
+              <span className="text-[10px] font-bold text-orange-500 uppercase tracking-wider">À relancer</span>
+              <span className="text-xl font-bold text-slate-800">{stats.todayCount}</span>
+            </div>
+            <div className="bg-white p-3 rounded-xl shadow-sm border border-blue-100 relative overflow-hidden flex flex-col items-center justify-center">
+              <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Pipeline</span>
+              <span className="text-lg font-bold text-slate-800">{stats.pipeline.toLocaleString()} €</span>
+            </div>
+            <div className="bg-white p-3 rounded-xl shadow-sm border border-emerald-100 relative overflow-hidden flex flex-col items-center justify-center">
+              <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Gagné (An)</span>
+              <span className="text-lg font-bold text-emerald-700">+{stats.won.toLocaleString()} €</span>
+            </div>
+            <div className="bg-white p-3 rounded-xl shadow-sm border border-red-50 relative overflow-hidden flex flex-col items-center justify-center">
+              <div className="absolute top-0 left-0 w-1 h-full bg-red-400"></div>
+              <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">Perdu (An)</span>
+              <span className="text-lg font-bold text-red-400">-{stats.lost.toLocaleString()} €</span>
+            </div>
+          </div>
 
-      {/* LISTE */}
-      <div className="space-y-3 pb-20">
-        {loading ? <div className="text-center py-10 text-slate-400">Chargement...</div> : sortedLeads.map((lead) => {
-          const relanceStatus = getRelanceStatus(lead.date_relance, lead.statut);
-          const isMenuOpen = openMenuId === lead.id;
-          const isPaymentOpen = openPaymentId === lead.id;
-          const isCommentOpen = openCommentId === lead.id;
-          const isFinanceOpen = openFinanceId === lead.id;
-          const hasComment = lead.commentaires && lead.commentaires.trim().length > 0;
-          
-          const budget = lead.budget_estime || 0;
-          const paye = lead.montant_paye || 0;
-          const reste = Math.max(0, budget - paye);
-          const isPaid = budget > 0 && reste === 0;
-
-          return (
-            <div 
-              key={lead.id} 
-              className={`group bg-white border rounded-xl p-4 transition-all hover:shadow-md relative
-                ${relanceStatus === 'late' ? 'border-l-4 border-l-red-500' : 
-                  relanceStatus === 'today' ? 'border-l-4 border-l-orange-400' : 
-                  'border-l-4 border-l-slate-200 border-slate-100'}
-              `}
-            >
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                <div className="md:col-span-3 flex flex-col">
-                    <span className="font-bold text-slate-800 text-base truncate">{lead.nom_client}</span>
-                    <span className="text-sm font-medium text-slate-500 truncate">{lead.titre_demande}</span>
-                    {lead.updated_by && (
-                        <span className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            {format(new Date(lead.updated_at || lead.created_at), 'dd/MM')} - {lead.updated_by}
-                        </span>
-                    )}
-                </div>
-
-                <div className="md:col-span-2 flex items-center md:justify-start">
-                    {lead.date_evenement ? (
-                        <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100 text-slate-600">
-                            <CalendarDays className="w-3.5 h-3.5 text-indigo-500" />
-                            <span className="text-xs font-bold">
-                                {format(parseISO(lead.date_evenement), 'dd MMM yy', { locale: fr })}
-                            </span>
-                        </div>
-                    ) : <span className="text-xs text-slate-300 italic px-2">--/--/--</span>}
-                </div>
-
-                 <div className="md:col-span-1 flex flex-col justify-center items-center relative">
-                     <button 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setTempFinance({ budget: lead.budget_estime || 0, paye: lead.montant_paye || 0 });
-                            setOpenFinanceId(isFinanceOpen ? null : lead.id);
-                            setOpenMenuId(null); setOpenPaymentId(null); setOpenCommentId(null);
-                        }}
-                        className="flex flex-col items-center hover:bg-slate-50 p-1.5 rounded-lg transition-colors cursor-pointer w-full"
-                     >
-                         {budget > 0 ? (
-                             <>
-                                <span className="font-bold text-slate-700 text-xs">{budget.toLocaleString()} €</span>
-                                {isPaid ? (
-                                    <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 rounded-full mt-0.5">Payé 100%</span>
-                                ) : (
-                                    paye > 0 ? (
-                                        <span className="text-[10px] text-red-500 font-bold mt-0.5 whitespace-nowrap">
-                                            Reste: {reste.toLocaleString()} €
-                                        </span>
-                                    ) : null
-                                )}
-                             </>
-                         ) : <span className="text-slate-300">-</span>}
-                     </button>
-
-                     {isFinanceOpen && (
-                        <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl p-3 animate-in fade-in zoom-in-95 duration-200 cursor-default" onClick={e => e.stopPropagation()}>
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="text-[9px] font-bold text-slate-400 uppercase">Budget</label>
-                                    <div className="relative">
-                                        <Input 
-                                            type="number" className="h-7 text-xs pr-6" 
-                                            value={tempFinance.budget || ''}
-                                            onChange={(e) => setTempFinance({ ...tempFinance, budget: parseFloat(e.target.value) })}
-                                        />
-                                        <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">€</span>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-[9px] font-bold text-slate-400 uppercase">Déjà Payé</label>
-                                    <div className="relative">
-                                        <Input 
-                                            type="number" className="h-7 text-xs pr-6 bg-slate-50 border-indigo-200" 
-                                            autoFocus
-                                            value={tempFinance.paye || ''}
-                                            onChange={(e) => setTempFinance({ ...tempFinance, paye: parseFloat(e.target.value) })}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') saveQuickFinance(lead.id); }}
-                                        />
-                                        <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">€</span>
-                                    </div>
-                                </div>
-                                <div className="flex justify-between items-center pt-1">
-                                    <span className={`text-[10px] font-bold ${tempFinance.budget - tempFinance.paye <= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                                        Reste: {Math.max(0, tempFinance.budget - tempFinance.paye)} €
-                                    </span>
-                                    <Button size="sm" className="h-6 w-6 p-0 rounded-full bg-indigo-600 hover:bg-indigo-700" onClick={() => saveQuickFinance(lead.id)}>
-                                        <Check className="w-3 h-3 text-white" />
-                                    </Button>
-                                </div>
-                            </div>
-                        </div>
-                     )}
-                </div>
-
-                <div className="md:col-span-2 relative">
+          {/* FILTRES & RECHERCHE */}
+          <div className="flex flex-col md:flex-row gap-4 mb-6 justify-between items-center">
+            <div className="flex gap-2 w-full md:w-auto">
+                {['Tous', 'Pipeline', 'Gagné', 'Perdu'].map(st => (
                     <button 
-                        onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : lead.id); setOpenPaymentId(null); setOpenCommentId(null); setOpenFinanceId(null); }}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-white hover:border-indigo-300 transition-colors shadow-sm w-full justify-between"
+                        key={st}
+                        onClick={(e) => { e.stopPropagation(); setFilterStatut(st); }}
+                        className={`px-5 py-2 rounded-full text-xs font-bold transition-all ${filterStatut === st ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
                     >
-                        <div className="flex items-center gap-2 overflow-hidden">
-                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_COLORS[lead.statut] || 'bg-slate-300'}`} />
-                            <span className="text-xs font-bold text-slate-700 uppercase tracking-tight truncate">{lead.statut}</span>
-                        </div>
-                        <ChevronDown className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                        {st}
                     </button>
-
-                    {isMenuOpen && (
-                        <div className="absolute z-50 top-full left-0 mt-2 w-48 bg-white border border-slate-100 rounded-xl shadow-xl p-1 animate-in fade-in zoom-in-95 duration-200">
-                            {['Nouveau', 'Devis envoyé', 'En négo', 'Gagné', 'Perdu'].map((status) => (
-                                <button
-                                    key={status}
-                                    onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(lead.id, status); }}
-                                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2 hover:bg-slate-50 transition-colors text-slate-600"
-                                >
-                                    <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[status]}`} />
-                                    {status}
-                                </button>
-                            ))}
-                        </div>
-                    )}
+                ))}
+            </div>
+            <div className="flex gap-2 w-full md:w-auto">
+                <div className="relative flex-1 md:w-64">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input placeholder="Rechercher..." className="pl-9 bg-white rounded-full shadow-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
+                <Button 
+                    onClick={(e) => { e.stopPropagation(); setCurrentLead({ statut: 'Nouveau', etat_paiement: 'À demander', budget_estime: 0, montant_paye: 0, date_relance: '', date_evenement: '' }); setShowModal(true); }} 
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-6"
+                >
+                    <PlusCircle className="mr-2 h-4 w-4" /> Nouveau
+                </Button>
+            </div>
+          </div>
 
-                <div className="md:col-span-2 relative">
-                    {lead.statut === 'Gagné' ? (
-                        <>
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); setOpenPaymentId(isPaymentOpen ? null : lead.id); setOpenMenuId(null); setOpenCommentId(null); setOpenFinanceId(null); }}
-                                className="flex items-center gap-2 px-2 py-1.5 rounded-full border border-slate-100 bg-slate-50 hover:bg-white hover:border-indigo-300 transition-colors shadow-sm w-full"
-                            >
-                                <CreditCard className="w-3 h-3 text-slate-400" />
-                                <span className="flex-1 text-left text-[10px] font-bold text-slate-600 uppercase truncate">
-                                    {lead.etat_paiement || 'À demander'}
-                                </span>
-                                <div className={`w-2 h-2 rounded-full ${PAYMENT_COLORS[lead.etat_paiement || 'À demander']}`} />
-                            </button>
+          {/* LISTE PIPELINE */}
+          <div className="space-y-3 pb-20">
+            {loading ? <div className="text-center py-10 text-slate-400">Chargement...</div> : sortedLeads.map((lead) => {
+              const relanceStatus = getRelanceStatus(lead.date_relance, lead.statut);
+              const isMenuOpen = openMenuId === lead.id;
+              const isPaymentOpen = openPaymentId === lead.id;
+              const isCommentOpen = openCommentId === lead.id;
+              const isFinanceOpen = openFinanceId === lead.id;
+              const hasComment = lead.commentaires && lead.commentaires.trim().length > 0;
+              
+              const budget = lead.budget_estime || 0;
+              const paye = lead.montant_paye || 0;
+              const reste = Math.max(0, budget - paye);
+              const isPaid = budget > 0 && reste === 0;
 
-                            {isPaymentOpen && (
-                                <div className="absolute z-50 top-full left-0 mt-2 w-56 bg-white border border-slate-100 rounded-xl shadow-xl p-1 animate-in fade-in zoom-in-95 duration-200">
-                                    {['À demander', 'En attente réception', 'À vérifier', 'Facture envoyée', 'OK'].map((payStatus) => (
-                                        <button
-                                            key={payStatus}
-                                            onClick={(e) => { e.stopPropagation(); handleQuickPaymentChange(lead.id, payStatus); }}
-                                            className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between hover:bg-slate-50 transition-colors text-slate-600"
-                                        >
-                                            {payStatus}
-                                            <span className={`w-2 h-2 rounded-full ${PAYMENT_COLORS[payStatus]}`} />
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </>
-                    ) : (
-                        <div className="h-8" />
-                    )}
-                </div>
-
-                <div className="md:col-span-2 flex items-center justify-end gap-2">
-                    <div className="relative">
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); setOpenCommentId(isCommentOpen ? null : lead.id); setOpenMenuId(null); setOpenPaymentId(null); setOpenFinanceId(null); }}
-                            className={`p-1.5 rounded-lg transition-colors ${hasComment ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100' : 'text-slate-300 hover:text-slate-500'}`}
-                        >
-                            <MessageSquareText className="w-4 h-4" fill={hasComment ? "currentColor" : "none"} />
-                        </button>
-                        
-                        {isCommentOpen && hasComment && (
-                            <div className="absolute z-50 bottom-full right-0 mb-2 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-3 animate-in fade-in zoom-in-95 duration-200">
-                                <div className="text-xs font-bold text-slate-400 uppercase mb-2">Note</div>
-                                <div className="text-sm text-slate-700 whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar">
-                                    {lead.commentaires}
-                                </div>
-                            </div>
+              return (
+                <div 
+                  key={lead.id} 
+                  className={`group bg-white border rounded-xl p-4 transition-all hover:shadow-md relative
+                    ${relanceStatus === 'late' ? 'border-l-4 border-l-red-500' : 
+                      relanceStatus === 'today' ? 'border-l-4 border-l-orange-400' : 
+                      'border-l-4 border-l-slate-200'}
+                  `}
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                    <div className="md:col-span-3 flex flex-col">
+                        <span className="font-bold text-slate-800 text-base truncate">{lead.nom_client}</span>
+                        <span className="text-sm font-medium text-slate-500 truncate">{lead.titre_demande}</span>
+                        {lead.updated_by && (
+                            <span className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {format(new Date(lead.updated_at || lead.created_at), 'dd/MM')} - {lead.updated_by}
+                            </span>
                         )}
                     </div>
-
-                    {!['Gagné', 'Perdu'].includes(lead.statut) && lead.date_relance && (
-                        <div className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-1 rounded-md ${
-                            relanceStatus === 'late' ? 'bg-red-50 text-red-600' : 
-                            relanceStatus === 'today' ? 'bg-orange-50 text-orange-600' : 'text-slate-400'
-                        }`}>
-                            <Clock className="w-3 h-3" />
-                            {format(parseISO(lead.date_relance), 'dd/MM')}
-                        </div>
-                    )}
-                    
-                    <button onClick={(e) => { e.stopPropagation(); setCurrentLead(lead); setShowModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded">
-                        <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); handleDelete(lead.id); }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded">
-                        <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="md:col-span-2">
+                        {lead.date_evenement ? (
+                            <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100 text-slate-600 w-fit">
+                                <CalendarDays className="w-3.5 h-3.5 text-indigo-500" />
+                                <span className="text-xs font-bold">
+                                    {format(parseISO(lead.date_evenement), 'dd MMM yy', { locale: fr })}
+                                </span>
+                            </div>
+                        ) : <span className="text-xs text-slate-300 italic">--/--/--</span>}
+                    </div>
+                    <div className="md:col-span-1 flex flex-col items-center relative">
+                         <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setTempFinance({ budget: lead.budget_estime || 0, paye: lead.montant_paye || 0 });
+                                setOpenFinanceId(isFinanceOpen ? null : lead.id);
+                                setOpenMenuId(null); setOpenPaymentId(null); setOpenCommentId(null);
+                            }}
+                            className="text-center hover:bg-slate-50 p-1.5 rounded-lg w-full"
+                         >
+                             {budget > 0 ? (
+                                 <>
+                                    <span className="font-bold text-slate-700 text-xs block">{budget.toLocaleString()} €</span>
+                                    {isPaid ? <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 rounded-full">Payé</span> : paye > 0 ? <span className="text-[10px] text-red-500 font-bold">Reste: {reste.toLocaleString()} €</span> : null}
+                                 </>
+                             ) : <span className="text-slate-300">-</span>}
+                         </button>
+                    </div>
+                    <div className="md:col-span-2 relative">
+                        <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : lead.id); }} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-white hover:border-indigo-300 w-full justify-between">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_COLORS[lead.statut] || 'bg-slate-300'}`} />
+                                <span className="text-xs font-bold text-slate-700 uppercase truncate">{lead.statut}</span>
+                            </div>
+                            <ChevronDown className="w-3 h-3 text-slate-400" />
+                        </button>
+                    </div>
+                    <div className="md:col-span-2 relative">
+                        {lead.statut === 'Gagné' && (
+                            <button onClick={(e) => { e.stopPropagation(); setOpenPaymentId(isPaymentOpen ? null : lead.id); }} className="flex items-center gap-2 px-2 py-1.5 rounded-full border border-slate-100 bg-slate-50 w-full">
+                                <CreditCard className="w-3 h-3 text-slate-400" />
+                                <span className="flex-1 text-[10px] font-bold text-slate-600 truncate uppercase">{lead.etat_paiement || 'À demander'}</span>
+                                <div className={`w-2 h-2 rounded-full ${PAYMENT_COLORS[lead.etat_paiement || 'À demander']}`} />
+                            </button>
+                        )}
+                    </div>
+                    <div className="md:col-span-2 flex items-center justify-end gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); setOpenCommentId(isCommentOpen ? null : lead.id); }} className={`p-1.5 rounded-lg ${hasComment ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300'}`}>
+                            <MessageSquareText className="w-4 h-4" />
+                        </button>
+                        {!['Gagné', 'Perdu'].includes(lead.statut) && lead.date_relance && (
+                            <div className={`text-[10px] font-bold px-1.5 py-1 rounded-md ${relanceStatus === 'late' ? 'bg-red-50 text-red-600' : relanceStatus === 'today' ? 'bg-orange-50 text-orange-600' : 'text-slate-400'}`}>
+                                {format(parseISO(lead.date_relance), 'dd/MM')}
+                            </div>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); setCurrentLead(lead); setShowModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 className="w-4 h-4" /></button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(lead.id); }} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        /* VUE TARIFS & OFFRES */
+<div className="space-y-8 animate-in fade-in duration-500">
+  <section>
+    <h2 className="text-lg font-bold text-indigo-600 mb-4 flex items-center gap-2">
+      <CalendarDays className="w-5 h-5" /> Location Salles TTC (Café d'accueil offert)
+    </h2>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {[
+        { n: 'Telo Segreto', d: '57m² - 30/40 pers.', p: '199€ (Demi-Journée) / 299€ (journée)' },
+        { n: 'Telo Maritimo', d: '50m² - 30 pers.', p: '249€, disponible a partir de 11h)' },
+        { n: 'Telo Intimo', d: '18m² - 5 pers.', p: '80€ (Réunion Intime)' },
+        { n: 'Patio Tropical', d: '100m² - 60 pers.', p: 'Événementiel' },
+      ].map(s => (
+        <div key={s.n} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative group">
+          <div className="font-bold text-slate-800">{s.n}</div>
+          <div className="text-[10px] text-slate-500">{s.d}</div>
+          <div className="mt-2 text-sm font-bold text-indigo-600">{s.p}</div>
+        </div>
+      ))}
+    </div>
+  {/* AJOUT DE L'INFO PAUSE */}
+    <div className="mt-4 flex items-center gap-2 text-[11px] text-slate-500 italic">
+      <Info className="w-3.5 h-3.5 text-indigo-400" />
+      Pause supplémentaire = 5€ / personne
+    </div>
+  </section>
 
-              </div>
+
+
+  <section>
+    <h2 className="text-lg font-bold text-emerald-600 mb-4 flex items-center gap-2">
+      <MessageSquareText className="w-5 h-5" /> Restauration (With Gaétan)
+    </h2>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* MENUS ASSIS */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold uppercase text-slate-400 tracking-widest px-1">Menus à table</h3>
+        {[
+          { n: 'Menu Starter', c: 'Menu 2 temps (sans alcool)', p: '29 €' },
+          { n: 'Menu Confort', c: 'Menu 3 temps (sans alcool)', p: '41 €' },
+          { n: 'Menu Privilège', c: 'Menu 3 temps cocktail signature', p: '50 €' },
+          { n: 'Menu Privilège++', c: 'Menu 3 temps Cocktail signature Mises en bouche', p: '55 €' },
+        ].map(m => (
+          <div key={m.n} className="bg-white p-3 rounded-lg border-l-4 border-l-emerald-500 shadow-sm flex justify-between items-center group">
+            <div className="overflow-hidden mr-2">
+              <div className="text-sm font-bold truncate">{m.n}</div>
+              <div className="text-[10px] text-slate-500 truncate">{m.c}</div>
             </div>
-          );
-        })}
+            <div className="font-bold text-emerald-700 whitespace-nowrap">{m.p}</div>
+          </div>
+        ))}
       </div>
 
-      {/* MODAL (Inchangée, avec Date Relance) */}
+      {/* COCKTAILS */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold uppercase text-slate-400 tracking-widest px-1">Cocktails Dinatoires</h3>
+        {[
+          { n: 'Cocktail starter', c: '5 pieces salés (Chaud/froid) eaux/café', p: '29 €' },
+          { n: 'Cocktail starter ++', c: '5 pieces salés + cocktail sans alcool', p: '35 €' },
+          { n: 'Cocktail confort', c: '5 pieces salés (Chaud/froid) + 3 pièces sucrées', p: '44 €' },
+          { n: 'Cocktail privilège', c: '5 pieces salés + 3 pièces sucrées + Animation culinaire', p: '50 €' },
+          { n: 'Cocktail prestige', c: '5 pieces salés + 13 pièces sucrées + Animation + Cocktail apéritif', p: '60 €' },
+        ].map(m => (
+          <div key={m.n} className="bg-white p-3 rounded-lg border-l-4 border-l-blue-500 shadow-sm flex justify-between items-center group">
+            <div className="overflow-hidden mr-2">
+              <div className="text-sm font-bold truncate">{m.n}</div>
+              <div className="text-[10px] text-slate-500 truncate">{m.c}</div>
+            </div>
+            <div className="font-bold text-blue-700 whitespace-nowrap">{m.p}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* SELF CORNICHE */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold uppercase text-slate-400 tracking-widest px-1">Self service</h3>
+        {[
+          { n: 'Self Corniche starter', c: '5 pièces salées froide. Eaux/softs', p: '25 €' },
+          { n: 'Self Corniche Intermédiaire', c: '5 pièces salées froides 2 pièces sucrées', p: '30 €' },
+          { n: 'Self Corniche ++', c: '5 pieces salés froides 2 pieces sucrés + Cocktail apéritif', p: '35 €' },
+        ].map(m => (
+          <div key={m.n} className="bg-white p-3 rounded-lg border-l-4 border-l-amber-500 shadow-sm flex justify-between items-center group">
+            <div className="overflow-hidden mr-2">
+              <div className="text-sm font-bold truncate">{m.n}</div>
+              <div className="text-[10px] text-slate-500 truncate">{m.c}</div>
+            </div>
+            <div className="font-bold text-amber-700 whitespace-nowrap">{m.p}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+{/* SECTION DISPOSITION & CAPACITÉS - Déplacée à l'intérieur de la div space-y-8 */}
+          <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Layout className="w-5 h-5 text-indigo-500" /> Dispositions & Capacités
+            </h2>
+            <div className="overflow-hidden rounded-xl border border-slate-100">
+              <img 
+                src="/disposition.png" 
+                alt="Tableau des capacités" 
+                className="w-full h-auto object-cover" 
+              />
+            </div>
+            {/* Légende rapide basée sur ton tableau */}
+            <div className="mt-4 flex flex-wrap gap-4 text-[10px] text-slate-400 uppercase font-extrabold tracking-widest">
+            
+            </div>
+          </section>
+        </div> // Fin de la div space-y-8
+      )}
+
+      {/* MODAL COMPLET */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg space-y-4 animate-in fade-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-2">
                <h2 className="text-lg font-bold text-slate-800">Détails Dossier</h2>
@@ -587,7 +598,7 @@ export default function CommercialDashboard() {
             </div>
 
             <div className="flex justify-end pt-2">
-              <Button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-700 text-white w-full shadow-md">Enregistrer</Button>
+              <Button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-700 text-white w-full shadow-md font-bold">Enregistrer</Button>
             </div>
           </div>
         </div>
