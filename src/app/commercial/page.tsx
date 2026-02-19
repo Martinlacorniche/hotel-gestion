@@ -28,9 +28,11 @@ interface Lead {
   date_relance?: string | null;
   date_evenement?: string | null;
   commentaires?: string;
+  motif_perte?: string;
   updated_at?: string;
   updated_by?: string;
   hotel_id?: string;
+  besoin_gaetan?: 'Pas besoin' | 'À valider' | 'Validé' | 'Pas dispo';
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -97,6 +99,18 @@ export default function CommercialDashboard() {
     await supabase.from('suivi_commercial').update({ statut: newStatut, ...trace }).eq('id', id);
     fetchLeads();
   };
+
+  const handleUpdateMotif = async (id: string, motif: string) => {
+    const trace = getUpdateTrace();
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, motif_perte: motif, ...trace } : l));
+    await supabase.from('suivi_commercial').update({ motif_perte: motif, ...trace }).eq('id', id);
+};
+
+const handleGaetanChange = async (id: string, value: string) => {
+    const trace = getUpdateTrace();
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, besoin_gaetan: value as any, ...trace } : l));
+    await supabase.from('suivi_commercial').update({ besoin_gaetan: value, ...trace }).eq('id', id);
+};
 
   const handleQuickPaymentChange = async (id: string, newPaiement: string) => {
     setOpenPaymentId(null);
@@ -311,76 +325,160 @@ export default function CommercialDashboard() {
                       'border-l-4 border-l-slate-200'}
                   `}
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                    <div className="md:col-span-3 flex flex-col">
-                        <span className="font-bold text-slate-800 text-base truncate">{lead.nom_client}</span>
-                        <span className="text-sm font-medium text-slate-500 truncate">{lead.titre_demande}</span>
-                        {lead.updated_by && (
-                            <span className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                                <User className="w-3 h-3" />
-                                {format(new Date(lead.updated_at || lead.created_at), 'dd/MM')} - {lead.updated_by}
-                            </span>
-                        )}
-                    </div>
-                    <div className="md:col-span-2">
-                        {lead.date_evenement ? (
-                            <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100 text-slate-600 w-fit">
-                                <CalendarDays className="w-3.5 h-3.5 text-indigo-500" />
-                                <span className="text-xs font-bold">
-                                    {format(parseISO(lead.date_evenement), 'dd MMM yy', { locale: fr })}
-                                </span>
-                            </div>
-                        ) : <span className="text-xs text-slate-300 italic">--/--/--</span>}
-                    </div>
-                    <div className="md:col-span-1 flex flex-col items-center relative">
-                         <button 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setTempFinance({ budget: lead.budget_estime || 0, paye: lead.montant_paye || 0 });
-                                setOpenFinanceId(isFinanceOpen ? null : lead.id);
-                                setOpenMenuId(null); setOpenPaymentId(null); setOpenCommentId(null);
-                            }}
-                            className="text-center hover:bg-slate-50 p-1.5 rounded-lg w-full"
-                         >
-                             {budget > 0 ? (
-                                 <>
-                                    <span className="font-bold text-slate-700 text-xs block">{budget.toLocaleString()} €</span>
-                                    {isPaid ? <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 rounded-full">Payé</span> : paye > 0 ? <span className="text-[10px] text-red-500 font-bold">Reste: {reste.toLocaleString()} €</span> : null}
-                                 </>
-                             ) : <span className="text-slate-300">-</span>}
-                         </button>
-                    </div>
-                    <div className="md:col-span-2 relative">
-                        <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : lead.id); }} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-white hover:border-indigo-300 w-full justify-between">
-                            <div className="flex items-center gap-2 overflow-hidden">
-                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_COLORS[lead.statut] || 'bg-slate-300'}`} />
-                                <span className="text-xs font-bold text-slate-700 uppercase truncate">{lead.statut}</span>
-                            </div>
-                            <ChevronDown className="w-3 h-3 text-slate-400" />
-                        </button>
-                    </div>
-                    <div className="md:col-span-2 relative">
-                        {lead.statut === 'Gagné' && (
-                            <button onClick={(e) => { e.stopPropagation(); setOpenPaymentId(isPaymentOpen ? null : lead.id); }} className="flex items-center gap-2 px-2 py-1.5 rounded-full border border-slate-100 bg-slate-50 w-full">
-                                <CreditCard className="w-3 h-3 text-slate-400" />
-                                <span className="flex-1 text-[10px] font-bold text-slate-600 truncate uppercase">{lead.etat_paiement || 'À demander'}</span>
-                                <div className={`w-2 h-2 rounded-full ${PAYMENT_COLORS[lead.etat_paiement || 'À demander']}`} />
+                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+    {/* 1. NOM & TITRE (3 cols) */}
+<div className="md:col-span-3 flex flex-col min-w-0">
+  <span className="font-black text-slate-800 text-base truncate leading-tight">
+    {lead.nom_client}
+  </span>
+
+  <span className="text-sm font-medium text-slate-500 truncate">
+    {lead.titre_demande}
+  </span>
+
+  {/* QUI / QUAND (comme avant) */}
+  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400 truncate">
+    <User className="w-3.5 h-3.5 flex-shrink-0" />
+    <span className="truncate">
+      {format(parseISO(lead.updated_at ?? lead.created_at), 'dd/MM', { locale: fr })}
+      {' — '}
+      {lead.updated_by ?? '—'}
+    </span>
+  </div>
+
+  {/* Select Gaétan */}
+  <div className="mt-1 flex items-center gap-2 min-w-0">
+    <span className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">
+      Gaétan
+    </span>
+
+    <select
+      value={lead.besoin_gaetan ?? 'Pas besoin'}
+      onChange={(e) => handleGaetanChange(lead.id, e.target.value)}
+      className="h-7 flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase text-slate-600 hover:border-indigo-300 focus:outline-none"
+
+    >
+      <option value="Pas besoin">Pas besoin</option>
+      <option value="À valider">À valider</option>
+      <option value="Validé">Validé</option>
+      <option value="Pas dispo">Pas dispo</option>
+    </select>
+  </div>
+</div>
+
+
+    {/* 2. DATE ÉVÉNEMENT (1 col) */}
+    <div className="md:col-span-1 flex flex-col items-center justify-center border-l border-slate-100">
+        <span className="text-[10px] font-bold text-slate-400 uppercase">Date</span>
+        <span className="text-xs font-black text-indigo-600 whitespace-nowrap">
+            {lead.date_evenement ? format(parseISO(lead.date_evenement), 'dd MMM yy', { locale: fr }) : '--'}
+        </span>
+    </div>
+
+    {/* 3. FINANCE (3 cols) */}
+    <div className="md:col-span-3 px-2">
+        <div className="bg-slate-50/80 p-2.5 rounded-xl border border-slate-200 flex flex-col gap-1 shadow-sm">
+            <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Budget</span>
+                <span className="font-bold text-slate-700 text-sm">{budget.toLocaleString()} €</span>
+            </div>
+            <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Réglé</span>
+                <span className="font-bold text-emerald-600 text-sm">{paye.toLocaleString()} €</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t border-slate-300 mt-1">
+                <span className="text-[11px] font-black text-slate-600 uppercase tracking-tighter">Solde à payer</span>
+                <span className={`font-black text-base ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {reste.toLocaleString()} €
+                </span>
+            </div>
+        </div>
+    </div>
+
+    {/* 4. STATUT (2 cols) */}
+    <div className="md:col-span-2 relative">
+        <button 
+            onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : lead.id); }} 
+            className="flex items-center gap-2 px-3 py-2.5 rounded-full border border-slate-200 bg-white hover:border-indigo-300 w-full justify-between shadow-sm"
+        >
+            <div className="flex items-center gap-2 overflow-hidden">
+                <span className={`w-3 h-3 rounded-full flex-shrink-0 ${STATUS_COLORS[lead.statut]}`} />
+                <span className="text-xs font-black text-slate-700 uppercase truncate">{lead.statut}</span>
+            </div>
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+        </button>
+        {isMenuOpen && (
+            <div className="absolute top-full left-0 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1 animate-in fade-in slide-in-from-top-1">
+                {Object.keys(STATUS_COLORS).map((st) => (
+                    <button key={st} onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(lead.id, st); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors">
+                        <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[st]}`} /> {st}
+                        {lead.statut === st && <Check className="w-3 h-3 ml-auto text-indigo-600" />}
+                    </button>
+                ))}
+            </div>
+        )}
+    </div>
+
+    {/* 5. PAIEMENT / MOTIF (2 cols) - CORRIGÉ AVEC MENU */}
+    <div className="md:col-span-2 relative">
+        {lead.statut === 'Gagné' && (
+            <>
+                <button 
+                    onClick={(e) => { e.stopPropagation(); setOpenPaymentId(isPaymentOpen ? null : lead.id); }} 
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-full border border-slate-100 bg-slate-50 w-full hover:border-indigo-200 shadow-sm transition-all"
+                >
+                    <CreditCard className="w-4 h-4 text-slate-400" />
+                    <span className="flex-1 text-[10px] font-black text-slate-600 truncate uppercase text-center">{lead.etat_paiement || 'À demander'}</span>
+                    <div className={`w-2.5 h-2.5 rounded-full ${PAYMENT_COLORS[lead.etat_paiement || 'À demander']}`} />
+                </button>
+
+                {isPaymentOpen && (
+                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1 animate-in fade-in slide-in-from-top-1">
+                        {Object.keys(PAYMENT_COLORS).map((p) => (
+                            <button 
+                                key={p} 
+                                onClick={(e) => { e.stopPropagation(); handleQuickPaymentChange(lead.id, p); }} 
+                                className="flex items-center gap-2 w-full px-3 py-2 text-[10px] font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                                <div className={`w-2 h-2 rounded-full ${PAYMENT_COLORS[p]}`} /> {p}
+                                {lead.etat_paiement === p && <Check className="w-3 h-3 ml-auto text-indigo-600" />}
                             </button>
-                        )}
+                        ))}
                     </div>
-                    <div className="md:col-span-2 flex items-center justify-end gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); setOpenCommentId(isCommentOpen ? null : lead.id); }} className={`p-1.5 rounded-lg ${hasComment ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300'}`}>
-                            <MessageSquareText className="w-4 h-4" />
-                        </button>
-                        {!['Gagné', 'Perdu'].includes(lead.statut) && lead.date_relance && (
-                            <div className={`text-[10px] font-bold px-1.5 py-1 rounded-md ${relanceStatus === 'late' ? 'bg-red-50 text-red-600' : relanceStatus === 'today' ? 'bg-orange-50 text-orange-600' : 'text-slate-400'}`}>
-                                {format(parseISO(lead.date_relance), 'dd/MM')}
-                            </div>
-                        )}
-                        <button onClick={(e) => { e.stopPropagation(); setCurrentLead(lead); setShowModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 className="w-4 h-4" /></button>
-                        <button onClick={(e) => { e.stopPropagation(); handleDelete(lead.id); }} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                  </div>
+                )}
+            </>
+        )}
+        {lead.statut === 'Perdu' && (
+            <Input 
+                placeholder="Motif de perte..." 
+                className="h-10 text-xs bg-red-50 border-red-100 font-bold"
+                defaultValue={lead.motif_perte || ''}
+                onBlur={(e) => handleUpdateMotif(lead.id, e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+            />
+        )}
+    </div>
+
+    {/* 6. ACTIONS (1 col) */}
+    <div className="md:col-span-1 flex items-center justify-end gap-3 pr-2">
+        <div className="relative group">
+            <button onClick={(e) => { e.stopPropagation(); setOpenCommentId(isCommentOpen ? null : lead.id); }} className={`p-2 rounded-lg transition-all ${hasComment ? 'text-indigo-600 bg-indigo-50 border border-indigo-200 shadow-sm' : 'text-slate-300 hover:bg-slate-100'}`}>
+                <MessageSquareText className="w-5 h-5" />
+            </button>
+            {isCommentOpen && (
+                <div className="absolute bottom-full right-0 mb-2 w-72 p-4 bg-white border-2 border-slate-200 rounded-2xl shadow-2xl z-50 text-sm text-slate-700">
+                    <div className="font-black text-indigo-600 uppercase text-[10px] mb-2 border-b pb-1">Notes Internes</div>
+                    {hasComment ? lead.commentaires : "Rien à signaler."}
+                </div>
+            )}
+        </div>
+        
+        <div className="flex flex-col gap-1 border-l pl-3 ml-1 border-slate-200">
+            <button onClick={(e) => { e.stopPropagation(); setCurrentLead(lead); setShowModal(true); }} className="p-1 text-slate-400 hover:text-indigo-600 transition-colors"><Edit2 className="w-4 h-4" /></button>
+            <button onClick={(e) => { e.stopPropagation(); handleDelete(lead.id); }} className="p-1 text-slate-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
+        </div>
+    </div>
+</div>
                 </div>
               );
             })}
@@ -391,7 +489,7 @@ export default function CommercialDashboard() {
 <div className="space-y-8 animate-in fade-in duration-500">
   <section>
     <h2 className="text-lg font-bold text-indigo-600 mb-4 flex items-center gap-2">
-      <CalendarDays className="w-5 h-5" /> Location Salles TTC (Café d'accueil offert)
+      <CalendarDays className="w-5 h-5" /> Location Salles HT (Café d'accueil offert)
     </h2>
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {[
@@ -418,7 +516,7 @@ export default function CommercialDashboard() {
 
   <section>
     <h2 className="text-lg font-bold text-emerald-600 mb-4 flex items-center gap-2">
-      <MessageSquareText className="w-5 h-5" /> Restauration (With Gaétan)
+      <MessageSquareText className="w-5 h-5" /> Restauration TTC (With Gaétan)
     </h2>
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* MENUS ASSIS */}
