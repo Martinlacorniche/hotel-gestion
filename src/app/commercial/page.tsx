@@ -26,8 +26,8 @@ interface Lead {
   email?: string;
   telephone?: string;
   titre_demande: string;
-  statut: 'Nouveau' | 'Devis envoyé' | 'En négo' | 'Gagné' | 'Perdu';
-  etat_paiement?: 'À demander' | 'En attente réception' | 'À vérifier' | 'Facture envoyée' | 'OK';
+  statut: 'Nouveau' | 'Devis envoyé' | 'Option' | 'Confirmé' | 'Refus';
+  etat_paiement?: 'Attente acompte' | 'Acompte reçu' | 'RGT/P' | 'Soldé' | 'Facture envoyée' | 'Finalisé';
   budget_estime?: number;
   montant_paye?: number; 
   date_relance?: string | null;
@@ -43,17 +43,18 @@ interface Lead {
 const STATUS_COLORS: Record<string, string> = {
   'Nouveau': 'bg-blue-500',
   'Devis envoyé': 'bg-amber-400',
-  'En négo': 'bg-purple-500',
-  'Gagné': 'bg-emerald-500',
-  'Perdu': 'bg-red-500',
+  'Option': 'bg-purple-500',
+  'Confirmé': 'bg-emerald-500',
+  'Refus': 'bg-red-500',
 };
 
 const PAYMENT_COLORS: Record<string, string> = {
-  'À demander': 'bg-red-500',
-  'En attente réception': 'bg-orange-400',
-  'À vérifier': 'bg-amber-500',
-  'Facture envoyée': 'bg-blue-400',
-  'OK': 'bg-emerald-500',
+  'Attente acompte': 'bg-red-500',
+  'Acompte reçu': 'bg-amber-500',
+  'RGT/P': 'bg-orange-400',
+  'Soldé': 'bg-blue-400',
+  'Facture envoyée': 'bg-purple-400',
+  'Finalisé': 'bg-emerald-500',
 };
 
 export default function CommercialDashboard() {
@@ -65,7 +66,7 @@ const [selectedHotelId, setSelectedHotelId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [filterStatut, setFilterStatut] = useState<string>('Tous');
+  const [filterStatut, setFilterStatut] = useState<string>('Pipeline');
   const [clientSuggestions, setClientSuggestions] = useState<Lead[]>([]);
   const [planningData, setPlanningData] = useState<any[]>([]);
 const [rooms, setRooms] = useState<any[]>([]);
@@ -80,12 +81,40 @@ const [viewDate, setViewDate] = useState(new Date());
 
   const [currentLead, setCurrentLead] = useState<Partial<Lead>>({
     statut: 'Nouveau',
-    etat_paiement: 'À demander',
+    etat_paiement: 'Attente acompte',
     budget_estime: 0,
     montant_paye: 0,
     date_relance: '',
     date_evenement: ''
   });
+
+  const [currentReservations, setCurrentReservations] = useState<any[]>([]);
+
+// Fonction pour ouvrir la modale proprement avec ou sans données
+const openLeadModal = async (lead?: Partial<Lead>, defaultDate?: string, defaultRoomName?: string) => {
+    if (lead && lead.id) {
+        setCurrentLead(lead);
+        // On récupère les salles déjà bloquées pour ce dossier
+        const { data } = await supabase.from('seminar_reservations').select('*').eq('lead_id', lead.id);
+        if (data) setCurrentReservations(data);
+    } else {
+        setCurrentLead({ statut: 'Nouveau', etat_paiement: 'Attente acompte', budget_estime: 0, montant_paye: 0, date_relance: '', date_evenement: defaultDate || '' });
+        
+        // Si on clique depuis le planning, on pré-remplit la salle direct
+        if (defaultRoomName) {
+            const room = rooms.find(r => r.name === defaultRoomName);
+            if (room) {
+                setCurrentReservations([{ room_id: room.id, start_date: defaultDate, end_date: defaultDate, start_time: '09:00', end_time: '18:00' }]);
+            } else {
+                setCurrentReservations([]);
+            }
+        } else {
+            setCurrentReservations([]);
+        }
+    }
+    setShowModal(true);
+};
+
 const fetchPlanning = async () => {
   if (!selectedHotelId) return;
   
@@ -114,7 +143,7 @@ const fetchPlanning = async () => {
 const openCreateFromPlanning = (dateStr: string, roomName: string) => {
   setCurrentLead({
     statut: 'Nouveau',
-    etat_paiement: 'À demander',
+    etat_paiement: 'Attente acompte',
     budget_estime: 0,
     montant_paye: 0,
     date_evenement: dateStr, 
@@ -235,29 +264,52 @@ const handleGaetanChange = async (id: string, value: string) => {
   };
 
 const handleSave = async () => {
-  if (!currentLead.nom_client || !currentLead.titre_demande) return alert("Nom et Titre obligatoires");
-  const trace = getUpdateTrace();
-  
-  const payload = {
-    ...currentLead,
-    hotel_id: selectedHotelId, // <--- On force l'ID sélectionné
-    date_relance: currentLead.date_relance === '' ? null : currentLead.date_relance,
-      date_evenement: currentLead.date_evenement === '' ? null : currentLead.date_evenement,
-      ...trace
+    if (!currentLead.nom_client || !currentLead.titre_demande) return alert("Nom et Titre obligatoires");
+    const trace = getUpdateTrace();
+    
+    const payload = {
+        ...currentLead,
+        hotel_id: selectedHotelId,
+        date_relance: currentLead.date_relance === '' ? null : currentLead.date_relance,
+        date_evenement: currentLead.date_evenement === '' ? null : currentLead.date_evenement,
+        ...trace
     };
 
-    if (currentLead.id) {
-      const { error } = await supabase.from('suivi_commercial').update(payload).eq('id', currentLead.id);
-      if (error) alert(error.message);
+    let leadId = currentLead.id;
+
+    // 1. Sauvegarde du dossier (Lead)
+    if (leadId) {
+        const { error } = await supabase.from('suivi_commercial').update(payload).eq('id', leadId);
+        if (error) return alert(error.message);
     } else {
-      // Pour un nouveau dossier, on s'assure que l'hotel_id est bien présent
-      const { error } = await supabase.from('suivi_commercial').insert([{ ...payload, created_at: new Date().toISOString() }]);
-      if (error) alert(error.message);
+        const { data, error } = await supabase.from('suivi_commercial').insert([{ ...payload, created_at: new Date().toISOString() }]).select().single();
+        if (error) return alert(error.message);
+        leadId = data.id;
     }
+
+    // 2. Sauvegarde des salles sur le planning
+    if (leadId) {
+        // On nettoie l'historique de ce dossier pour éviter les doublons
+        await supabase.from('seminar_reservations').delete().eq('lead_id', leadId);
+        
+        if (currentReservations.length > 0) {
+            const resasToInsert = currentReservations.map(r => ({
+                lead_id: leadId,
+                room_id: r.room_id,
+                start_date: r.start_date || currentLead.date_evenement,
+                end_date: r.start_date || currentLead.date_evenement,
+                start_time: r.start_time || null,
+                end_time: r.end_time || null,
+                status: currentLead.statut === 'Confirmé' ? 'reserved' : 'option' // Sécurité couleur planning
+            }));
+            await supabase.from('seminar_reservations').insert(resasToInsert);
+        }
+    }
+
     setShowModal(false);
     fetchLeads();
-    setCurrentLead({ statut: 'Nouveau', etat_paiement: 'À demander', budget_estime: 0, montant_paye: 0, date_relance: '', date_evenement: '' });
-  };
+    fetchPlanning(); // Rafraîchit le planning instantanément
+};
 
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer ce dossier ?")) return;
@@ -275,54 +327,83 @@ const handleSave = async () => {
   };
 
   const sortedLeads = useMemo(() => {
-    let filtered = leads.filter(l => {
-      const matchSearch = (
-        l.nom_client.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        l.titre_demande.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (l.email && l.email.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
-      
-     let matchFilter = false;
-if (filterStatut === 'Tous') {
-  // On affiche tout SAUF les perdus
-  matchFilter = l.statut !== 'Perdu'; 
-} else if (filterStatut === 'Pipeline') {
-  matchFilter = ['Nouveau', 'Devis envoyé', 'En négo'].includes(l.statut);
-} else {
-  matchFilter = l.statut === filterStatut;
-}
+  let filtered = leads.filter(l => {
+    const matchSearch = (
+      l.nom_client.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      l.titre_demande.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (l.email && l.email.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+    
+    let matchFilter = false;
+    
+    // Définir si l'événement est passé par rapport à aujourd'hui
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const eventDate = l.date_evenement ? new Date(l.date_evenement).getTime() : Infinity;
+    const isPast = eventDate < now.getTime();
 
-      if (l.etat_paiement === 'OK') {
-         const lastUpdate = l.updated_at ? parseISO(l.updated_at) : parseISO(l.created_at);
-         if (!isToday(lastUpdate)) return false; 
-      }
-      return matchSearch && matchFilter;
-    });
+    if (filterStatut === 'Tous') {
+      matchFilter = true;
+    } else if (filterStatut === 'Pipeline') {
+      matchFilter = ['Nouveau', 'Devis envoyé', 'Option'].includes(l.statut);
+    } else if (filterStatut === 'Confirmé') {
+      matchFilter = l.statut === 'Confirmé' && !isPast; 
+    } else if (filterStatut === 'Terminées') {
+      matchFilter = isPast; 
+    } else if (filterStatut === 'Refus') {
+      matchFilter = l.statut === 'Refus';
+    } else if (filterStatut === 'Débiteurs') {
+      const budget = l.budget_estime || 0;
+      const paye = l.montant_paye || 0;
+      matchFilter = isPast && l.statut !== 'Refus' && (budget - paye > 0);
+    }
 
-    return filtered.sort((a, b) => {
-      const statusA = getRelanceStatus(a.date_relance, a.statut);
-      const statusB = getRelanceStatus(b.date_relance, b.statut);
-      const isUrgentA = statusA === 'late' || statusA === 'today';
-      const isUrgentB = statusB === 'late' || statusB === 'today';
+    return matchSearch && matchFilter;
+  });
 
-      if (isUrgentA && !isUrgentB) return -1;
-      if (!isUrgentA && isUrgentB) return 1;
+  return filtered.sort((a, b) => {
+    const statusA = getRelanceStatus(a.date_relance, a.statut);
+    const statusB = getRelanceStatus(b.date_relance, b.statut);
+    const isUrgentA = statusA === 'late' || statusA === 'today';
+    const isUrgentB = statusB === 'late' || statusB === 'today';
 
-      const timeA = a.date_evenement ? new Date(a.date_evenement).getTime() : Infinity;
-      const timeB = b.date_evenement ? new Date(b.date_evenement).getTime() : Infinity;
-      if (timeA !== timeB) return timeA - timeB;
+    // 1. Les urgences en haut
+    if (isUrgentA && !isUrgentB) return -1;
+    if (!isUrgentA && isUrgentB) return 1;
 
-      const dateA = a.updated_at ? new Date(a.updated_at).getTime() : new Date(a.created_at).getTime();
-      const dateB = b.updated_at ? new Date(b.updated_at).getTime() : new Date(b.created_at).getTime();
-      return dateB - dateA;
-    });
-  }, [leads, searchTerm, filterStatut]);
+    // 2. Séparation Passé / Futur
+    const now = new Date();
+    // On met à minuit pour ne pas fausser le tri sur la journée en cours
+    now.setHours(0, 0, 0, 0); 
+    
+    const timeA = a.date_evenement ? new Date(a.date_evenement).getTime() : Infinity;
+    const timeB = b.date_evenement ? new Date(b.date_evenement).getTime() : Infinity;
+    
+    const isPastA = timeA < now.getTime();
+    const isPastB = timeB < now.getTime();
+
+    // Les événements passés vont en bas
+    if (isPastA && !isPastB) return 1;
+    if (!isPastA && isPastB) return -1;
+
+    // 3. Tri chronologique classique pour le reste
+    if (timeA !== timeB) {
+        // Ordre croissant pour le futur, décroissant pour le passé (les plus récents d'abord)
+        return isPastA ? timeB - timeA : timeA - timeB; 
+    }
+
+    // 4. En cas d'égalité de date d'événement, tri par date de mise à jour
+    const dateA = a.updated_at ? new Date(a.updated_at).getTime() : new Date(a.created_at).getTime();
+    const dateB = b.updated_at ? new Date(b.updated_at).getTime() : new Date(b.created_at).getTime();
+    return dateB - dateA;
+  });
+}, [leads, searchTerm, filterStatut]);
 
   const stats = useMemo(() => {
     const currentYear = new Date().getFullYear();
-    const pipeline = leads.filter(l => !['Gagné', 'Perdu'].includes(l.statut)).reduce((acc, curr) => acc + (curr.budget_estime || 0), 0);
-    const won = leads.filter(l => l.statut === 'Gagné' && getYear(parseISO(l.created_at)) === currentYear).reduce((acc, curr) => acc + (curr.budget_estime || 0), 0);
-    const lost = leads.filter(l => l.statut === 'Perdu' && getYear(parseISO(l.created_at)) === currentYear).reduce((acc, curr) => acc + (curr.budget_estime || 0), 0);
+    const pipeline = leads.filter(l => !['Confirmé', 'Refus'].includes(l.statut)).reduce((acc, curr) => acc + (curr.budget_estime || 0), 0);
+    const won = leads.filter(l => l.statut === 'Confirmé' && getYear(parseISO(l.created_at)) === currentYear).reduce((acc, curr) => acc + (curr.budget_estime || 0), 0);
+    const lost = leads.filter(l => l.statut === 'Refus' && getYear(parseISO(l.created_at)) === currentYear).reduce((acc, curr) => acc + (curr.budget_estime || 0), 0);
     const lateCount = leads.filter(l => getRelanceStatus(l.date_relance, l.statut) === 'late').length;
     const todayCount = leads.filter(l => getRelanceStatus(l.date_relance, l.statut) === 'today').length;
     return { pipeline, won, lost, lateCount, todayCount };
@@ -462,18 +543,25 @@ if (filterStatut === 'Tous') {
   onClick={() => window.open(`/devis?leadId=${res.reservation_id}`, '_blank')}
 
 >
-  <div className="flex justify-between items-start mb-0.5">
+ <div className="flex justify-between items-start mb-0.5">
     <span className="truncate uppercase max-w-[80%]">{res.nom_client}</span>
     <div className={`w-1.5 h-1.5 rounded-full ${res.display_status === 'Gagné' ? 'bg-emerald-500' : 'bg-indigo-400'}`} />
-  </div>
-  <div className="opacity-70 truncate font-medium italic">{res.titre_demande || 'Sans titre'}</div>
+</div>
+<div className="opacity-70 truncate font-medium italic mb-1">{res.titre_demande || 'Sans titre'}</div>
+
+{/* Affichage des horaires si on les a */}
+{(res.start_time || res.end_time) && (
+    <div className="text-[9px] font-black bg-white/50 inline-block px-1.5 py-0.5 rounded text-indigo-800">
+        {res.start_time?.substring(0,5) || '??'} - {res.end_time?.substring(0,5) || '??'}
+    </div>
+)}
 </div>
                       ))}
                       {resas.length === 0 && (
   <button 
     onClick={(e) => { 
       e.stopPropagation(); 
-      openCreateFromPlanning(d, room.name); 
+      openLeadModal(undefined, d, room.name);
     }}
     className="h-12 w-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-indigo-50 rounded-xl"
   >
@@ -525,28 +613,32 @@ if (filterStatut === 'Tous') {
 
     {/* FILTRES & RECHERCHE */}
     <div className="flex flex-col md:flex-row gap-4 mb-6 justify-between items-center">
-      <div className="flex gap-2 w-full md:w-auto">
-          {['Tous', 'Pipeline', 'Gagné', 'Perdu'].map(st => (
-              <button 
-                  key={st}
-                  onClick={(e) => { e.stopPropagation(); setFilterStatut(st); }}
-                  className={`px-5 py-2 rounded-full text-xs font-bold transition-all ${filterStatut === st ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-              >
-                  {st}
-              </button>
-          ))}
-      </div>
+  <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+      {['Pipeline', 'Confirmé', 'Terminées', 'Débiteurs', 'Refus', 'Tous'].map(st => (
+          <button 
+              key={st}
+              onClick={(e) => { e.stopPropagation(); setFilterStatut(st); }}
+              className={`px-5 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                  filterStatut === st 
+                  ? (st === 'Débiteurs' ? 'bg-red-500 text-white shadow-md' : 'bg-slate-800 text-white shadow-md') 
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+          >
+              {st}
+          </button>
+      ))}
+  </div>
       <div className="flex gap-2 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <Input placeholder="Rechercher..." className="pl-9 bg-white rounded-full shadow-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
           <Button 
-              onClick={(e) => { e.stopPropagation(); setCurrentLead({ statut: 'Nouveau', etat_paiement: 'À demander', budget_estime: 0, montant_paye: 0, date_relance: '', date_evenement: '' }); setShowModal(true); }} 
-              className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-6"
-          >
-              <PlusCircle className="mr-2 h-4 w-4" /> Nouveau
-          </Button>
+    onClick={(e) => { e.stopPropagation(); openLeadModal(); }} 
+    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-6"
+>
+    <PlusCircle className="mr-2 h-4 w-4" /> Nouveau
+</Button>
       </div>
     </div>
 
@@ -608,19 +700,19 @@ if (filterStatut === 'Tous') {
                     </span>
                 </div>
                 {/* 3. FINANCE */}
-                <div className="md:col-span-3 px-2">
-                    <div className="bg-slate-50/80 p-2.5 rounded-xl border border-slate-200 flex flex-col gap-1 shadow-sm">
+                <div className="md:col-span-2 px-1">
+                    <div className="bg-slate-50/80 p-2 rounded-xl border border-slate-200 flex flex-col gap-1 shadow-sm">
                         <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Budget</span>
-                            <span className="font-bold text-slate-700 text-sm">{budget.toLocaleString()} €</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">Budget</span>
+                            <span className="font-bold text-slate-700 text-xs">{budget.toLocaleString()} €</span>
                         </div>
                         <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Réglé</span>
-                            <span className="font-bold text-emerald-600 text-sm">{paye.toLocaleString()} €</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">Réglé</span>
+                            <span className="font-bold text-emerald-600 text-xs">{paye.toLocaleString()} €</span>
                         </div>
-                        <div className="flex justify-between items-center pt-1 border-t border-slate-300 mt-1">
-                            <span className="text-[11px] font-black text-slate-600 uppercase tracking-tighter">Solde à payer</span>
-                            <span className={`font-black text-base ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                        <div className="flex justify-between items-center pt-1 border-t border-slate-300 mt-0.5">
+                            <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Solde</span>
+                            <span className={`font-black text-sm ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                                 {reste.toLocaleString()} €
                             </span>
                         </div>
@@ -630,13 +722,13 @@ if (filterStatut === 'Tous') {
                 <div className="md:col-span-2 relative">
                     <button 
                         onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : lead.id); }} 
-                        className="flex items-center gap-2 px-3 py-2.5 rounded-full border border-slate-200 bg-white hover:border-indigo-300 w-full justify-between shadow-sm"
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-full border border-slate-200 bg-white hover:border-indigo-300 w-full justify-between shadow-sm min-w-0"
                     >
                         <div className="flex items-center gap-2 overflow-hidden">
                             <span className={`w-3 h-3 rounded-full flex-shrink-0 ${STATUS_COLORS[lead.statut]}`} />
-                            <span className="text-xs font-black text-slate-700 uppercase truncate">{lead.statut}</span>
+                            <span className="text-[10px] font-black text-slate-700 uppercase truncate">{lead.statut}</span>
                         </div>
-                        <ChevronDown className="w-4 h-4 text-slate-400" />
+                        <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
                     </button>
                     {isMenuOpen && (
                         <div className="absolute top-full left-0 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1">
@@ -650,16 +742,18 @@ if (filterStatut === 'Tous') {
                     )}
                 </div>
                 {/* 5. PAIEMENT */}
-                <div className="md:col-span-2 relative">
-                    {lead.statut === 'Gagné' && (
+                <div className="md:col-span-2 relative min-w-0">
+                    {lead.statut === 'Confirmé' && (
                         <>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); setOpenPaymentId(isPaymentOpen ? null : lead.id); }} 
-                                className="flex items-center gap-2 px-3 py-2.5 rounded-full border border-slate-100 bg-slate-50 w-full hover:border-indigo-200 shadow-sm transition-all"
+                                className="flex items-center gap-1.5 px-3 py-2.5 rounded-full border border-slate-100 bg-slate-50 w-full hover:border-indigo-200 shadow-sm transition-all overflow-hidden"
                             >
-                                <CreditCard className="w-4 h-4 text-slate-400" />
-                                <span className="flex-1 text-[10px] font-black text-slate-600 truncate uppercase text-center">{lead.etat_paiement || 'À demander'}</span>
-                                <div className={`w-2.5 h-2.5 rounded-full ${PAYMENT_COLORS[lead.etat_paiement || 'À demander']}`} />
+                                <CreditCard className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                                <span className="flex-1 text-[9px] font-black text-slate-600 truncate uppercase text-center" title={lead.etat_paiement || 'À demander'}>
+                                    {lead.etat_paiement || 'À demander'}
+                                </span>
+                                <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${PAYMENT_COLORS[lead.etat_paiement || 'À demander']}`} />
                             </button>
                             {isPaymentOpen && (
                                 <div className="absolute top-full left-0 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1">
@@ -674,60 +768,52 @@ if (filterStatut === 'Tous') {
                     )}
                 </div>
                 {/* 6. ACTIONS */}
-                {/* 6. ACTIONS */}
-<div className="md:col-span-1 flex items-center justify-end gap-2 pr-2">
-    
-    {/* BOUTON DEVIS : Nouvel onglet */}
-    <button 
-        onClick={(e) => { 
-            e.stopPropagation(); 
-            window.open(`/devis?leadId=${lead.id}`, '_blank'); 
-        }} 
-        className="p-2 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
-        title="Générer / Voir le devis"
-    >
-        <FileText className="w-5 h-5" />
-    </button>
+                <div className="md:col-span-2 flex items-center justify-end gap-1.5 pr-2">
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); window.open(`/devis?leadId=${lead.id}`, '_blank'); }} 
+                        className="p-2 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
+                        title="Générer / Voir le devis"
+                    >
+                        <FileText className="w-4 h-4" />
+                    </button>
 
-    {/* COMMENTAIRES / NOTES */}
-    <div className="relative">
-        <button 
-            onClick={(e) => { e.stopPropagation(); setOpenCommentId(isCommentOpen ? null : lead.id); }} 
-            className={`p-2 rounded-lg transition-all ${hasComment ? 'text-indigo-600 bg-indigo-50 border border-indigo-200 shadow-sm' : 'text-slate-300 hover:bg-slate-100'}`}
-        >
-            <MessageSquareText className="w-5 h-5" />
-        </button>
-        
-        {isCommentOpen && (
-            <div className="absolute bottom-full right-0 mb-3 w-72 p-4 bg-white border-2 border-slate-200 rounded-2xl shadow-2xl z-[70] text-sm text-slate-700 animate-in fade-in slide-in-from-bottom-2">
-                <div className="font-black text-indigo-600 uppercase text-[10px] mb-2 border-b pb-1 flex justify-between">
-                    <span>Notes Internes</span>
+                    <div className="relative">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setOpenCommentId(isCommentOpen ? null : lead.id); }} 
+                            className={`p-2 rounded-lg transition-all ${hasComment ? 'text-indigo-600 bg-indigo-50 border border-indigo-200 shadow-sm' : 'text-slate-300 hover:bg-slate-100'}`}
+                        >
+                            <MessageSquareText className="w-4 h-4" />
+                        </button>
+                        
+                        {isCommentOpen && (
+                            <div className="absolute bottom-full right-0 mb-3 w-72 p-4 bg-white border-2 border-slate-200 rounded-2xl shadow-2xl z-[70] text-sm text-slate-700 animate-in fade-in slide-in-from-bottom-2">
+                                <div className="font-black text-indigo-600 uppercase text-[10px] mb-2 border-b pb-1 flex justify-between">
+                                    <span>Notes Internes</span>
+                                </div>
+                                <div className="whitespace-pre-wrap max-h-48 overflow-y-auto">
+                                    {hasComment ? lead.commentaires : "Aucune note."}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="flex gap-1 border-l pl-1.5 ml-0.5 border-slate-200">
+                        <button 
+    onClick={(e) => { e.stopPropagation(); openLeadModal(lead); }} 
+    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded transition-colors"
+    title="Modifier le dossier"
+>
+    <Edit2 className="w-3.5 h-3.5" />
+</button>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleDelete(lead.id); }} 
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-slate-100 rounded transition-colors"
+                            title="Supprimer"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                 </div>
-                <div className="whitespace-pre-wrap max-h-48 overflow-y-auto">
-                    {hasComment ? lead.commentaires : "Aucune note."}
-                </div>
-            </div>
-        )}
-    </div>
-    
-    {/* ACTIONS ÉDITION / SUPPRESSION */}
-    <div className="flex flex-col gap-0.5 border-l pl-2 ml-1 border-slate-200">
-        <button 
-            onClick={(e) => { e.stopPropagation(); setCurrentLead(lead); setShowModal(true); }} 
-            className="p-1 text-slate-400 hover:text-indigo-600 transition-colors"
-            title="Modifier le dossier"
-        >
-            <Edit2 className="w-3.5 h-3.5" />
-        </button>
-        <button 
-            onClick={(e) => { e.stopPropagation(); handleDelete(lead.id); }} 
-            className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-            title="Supprimer"
-        >
-            <Trash2 className="w-3.5 h-3.5" />
-        </button>
-    </div>
-</div>
               </div>
             </div>
           );
@@ -742,13 +828,13 @@ if (filterStatut === 'Tous') {
   <div className="space-y-8 animate-in fade-in duration-500">
     <section>
       <h2 className="text-lg font-bold text-indigo-600 mb-4 flex items-center gap-2">
-        <CalendarDays className="w-5 h-5" /> Location Salles HT (Café d'accueil offert)
+        <CalendarDays className="w-5 h-5" /> Location Salles TTC (Café d'accueil offert)
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { n: 'Telo Segreto', d: '57m² - 30/40 pers.', p: '199€ (Demi-Journée) / 299€ (journée)' },
-          { n: 'Telo Maritimo', d: '50m² - 30 pers.', p: '249€, disponible a partir de 11h)' },
-          { n: 'Telo Intimo', d: '18m² - 5 pers.', p: '80€ (Réunion Intime)' },
+          { n: 'Telo Segreto', d: '57m² - 30/40 pers.', p: '239€ (Demi-Journée) / 359€ (journée)' },
+          { n: 'Telo Maritimo', d: '50m² - 30 pers.', p: '299€, disponible a partir de 11h)' },
+          { n: 'Telo Intimo', d: '18m² - 5 pers.', p: '96€ (Réunion Intime)' },
           { n: 'Patio Tropical', d: '100m² - 60 pers.', p: 'Événementiel' },
         ].map(s => (
           <div key={s.n} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative group">
@@ -880,7 +966,33 @@ if (filterStatut === 'Tous') {
     </div>
   )}
 </div>
-                 <Input placeholder="Titre événement" value={currentLead.titre_demande || ''} onChange={e => setCurrentLead({...currentLead, titre_demande: e.target.value})} />
+                 <div className="space-y-2">
+    <Input 
+        placeholder="Titre événement (Saisie libre ou tags)" 
+        value={currentLead.titre_demande || ''} 
+        onChange={e => setCurrentLead({...currentLead, titre_demande: e.target.value})} 
+    />
+    <div className="flex flex-wrap gap-1.5">
+        {['Séminaire', 'Séminaire résidentiel', 'Hébergement', 'Restauration', 'Journée d\'étude', 'Soirée Cocktail'].map(tag => (
+            <button
+                key={tag}
+                type="button"
+                onClick={(e) => {
+                    e.preventDefault();
+                    const current = currentLead.titre_demande || '';
+                    if (current.includes(tag)) return; // Évite les doublons
+                    setCurrentLead({
+                        ...currentLead, 
+                        titre_demande: current ? `${current} + ${tag}` : tag
+                    });
+                }}
+                className="px-2 py-1 bg-slate-100 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 border border-slate-200 rounded text-[10px] font-bold uppercase transition-colors"
+            >
+                + {tag}
+            </button>
+        ))}
+    </div>
+</div>
                  
                  <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -903,17 +1015,66 @@ if (filterStatut === 'Tous') {
                     <div>
                          <label className="text-[10px] font-bold text-slate-500 uppercase">Statut Commercial</label>
                          <select 
-                            className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-white h-10"
+                            className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-white"
                             value={currentLead.statut || 'Nouveau'}
                             onChange={e => setCurrentLead({...currentLead, statut: e.target.value as any})}
-                         >
+                        >
                             <option>Nouveau</option>
                             <option>Devis envoyé</option>
-                            <option>En négo</option>
-                            <option>Gagné</option>
-                            <option>Perdu</option>
+                            <option>Option</option>
+                            <option>Confirmé</option>
+                            <option>Refus</option>
                         </select>
                     </div>
+                 </div>
+
+                 {/* BLOC SALLES ET HORAIRES */}
+                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 space-y-2">
+                     <div className="flex justify-between items-center mb-1">
+                         <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2">
+                             <Layout className="w-3 h-3" /> Salles & Horaires
+                         </label>
+                         <Button 
+                             type="button" 
+                             variant="ghost" 
+                             size="sm" 
+                             onClick={() => setCurrentReservations([...currentReservations, { room_id: rooms[0]?.id, start_date: currentLead.date_evenement || '', start_time: '09:00', end_time: '18:00' }])}
+                             className="h-6 text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 px-2"
+                         >
+                             + Ajouter une salle
+                         </Button>
+                     </div>
+                     {currentReservations.map((resa, index) => (
+                         <div key={index} className="flex gap-2 items-center bg-white p-2 rounded border border-slate-200 shadow-sm">
+                             <select 
+                                 value={resa.room_id} 
+                                 onChange={(e) => { const newR = [...currentReservations]; newR[index].room_id = e.target.value; setCurrentReservations(newR); }}
+                                 className="flex-1 border-none text-[11px] font-bold focus:ring-0 p-1"
+                             >
+                                 {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                             </select>
+                             <Input 
+                                type="date" 
+                                value={resa.start_date} 
+                                onChange={(e) => { const newR = [...currentReservations]; newR[index].start_date = e.target.value; setCurrentReservations(newR); }} 
+                                className="w-28 h-7 text-[10px] px-1 font-bold" 
+                            />
+                             <Input 
+                                type="time" 
+                                value={resa.start_time} 
+                                onChange={(e) => { const newR = [...currentReservations]; newR[index].start_time = e.target.value; setCurrentReservations(newR); }} 
+                                className="w-20 h-7 text-[10px] px-1 font-bold" 
+                            />
+                             <span className="text-slate-300">-</span>
+                             <Input 
+                                type="time" 
+                                value={resa.end_time} 
+                                onChange={(e) => { const newR = [...currentReservations]; newR[index].end_time = e.target.value; setCurrentReservations(newR); }} 
+                                className="w-20 h-7 text-[10px] px-1 font-bold" 
+                            />
+                             <button type="button" onClick={() => setCurrentReservations(currentReservations.filter((_, i) => i !== index))} className="text-red-300 hover:text-red-600 p-1 transition-colors"><Trash2 className="w-3 h-3"/></button>
+                         </div>
+                     ))}
                  </div>
 
                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 space-y-3">
@@ -933,14 +1094,15 @@ if (filterStatut === 'Tous') {
                              <label className="text-[9px] text-slate-400 uppercase mb-1 block">État Facture</label>
                              <select 
                                 className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-white"
-                                value={currentLead.etat_paiement || 'À demander'}
+                                value={currentLead.etat_paiement || 'Attente acompte'}
                                 onChange={e => setCurrentLead({...currentLead, etat_paiement: e.target.value as any})}
                              >
-                                <option>À demander</option>
-                                <option>En attente réception</option>
-                                <option>À vérifier</option>
+                                <option>Attente acompte</option>
+                                <option>Acompte reçu</option>
+                                <option>RGT/P</option>
+                                <option>Soldé</option>
                                 <option>Facture envoyée</option>
-                                <option>OK</option>
+                                <option>Finalisé</option>
                             </select>
                         </div>
                         <div>
