@@ -49,7 +49,7 @@ const [showSuggestions, setShowSuggestions] = useState<string | null>(null);
 const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
 const [editingItem, setEditingItem] = useState<any>(null); // <-- NOUVEAU
 
-  // 1. CHARGEMENT
+ // 1. CHARGEMENT
   useEffect(() => {
     if (!leadId) return;
     
@@ -68,56 +68,45 @@ const [editingItem, setEditingItem] = useState<any>(null); // <-- NOUVEAU
         setClient(lead);
         setDate(lead.date_evenement || '');
 
-
-
-        // --- NOUVEAU : Récupérer les infos de l'hôtel ---
+        // Récupérer les infos de l'hôtel
         const hId = lead.hotel_id || localStorage.getItem('selectedHotelId');
         if (hId) {
           const { data: hData } = await supabase.from('hotels').select('*').eq('id', hId).single();
           if (hData) setHotel(hData);
         }
 
-
         // Récupérer le catalogue d'articles de l'hôtel
-const { data: articles } = await supabase
-  .from('articles')
-  .select('*')
-  .eq('hotel_id', hId);
-if (articles) setCatalog(articles);
+        const { data: articles } = await supabase
+          .from('articles')
+          .select('*')
+          .eq('hotel_id', hId);
+        if (articles) setCatalog(articles);
 
-
-        // B. Trouver le Client Séminaire
-        const { data: seminarClient } = await supabase
-          .from('seminar_clients')
-          .select('id')
-          .eq('email', lead.email)
+        // B. Trouver le Devis existant pour CE lead
+        // C'est ici qu'on corrige le tir : on cherche par lead_id
+        const { data: quote } = await supabase
+          .from('quotes')
+          .select('*, quote_items(*)')
+          .eq('lead_id', leadId)
           .maybeSingle();
 
-        if (seminarClient) {
-          const { data: quote } = await supabase
-            .from('quotes')
-            .select('*, quote_items(*)')
-            .eq('client_id', seminarClient.id)
-            .maybeSingle();
-
-          if (quote) {
-            setQuoteNumber(quote.numero);
-            setQuoteDate(quote.created_at); // <-- NOUVEAU
-            setTeamNotes(quote.comment || '');
-            if (quote.cancellation_terms) setCancellationTerms(quote.cancellation_terms);
-            if (quote.quote_items) {
-  setLines(quote.quote_items
-    .sort((a: any, b: any) => a.sort_order - b.sort_order)
-    .map((i: any) => ({
-      id: i.id, 
-      label: i.label, 
-      quantity: i.quantity, 
-      unitPriceTTC: i.unit_price_ttc, 
-      tvaRate: i.tva_rate,
-      date: i.date || date // On récupère la date de la ligne ou celle du devis par défaut
-    }))
-  );
-}
+        if (quote) {
+          setQuoteNumber(quote.numero);
+          setQuoteDate(quote.created_at);
+          setTeamNotes(quote.comment || '');
+          if (quote.cancellation_terms) setCancellationTerms(quote.cancellation_terms);
+          if (quote.quote_items) {
+            setLines(quote.quote_items
+              .sort((a: any, b: any) => a.sort_order - b.sort_order)
+              .map((i: any) => ({
+                id: i.id, 
+                label: i.label, 
+                quantity: i.quantity, 
+                unitPriceTTC: i.unit_price_ttc, 
+                tvaRate: i.tva_rate,
+                date: i.date || date
+              }))
+            );
           }
         }
       } catch (err) {
@@ -154,119 +143,119 @@ if (articles) setCatalog(articles);
   }, [lines]);
 
   // 3. ACTIONS
-const handleSave = async () => {
-  if (!leadId || !client) return;
-  
-  const savedHotelId = typeof window !== 'undefined' ? localStorage.getItem('selectedHotelId') : null;
-  const hotel_id = client.hotel_id || savedHotelId || user?.hotel_id;
-
-  if (!hotel_id) {
-    alert("Erreur : ID Hôtel manquant.");
-    return;
-  }
-
-  setSaving(true);
-
-  try {
-
-    await supabase
-      .from('suivi_commercial')
-      .update({ date_evenement: date })
-      .eq('id', leadId);
-    // --- ÉTAPE 1 : PROMOTION DU PROSPECT EN CLIENT SÉMINAIRE ---
-    // On vérifie si ce client (via son email) existe déjà dans seminar_clients
-    let seminarClientId;
+// 3. ACTIONS
+  const handleSave = async () => {
+    if (!leadId || !client) return;
     
-    const { data: existingSeminarClient } = await supabase
-      .from('seminar_clients')
-      .select('id')
-      .eq('email', client.email)
-      .eq('hotel_id', hotel_id)
-      .maybeSingle();
+    const savedHotelId = typeof window !== 'undefined' ? localStorage.getItem('selectedHotelId') : null;
+    const hotel_id = client.hotel_id || savedHotelId || user?.hotel_id;
 
-    if (existingSeminarClient) {
-      seminarClientId = existingSeminarClient.id;
-    } else {
-      // On le crée proprement dans seminar_clients pour respecter la FK
-      const { data: newSeminarClient, error: clientError } = await supabase
+    if (!hotel_id) {
+      alert("Erreur : ID Hôtel manquant.");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      // Maj de la date dans le suivi commercial
+      await supabase
+        .from('suivi_commercial')
+        .update({ date_evenement: date })
+        .eq('id', leadId);
+
+      // --- ÉTAPE 1 : PROMOTION DU PROSPECT EN CLIENT SÉMINAIRE ---
+      let seminarClientId;
+      const { data: existingSeminarClient } = await supabase
         .from('seminar_clients')
-        .insert([{
-          hotel_id: hotel_id,
-          nom: client.nom_client, // On mappe le nom du lead
-          societe: client.societe,
-          email: client.email,
-          telephone: client.telephone
-        }])
-        .select()
-        .single();
+        .select('id')
+        .eq('email', client.email)
+        .eq('hotel_id', hotel_id)
+        .maybeSingle();
 
-      if (clientError) throw clientError;
-      seminarClientId = newSeminarClient.id;
-    }
+      if (existingSeminarClient) {
+        seminarClientId = existingSeminarClient.id;
+      } else {
+        const { data: newSeminarClient, error: clientError } = await supabase
+          .from('seminar_clients')
+          .insert([{
+            hotel_id: hotel_id,
+            nom: client.nom_client,
+            societe: client.societe,
+            email: client.email,
+            telephone: client.telephone
+          }])
+          .select()
+          .single();
 
-    // --- ÉTAPE 2 : SAUVEGARDE DU DEVIS (QUOTES) ---
-    const quoteData = {
-      hotel_id: hotel_id,
-      client_id: seminarClientId, // On utilise l'ID de seminar_clients, pas celui du lead
-      comment: teamNotes,
-      status: 'draft',
-      start_date: date || null,
-      end_date: date || null,
-      cancellation_terms: cancellationTerms,
-    };
+        if (clientError) throw clientError;
+        seminarClientId = newSeminarClient.id;
+      }
 
-    let quoteId;
-    
-    // On cherche si un devis existe pour ce client précis
-    const { data: existingQuote } = await supabase
-      .from('quotes')
-      .select('id')
-      .eq('client_id', seminarClientId)
-      .maybeSingle();
+      // --- ÉTAPE 2 : SAUVEGARDE DU DEVIS (QUOTES) ---
+      const quoteData = {
+        hotel_id: hotel_id,
+        client_id: seminarClientId,
+        lead_id: leadId, // <-- ON AJOUTE LE LIEN ICI
+        comment: teamNotes,
+        status: 'draft',
+        start_date: date || null,
+        end_date: date || null,
+        cancellation_terms: cancellationTerms,
+      };
 
-    if (existingQuote) {
-      const { error: updateError } = await supabase
+      let quoteId;
+      
+      // On cherche si un devis existe pour ce LEAD précis (et plus le client)
+      const { data: existingQuote } = await supabase
         .from('quotes')
-        .update(quoteData)
-        .eq('id', existingQuote.id);
-      if (updateError) throw updateError;
-      quoteId = existingQuote.id;
-    } else {
-      const { data: newQuote, error: insertError } = await supabase
-        .from('quotes')
-        .insert([quoteData])
-        .select()
-        .single();
-      if (insertError) throw insertError;
-      quoteId = newQuote.id;
-      setQuoteNumber(newQuote.numero);
+        .select('id')
+        .eq('lead_id', leadId)
+        .maybeSingle();
+
+      if (existingQuote) {
+        const { error: updateError } = await supabase
+          .from('quotes')
+          .update(quoteData)
+          .eq('id', existingQuote.id);
+        if (updateError) throw updateError;
+        quoteId = existingQuote.id;
+      } else {
+        const { data: newQuote, error: insertError } = await supabase
+          .from('quotes')
+          .insert([quoteData])
+          .select()
+          .single();
+        if (insertError) throw insertError;
+        quoteId = newQuote.id;
+        setQuoteNumber(newQuote.numero);
+      }
+
+      // --- ÉTAPE 3 : LIGNES DU DEVIS (QUOTE_ITEMS) ---
+      await supabase.from('quote_items').delete().eq('quote_id', quoteId);
+
+      if (lines.length > 0) {
+        const itemsToInsert = lines.map((l, index) => ({
+          quote_id: quoteId,
+          label: l.label,
+          quantity: parseInt(l.quantity) || 0,
+          unit_price_ttc: parseFloat(l.unitPriceTTC) || 0,
+          tva_rate: parseFloat(l.tvaRate) || 10,
+          sort_order: index
+        }));
+
+        const { error: itemsError } = await supabase.from('quote_items').insert(itemsToInsert);
+        if (itemsError) throw itemsError;
+      }
+
+      alert("Devis enregistré avec succès !");
+    } catch (err: any) {
+      console.error("Détail erreur:", err);
+      alert(`Erreur : ${err.message}`);
+    } finally {
+      setSaving(false);
     }
-
-    // --- ÉTAPE 3 : LIGNES DU DEVIS (QUOTE_ITEMS) ---
-    await supabase.from('quote_items').delete().eq('quote_id', quoteId);
-
-    if (lines.length > 0) {
-      const itemsToInsert = lines.map((l, index) => ({
-        quote_id: quoteId,
-        label: l.label,
-        quantity: parseInt(l.quantity) || 0,
-        unit_price_ttc: parseFloat(l.unitPriceTTC) || 0,
-        tva_rate: parseFloat(l.tvaRate) || 10,
-        sort_order: index
-      }));
-
-      const { error: itemsError } = await supabase.from('quote_items').insert(itemsToInsert);
-      if (itemsError) throw itemsError;
-    }
-
-    alert("Devis enregistré et Client synchronisé !");
-  } catch (err: any) {
-    console.error("Détail erreur:", err);
-    alert(`Erreur : ${err.message}`);
-  } finally {
-    setSaving(false);
-  }
-};
+  };
 
   const handleSendMail = () => {
     const refLabel = quoteNumber ? `REF : ${quoteNumber}` : 'REF : EN COURS';
