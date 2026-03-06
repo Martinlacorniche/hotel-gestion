@@ -10,6 +10,9 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import { QuotePDF } from './QuotePDF';
+
 
 // --- UTILITAIRES ---
 const getHTFromTTC = (ttc: number, rate: number) => ttc / (1 + rate / 100);
@@ -322,21 +325,58 @@ const handlePrint = () => {
 
       </div>
      <div className="max-w-7xl mx-auto flex justify-between items-center mb-6 print:hidden">
-        <button onClick={() => router.back()} className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-800 transition-colors">
-          <ArrowLeft className="w-4 h-4" /> Retour
-        </button>
         <div className="flex gap-3">
-          <Button onClick={handlePrint} variant="outline" className="bg-white border-slate-200 font-bold shadow-sm">
-            <FileText className="w-4 h-4 mr-2" /> PDF
-          </Button>
-          <Button onClick={handleSendMail} variant="outline" className="bg-white border-indigo-200 text-indigo-600 font-bold shadow-sm hover:bg-indigo-50">
-            <Mail className="w-4 h-4 mr-2" /> Mail
-          </Button>
-          <Button onClick={handleSave} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest px-6 shadow-lg shadow-indigo-200">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
-            Sauvegarder
-          </Button>
-        </div>
+  {/* Nouveau bouton PDF Pro */}
+ <PDFDownloadLink 
+  document={
+    <QuotePDF 
+      data={{
+        quoteNumber: quoteNumber || '12',
+        quoteDate: quoteDate ? new Date(quoteDate).toLocaleDateString('fr-FR') : '01/03/2026',
+        clientName: client?.societe || client?.nom_client || 'Client',
+        clientEmail: client?.email,
+        eventTitle: client?.titre_demande,
+        eventDate: date ? new Date(date).toLocaleDateString('fr-FR') : '--',
+        conditions: cancellationTerms 
+      }} 
+      lines={lines.map(l => ({
+        date: (l.date || date) ? new Date(l.date || date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '--',
+        description: l.label,
+        quantity: l.quantity,
+        unitPriceTTC: Number(l.unitPriceTTC).toFixed(2),
+        tvaRate: l.tvaRate,
+        totalTTC: (l.quantity * l.unitPriceTTC).toFixed(2)
+      }))} 
+      totals={{
+        ht: totals.ht.toFixed(2),
+        ttc: totals.ttc.toFixed(2),
+        tvaDetails: totals.tvaDetails
+      }} 
+    />
+  } 
+  fileName={`Devis_${quoteNumber || '12'}.pdf`}
+>
+  {({ loading }) => (
+    <Button variant="outline" className="bg-white border-slate-200 font-bold shadow-sm">
+      {loading ? (
+        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+      ) : (
+        <FileText className="w-4 h-4 mr-2" />
+      )}
+      {loading ? 'Génération...' : 'PDF'}
+    </Button>
+  )}
+</PDFDownloadLink>
+
+  <Button onClick={handleSendMail} variant="outline" className="bg-white border-indigo-200 text-indigo-600 font-bold shadow-sm hover:bg-indigo-50">
+    <Mail className="w-4 h-4 mr-2" /> Mail
+  </Button>
+  
+  <Button onClick={handleSave} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest px-6 shadow-lg shadow-indigo-200">
+    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+    Sauvegarder
+  </Button>
+</div>
       </div>
 
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-6 xl:gap-8">

@@ -926,212 +926,245 @@ const handleSave = async () => {
   </div>
 )}
 
-      {/* MODAL COMPLET */}
+      {/* MODAL COMPLET (Version Scrollable & Ergonomique) */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg space-y-4 animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-center mb-2">
-               <h2 className="text-lg font-bold text-slate-800">Détails Dossier</h2>
-               <button onClick={() => setShowModal(false)}><XCircle className="w-5 h-5 text-slate-400 hover:text-slate-600"/></button>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4 sm:p-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
+            
+            {/* 1. HEADER (Toujours visible) */}
+            <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
+               <h2 className="text-xl font-black text-slate-800">Détails du Dossier</h2>
+               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <XCircle className="w-5 h-5 text-slate-400 hover:text-slate-600"/>
+               </button>
             </div>
 
-            <div className="space-y-3">
-                <div className="relative">
-  <Input 
-    placeholder="Client / Société" 
-    value={currentLead.nom_client || ''} 
-    onChange={e => handleClientSearch(e.target.value)} 
-    className="font-bold bg-slate-50 border-slate-200" 
-  />
-  {clientSuggestions.length > 0 && (
-    <div className="absolute top-full left-0 w-full bg-white border border-slate-200 rounded-lg shadow-xl z-[60] mt-1 py-1">
-      {clientSuggestions.map(s => (
-        <button 
-          key={s.id}
-          className="w-full text-left px-4 py-2 text-xs hover:bg-indigo-50 flex flex-col"
-          onClick={() => {
-            setCurrentLead({
-              ...currentLead,
-              nom_client: s.nom_client,
-              email: s.email,
-              telephone: s.telephone
-            });
-            setClientSuggestions([]);
-          }}
-        >
-          <span className="font-bold">{s.nom_client}</span>
-          <span className="text-[10px] text-slate-400">{s.email || 'Pas d\'email'}</span>
-        </button>
-      ))}
-    </div>
-  )}
-</div>
-                 <div className="space-y-2">
-    <Input 
-        placeholder="Titre événement (Saisie libre ou tags)" 
-        value={currentLead.titre_demande || ''} 
-        onChange={e => setCurrentLead({...currentLead, titre_demande: e.target.value})} 
-    />
-    <div className="flex flex-wrap gap-1.5">
-        {['Séminaire', 'Séminaire résidentiel', 'Hébergement', 'Restauration', 'Journée d\'étude', 'Soirée Cocktail'].map(tag => (
-            <button
-                key={tag}
-                type="button"
-                onClick={(e) => {
-                    e.preventDefault();
-                    const current = currentLead.titre_demande || '';
-                    if (current.includes(tag)) return; // Évite les doublons
-                    setCurrentLead({
-                        ...currentLead, 
-                        titre_demande: current ? `${current} + ${tag}` : tag
-                    });
-                }}
-                className="px-2 py-1 bg-slate-100 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 border border-slate-200 rounded text-[10px] font-bold uppercase transition-colors"
-            >
-                + {tag}
-            </button>
-        ))}
-    </div>
-</div>
-                 
-                 <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Date Événement</label>
-                        <Input type="date" value={currentLead.date_evenement || ''} onChange={e => setCurrentLead({...currentLead, date_evenement: e.target.value})} />
-                    </div>
-                    <div>
-                        <label className="text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1">
-                            <Clock className="w-3 h-3" /> Prochaine Relance
+            {/* 2. BODY (Zone scrollable) */}
+            <div className="overflow-y-auto p-5 space-y-8">
+                
+                {/* SECTION 1 : CLIENT & CONTACTS */}
+                <div className="space-y-4">
+                   <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider border-b border-indigo-100 pb-2">1. Client & Contacts</h3>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       {/* Recherche Client (prend toute la largeur) */}
+                       <div className="relative md:col-span-2">
+                           <Input 
+                               placeholder="Client / Société" 
+                               value={currentLead.nom_client || ''} 
+                               onChange={e => handleClientSearch(e.target.value)} 
+                               className="font-bold bg-slate-50 border-slate-200 h-10" 
+                           />
+                           {clientSuggestions.length > 0 && (
+                               <div className="absolute top-full left-0 w-full bg-white border border-slate-200 rounded-lg shadow-xl z-[60] mt-1 py-1 max-h-48 overflow-y-auto">
+                                   {clientSuggestions.map(s => (
+                                       <button 
+                                           key={s.id}
+                                           className="w-full text-left px-4 py-2 text-sm hover:bg-indigo-50 flex flex-col"
+                                           onClick={() => {
+                                               setCurrentLead({ ...currentLead, nom_client: s.nom_client, email: s.email, telephone: s.telephone });
+                                               setClientSuggestions([]);
+                                           }}
+                                       >
+                                           <span className="font-bold text-slate-800">{s.nom_client}</span>
+                                           <span className="text-[10px] text-slate-500">{s.email || 'Pas d\'email'}</span>
+                                       </button>
+                                   ))}
+                               </div>
+                           )}
+                       </div>
+                       <Input placeholder="Email" value={currentLead.email || ''} onChange={e => setCurrentLead({...currentLead, email: e.target.value})} className="h-10" />
+                       <Input placeholder="Téléphone" value={currentLead.telephone || ''} onChange={e => setCurrentLead({...currentLead, telephone: e.target.value})} className="h-10" />
+                   </div>
+                </div>
+
+                {/* SECTION 2 : ÉVÉNEMENT & DATES */}
+                <div className="space-y-4">
+                   <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider border-b border-indigo-100 pb-2">2. L'événement</h3>
+                   <div className="space-y-3">
+                       <Input 
+                           placeholder="Titre événement (Saisie libre ou tags)" 
+                           value={currentLead.titre_demande || ''} 
+                           onChange={e => setCurrentLead({...currentLead, titre_demande: e.target.value})} 
+                           className="h-10 font-medium"
+                       />
+                       <div className="flex flex-wrap gap-2">
+                           {['Séminaire', 'Séminaire résidentiel', 'Hébergement', 'Restauration', 'Journée d\'étude', 'Soirée Cocktail'].map(tag => (
+                               <button
+                                   key={tag}
+                                   type="button"
+                                   onClick={(e) => {
+                                       e.preventDefault();
+                                       const current = currentLead.titre_demande || '';
+                                       if (current.includes(tag)) return;
+                                       setCurrentLead({ ...currentLead, titre_demande: current ? `${current} + ${tag}` : tag });
+                                   }}
+                                   className="px-2.5 py-1.5 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200 rounded-md text-[10px] font-bold uppercase transition-colors"
+                               >
+                                   + {tag}
+                               </button>
+                           ))}
+                       </div>
+                   </div>
+                   
+                   <div className="grid grid-cols-2 gap-4 pt-2">
+                       <div>
+                           <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block">Date Événement</label>
+                           <Input type="date" value={currentLead.date_evenement || ''} onChange={e => setCurrentLead({...currentLead, date_evenement: e.target.value})} className="h-10" />
+                       </div>
+                       <div>
+                           <label className="text-[10px] font-bold text-orange-500 uppercase flex items-center gap-1.5 mb-1.5">
+                               <Clock className="w-3.5 h-3.5" /> Prochaine Relance
+                           </label>
+                           <Input type="date" value={currentLead.date_relance || ''} onChange={e => setCurrentLead({...currentLead, date_relance: e.target.value})} className="border-orange-200 focus:ring-orange-500 h-10" />
+                       </div>
+                   </div>
+                </div>
+
+                {/* SECTION 3 : SALLES ET HORAIRES (Design original conservé) */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <div className="flex justify-between items-center mb-2">
+                        <label className="text-[11px] font-bold text-slate-700 uppercase flex items-center gap-2">
+                            <Layout className="w-4 h-4 text-indigo-500" /> Planning Salles
                         </label>
-                        <Input type="date" value={currentLead.date_relance || ''} onChange={e => setCurrentLead({...currentLead, date_relance: e.target.value})} className="border-indigo-100 focus:ring-indigo-500" />
-                    </div>
-                 </div>
-
-                 <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Budget (€)</label>
-                        <Input type="number" value={currentLead.budget_estime || ''} onChange={e => setCurrentLead({...currentLead, budget_estime: parseFloat(e.target.value)})} />
-                    </div>
-                    <div>
-                         <label className="text-[10px] font-bold text-slate-500 uppercase">Statut Commercial</label>
-                         <select 
-                            className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-white"
-                            value={currentLead.statut || 'Nouveau'}
-                            onChange={e => setCurrentLead({...currentLead, statut: e.target.value as any})}
+                        <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setCurrentReservations([...currentReservations, { room_id: rooms[0]?.id, start_date: currentLead.date_evenement || '', start_time: '09:00', end_time: '18:00' }])}
+                            className="h-7 text-xs font-bold text-indigo-600 border-indigo-200 hover:bg-indigo-50"
                         >
-                            <option>Nouveau</option>
-                            <option>Devis envoyé</option>
-                            <option>Option</option>
-                            <option>Confirmé</option>
-                            <option>Refus</option>
-                        </select>
+                            + Ajouter une salle
+                        </Button>
                     </div>
-                 </div>
-
-                 {/* BLOC SALLES ET HORAIRES */}
-                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 space-y-2">
-                     <div className="flex justify-between items-center mb-1">
-                         <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2">
-                             <Layout className="w-3 h-3" /> Salles & Horaires
-                         </label>
-                         <Button 
-                             type="button" 
-                             variant="ghost" 
-                             size="sm" 
-                             onClick={() => setCurrentReservations([...currentReservations, { room_id: rooms[0]?.id, start_date: currentLead.date_evenement || '', start_time: '09:00', end_time: '18:00' }])}
-                             className="h-6 text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 px-2"
-                         >
-                             + Ajouter une salle
-                         </Button>
-                     </div>
-                     {currentReservations.map((resa, index) => (
-                         <div key={index} className="flex gap-2 items-center bg-white p-2 rounded border border-slate-200 shadow-sm">
-                             <select 
-                                 value={resa.room_id} 
-                                 onChange={(e) => { const newR = [...currentReservations]; newR[index].room_id = e.target.value; setCurrentReservations(newR); }}
-                                 className="flex-1 border-none text-[11px] font-bold focus:ring-0 p-1"
-                             >
-                                 {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                             </select>
-                             <Input 
-                                type="date" 
-                                value={resa.start_date} 
-                                onChange={(e) => { const newR = [...currentReservations]; newR[index].start_date = e.target.value; setCurrentReservations(newR); }} 
-                                className="w-28 h-7 text-[10px] px-1 font-bold" 
-                            />
-                             <Input 
-                                type="time" 
-                                value={resa.start_time} 
-                                onChange={(e) => { const newR = [...currentReservations]; newR[index].start_time = e.target.value; setCurrentReservations(newR); }} 
-                                className="w-20 h-7 text-[10px] px-1 font-bold" 
-                            />
-                             <span className="text-slate-300">-</span>
-                             <Input 
-                                type="time" 
-                                value={resa.end_time} 
-                                onChange={(e) => { const newR = [...currentReservations]; newR[index].end_time = e.target.value; setCurrentReservations(newR); }} 
-                                className="w-20 h-7 text-[10px] px-1 font-bold" 
-                            />
-                             <button type="button" onClick={() => setCurrentReservations(currentReservations.filter((_, i) => i !== index))} className="text-red-300 hover:text-red-600 p-1 transition-colors"><Trash2 className="w-3 h-3"/></button>
-                         </div>
-                     ))}
-                 </div>
-
-                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 space-y-3">
-                     <div className="flex justify-between items-center">
-                         <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2">
-                             <Wallet className="w-3 h-3" /> Suivi Paiement
-                         </label>
-                         {(currentLead.budget_estime || 0) > 0 && (
-                            <span className={`text-xs font-bold ${(currentLead.budget_estime || 0) - (currentLead.montant_paye || 0) <= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                                Reste : {Math.max(0, (currentLead.budget_estime || 0) - (currentLead.montant_paye || 0)).toLocaleString()} €
-                            </span>
-                         )}
-                     </div>
-                     
-                     <div className="grid grid-cols-2 gap-3">
-                        <div>
-                             <label className="text-[9px] text-slate-400 uppercase mb-1 block">État Facture</label>
-                             <select 
-                                className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-white"
-                                value={currentLead.etat_paiement || 'Attente acompte'}
-                                onChange={e => setCurrentLead({...currentLead, etat_paiement: e.target.value as any})}
-                             >
-                                <option>Attente acompte</option>
-                                <option>Acompte reçu</option>
-                                <option>RGT/P</option>
-                                <option>Soldé</option>
-                                <option>Facture envoyée</option>
-                                <option>Finalisé</option>
+                    {currentReservations.length === 0 && (
+                        <div className="text-center text-xs text-slate-400 py-2 italic">Aucune salle sélectionnée</div>
+                    )}
+                    {currentReservations.map((resa, index) => (
+                        <div key={index} className="flex gap-2 items-center bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm">
+                            <select 
+                                value={resa.room_id} 
+                                onChange={(e) => { const newR = [...currentReservations]; newR[index].room_id = e.target.value; setCurrentReservations(newR); }}
+                                className="flex-1 border-none text-xs font-bold focus:ring-0 p-1 outline-none cursor-pointer"
+                            >
+                                {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                             </select>
+                            <Input 
+                               type="date" 
+                               value={resa.start_date} 
+                               onChange={(e) => { const newR = [...currentReservations]; newR[index].start_date = e.target.value; setCurrentReservations(newR); }} 
+                               className="w-32 h-8 text-[11px] font-bold" 
+                           />
+                            <Input 
+                               type="time" 
+                               value={resa.start_time} 
+                               onChange={(e) => { const newR = [...currentReservations]; newR[index].start_time = e.target.value; setCurrentReservations(newR); }} 
+                               className="w-24 h-8 text-[11px] font-bold" 
+                           />
+                            <span className="text-slate-300 font-bold">-</span>
+                            <Input 
+                               type="time" 
+                               value={resa.end_time} 
+                               onChange={(e) => { const newR = [...currentReservations]; newR[index].end_time = e.target.value; setCurrentReservations(newR); }} 
+                               className="w-24 h-8 text-[11px] font-bold" 
+                           />
+                            <button type="button" onClick={() => setCurrentReservations(currentReservations.filter((_, i) => i !== index))} className="text-red-400 hover:text-red-600 p-2 transition-colors rounded-md hover:bg-red-50"><Trash2 className="w-4 h-4"/></button>
                         </div>
-                        <div>
-                             <label className="text-[9px] text-slate-400 uppercase mb-1 block">Déjà réglé (Acompte)</label>
-                             <div className="relative">
-                                <Input 
-                                    type="number" 
-                                    placeholder="0" 
-                                    className="h-8 bg-white"
-                                    value={currentLead.montant_paye || ''} 
-                                    onChange={e => setCurrentLead({...currentLead, montant_paye: parseFloat(e.target.value)})} 
-                                />
-                                <span className="absolute right-3 top-2 text-xs text-slate-400">€</span>
-                             </div>
-                        </div>
-                     </div>
-                 </div>
+                    ))}
+                </div>
 
-                 <div className="grid grid-cols-2 gap-3">
-                    <Input placeholder="Email" value={currentLead.email || ''} onChange={e => setCurrentLead({...currentLead, email: e.target.value})} />
-                    <Input placeholder="Téléphone" value={currentLead.telephone || ''} onChange={e => setCurrentLead({...currentLead, telephone: e.target.value})} />
-                 </div>
-                 
-                 <textarea className="w-full border border-slate-200 rounded-lg p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Notes & commentaires..." value={currentLead.commentaires || ''} onChange={e => setCurrentLead({...currentLead, commentaires: e.target.value})} />
+                {/* SECTION 4 : COMMERCIAL & FINANCE */}
+                <div className="space-y-4">
+                   <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider border-b border-indigo-100 pb-2">3. Commercial & Finance</h3>
+                   
+                   <div className="grid grid-cols-2 gap-4">
+                       <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block">Statut Commercial</label>
+                            <select 
+                               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white font-bold text-slate-700 h-10 outline-none"
+                               value={currentLead.statut || 'Nouveau'}
+                               onChange={e => setCurrentLead({...currentLead, statut: e.target.value as any})}
+                           >
+                               <option>Nouveau</option>
+                               <option>Devis envoyé</option>
+                               <option>Option</option>
+                               <option>Confirmé</option>
+                               <option>Refus</option>
+                           </select>
+                       </div>
+                       <div>
+                           <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block">Budget Estime (€)</label>
+                           <Input type="number" value={currentLead.budget_estime || ''} onChange={e => setCurrentLead({...currentLead, budget_estime: parseFloat(e.target.value)})} className="h-10 font-bold text-indigo-600" />
+                       </div>
+                   </div>
+
+                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                        <div className="flex justify-between items-center">
+                            <label className="text-[11px] font-bold text-slate-700 uppercase flex items-center gap-2">
+                                <Wallet className="w-4 h-4 text-emerald-500" /> Suivi Paiement
+                            </label>
+                            {(currentLead.budget_estime || 0) > 0 && (
+                               <div className={`px-3 py-1 rounded-full text-xs font-black shadow-sm ${(currentLead.budget_estime || 0) - (currentLead.montant_paye || 0) <= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                                   Reste à régler : {Math.max(0, (currentLead.budget_estime || 0) - (currentLead.montant_paye || 0)).toLocaleString()} €
+                               </div>
+                            )}
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                           <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block">État Facture</label>
+                                <select 
+                                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white font-medium h-10 outline-none"
+                                   value={currentLead.etat_paiement || 'Attente acompte'}
+                                   onChange={e => setCurrentLead({...currentLead, etat_paiement: e.target.value as any})}
+                                >
+                                   <option>Attente acompte</option>
+                                   <option>Acompte reçu</option>
+                                   <option>RGT/P</option>
+                                   <option>Soldé</option>
+                                   <option>Facture envoyée</option>
+                                   <option>Finalisé</option>
+                               </select>
+                           </div>
+                           <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block">Déjà réglé (Acompte)</label>
+                                <div className="relative">
+                                   <Input 
+                                       type="number" 
+                                       placeholder="0" 
+                                       className="h-10 bg-white font-bold"
+                                       value={currentLead.montant_paye || ''} 
+                                       onChange={e => setCurrentLead({...currentLead, montant_paye: parseFloat(e.target.value)})} 
+                                   />
+                                   <span className="absolute right-3 top-2.5 text-sm font-bold text-slate-400">€</span>
+                                </div>
+                           </div>
+                        </div>
+                   </div>
+                </div>
+
+                {/* SECTION 5 : NOTES */}
+                <div className="space-y-2">
+                    <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider border-b border-indigo-100 pb-2">4. Notes Internes</h3>
+                    <textarea 
+                        className="w-full border border-slate-200 rounded-xl p-4 text-sm min-h-[100px] resize-y focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm" 
+                        placeholder="Ajouter des notes, spécificités alimentaires, infos importantes..." 
+                        value={currentLead.commentaires || ''} 
+                        onChange={e => setCurrentLead({...currentLead, commentaires: e.target.value})} 
+                    />
+                </div>
+
+            </div> {/* Fin du BODY scrollable */}
+
+            {/* 3. FOOTER (Toujours visible en bas) */}
+            <div className="p-5 border-t border-slate-100 bg-slate-50 rounded-b-2xl shrink-0 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowModal(false)} className="font-bold bg-white text-slate-600 hover:text-slate-800">
+                  Annuler
+              </Button>
+              <Button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 shadow-md font-bold">
+                  Enregistrer le dossier
+              </Button>
             </div>
 
-            <div className="flex justify-end pt-2">
-              <Button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-700 text-white w-full shadow-md font-bold">Enregistrer</Button>
-            </div>
           </div>
         </div>
       )}
