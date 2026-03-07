@@ -47,7 +47,35 @@ const [quoteDate, setQuoteDate] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<any[]>([]);
 const [showSuggestions, setShowSuggestions] = useState<string | null>(null);
 const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
-const [editingItem, setEditingItem] = useState<any>(null); // <-- NOUVEAU
+const [editingItem, setEditingItem] = useState<any>(null);
+  const [toast, setToast] = useState<{msg: string, type: 'success'|'error'} | null>(null);
+  const [newItem, setNewItem] = useState({ category: 'Hébergement', name: '', price_ttc: 0, tva: 10 });
+
+  // ── @page print style injecté proprement ──
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.id = 'quote-print-style';
+    style.innerHTML = `
+      @page { size: A4; margin: 8mm !important; }
+      @media print {
+        body { background: white !important; font-size: 10pt; }
+        .print\:hidden, .print-hidden-input { display: none !important; }
+        section, .page-break-avoid { page-break-inside: avoid !important; break-inside: avoid !important; }
+        .p-6 { padding: 0.5rem !important; }
+        .mb-8 { margin-bottom: 1rem !important; }
+        .shadow-sm { box-shadow: none !important; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => { document.getElementById('quote-print-style')?.remove(); };
+  }, []);
+
+  // ── Helper toast ──
+  const showToast = (msg: string, type: 'success'|'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
  // 1. CHARGEMENT
   useEffect(() => {
@@ -151,8 +179,7 @@ const [editingItem, setEditingItem] = useState<any>(null); // <-- NOUVEAU
     const hotel_id = client.hotel_id || savedHotelId || user?.hotel_id;
 
     if (!hotel_id) {
-      alert("Erreur : ID Hôtel manquant.");
-      return;
+      showToast("ID Hôtel manquant", "error"); return;
     }
 
     setSaving(true);
@@ -193,25 +220,38 @@ const [editingItem, setEditingItem] = useState<any>(null); // <-- NOUVEAU
       }
 
       // --- ÉTAPE 2 : SAUVEGARDE DU DEVIS (QUOTES) ---
-      const quoteData = {
-        hotel_id: hotel_id,
-        client_id: seminarClientId,
-        lead_id: leadId, // <-- ON AJOUTE LE LIEN ICI
-        comment: teamNotes,
-        status: 'draft',
-        start_date: date || null,
-        end_date: date || null,
-        cancellation_terms: cancellationTerms,
-      };
-
-      let quoteId;
-      
-      // On cherche si un devis existe pour ce LEAD précis (et plus le client)
+      // On cherche d'abord si un devis existe déjà pour ce lead
       const { data: existingQuote } = await supabase
         .from('quotes')
-        .select('id')
+        .select('id, client_id')
         .eq('lead_id', leadId)
         .maybeSingle();
+
+      // Si le devis existe déjà, on ne retouche PAS client_id pour éviter
+      // le conflit UNIQUE — on met à jour uniquement les champs éditables.
+      // Si c'est un nouveau devis, on assigne le client.
+      const quoteData = existingQuote
+        ? {
+            hotel_id: hotel_id,
+            lead_id: leadId,
+            comment: teamNotes,
+            status: 'draft',
+            start_date: date || null,
+            end_date: date || null,
+            cancellation_terms: cancellationTerms,
+          }
+        : {
+            hotel_id: hotel_id,
+            client_id: seminarClientId,
+            lead_id: leadId,
+            comment: teamNotes,
+            status: 'draft',
+            start_date: date || null,
+            end_date: date || null,
+            cancellation_terms: cancellationTerms,
+          };
+
+      let quoteId;
 
       if (existingQuote) {
         const { error: updateError } = await supabase
@@ -241,6 +281,7 @@ const [editingItem, setEditingItem] = useState<any>(null); // <-- NOUVEAU
           quantity: parseInt(l.quantity) || 0,
           unit_price_ttc: parseFloat(l.unitPriceTTC) || 0,
           tva_rate: parseFloat(l.tvaRate) || 10,
+          date: l.date || date || null, // ← colonne date dans quote_items
           sort_order: index
         }));
 
@@ -248,10 +289,10 @@ const [editingItem, setEditingItem] = useState<any>(null); // <-- NOUVEAU
         if (itemsError) throw itemsError;
       }
 
-      alert("Devis enregistré avec succès !");
+      showToast("Devis enregistré ✓");
     } catch (err: any) {
       console.error("Détail erreur:", err);
-      alert(`Erreur : ${err.message}`);
+      showToast(err.message || "Erreur inconnue", "error");
     } finally {
       setSaving(false);
     }
@@ -270,57 +311,33 @@ const [editingItem, setEditingItem] = useState<any>(null); // <-- NOUVEAU
     window.location.href = `mailto:${client?.email}?subject=${subject}&body=${body}`;
   };
 
+  // ── Print helper (doit être déclaré avant tout return conditionnel) ──
+  const handlePrint = () => {
+    const fileName = `Devis ${client?.nom_client || 'Client'} - ${hotel?.nom || 'La Corniche'}`;
+    const originalTitle = document.title;
+    document.title = fileName;
+    window.print();
+    document.title = originalTitle;
+  };
+
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /></div>;
-
-<style dangerouslySetInnerHTML={{ __html: `
-  @page { 
-    size: A4; 
-    margin: 8mm !important; 
-  }
-  @media print {
-    body { background: white !important; font-size: 10pt; }
-    .print-hidden-input, .print\:hidden { display: none !important; }
-    
-    /* Éviter que les sections sautent de page inutilement */
-    section, .print-container { page-break-inside: avoid !important; }
-    
-    /* On réduit les paddings pour gagner de la place */
-    .p-6 { padding: 0.5rem !important; }
-    .mb-8 { margin-bottom: 1rem !important; }
-    
-    /* Suppression des bordures inutiles et ombres */
-    .shadow-sm, .border { border: none !important; box-shadow: none !important; }
-    
-    /* Forcer le rendu des couleurs d'impression */
-    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  }
-` }} />
-
-const handlePrint = () => {
-  // Construction du nom : Nom client - Numero - Nom Hôtel
-  const fileName = `${client?.nom_client || 'Client'}-${quoteNumber || 'EN_COURS'}-${hotel?.nom || 'La_Corniche'}`;
-  
-  const originalTitle = document.title;
-  document.title = fileName; // Change le titre pour le nom du fichier
-  
-  window.print();
-  
-  document.title = originalTitle; // Restaure le titre original après impression
-};
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-900 font-sans print:bg-white print:p-0">
-      <div className="print-container">
-
-      </div>
-     <div className="max-w-7xl mx-auto flex justify-between items-center mb-6 print:hidden">
+      {/* Toast notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-[500] px-5 py-3 rounded-2xl shadow-xl text-sm font-black uppercase tracking-widest transition-all animate-in slide-in-from-bottom-4 ${ toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white' }`}>
+          {toast.msg}
+        </div>
+      )}
+      <div className="max-w-7xl mx-auto flex justify-between items-center mb-6 print:hidden">
         <div className="flex gap-3">
   {/* Nouveau bouton PDF Pro */}
  <PDFDownloadLink 
   document={
     <QuotePDF 
       data={{
-        quoteNumber: quoteNumber || '12',
+        quoteNumber: quoteNumber ?? 'EN COURS',
         quoteDate: quoteDate ? new Date(quoteDate).toLocaleDateString('fr-FR') : '01/03/2026',
         clientName: client?.societe || client?.nom_client || 'Client',
         clientEmail: client?.email,
@@ -343,7 +360,7 @@ const handlePrint = () => {
       }} 
     />
   } 
-  fileName={`Devis_${quoteNumber || '12'}.pdf`}
+  fileName={`Devis ${client?.nom_client || 'Client'} - ${hotel?.nom || 'La Corniche'}.pdf`}
 >
   {({ loading }) => (
     <Button variant="outline" className="bg-white border-slate-200 font-bold shadow-sm">
@@ -780,7 +797,7 @@ const handlePrint = () => {
                                           setCatalog(catalog.map(i => i.id === editingItem.id ? editingItem : i));
                                           setEditingItem(null);
                                       } else {
-                                          alert("Erreur lors de la modification");
+                                          showToast("Erreur lors de la modification", "error");
                                       }
                                   }}
                               >
@@ -850,42 +867,49 @@ const handlePrint = () => {
       <div className="p-6 bg-slate-50 border-t border-slate-100">
         <h3 className="text-[10px] font-black text-slate-400 uppercase mb-3 tracking-widest">Ajouter une prestation</h3>
         <div className="flex flex-wrap gap-2">
-          <select id="new-item-cat" className="w-full sm:w-32 text-xs font-bold h-10 border border-slate-200 rounded shadow-sm px-2 focus:ring-indigo-500 focus:border-indigo-500">
-              <option value="Hébergement">Hébergement</option>
-              <option value="Restauration">Restauration</option>
-              <option value="Salles">Salles</option>
-              <option value="Autre">Autre</option>
+          <select
+            value={newItem.category}
+            onChange={e => setNewItem({...newItem, category: e.target.value})}
+            className="w-full sm:w-32 text-xs font-bold h-10 border border-slate-200 rounded shadow-sm px-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <option value="Hébergement">Hébergement</option>
+            <option value="Restauration">Restauration</option>
+            <option value="Salles">Salles</option>
+            <option value="Autre">Autre</option>
           </select>
-          <Input id="new-item-name" placeholder="Nom (ex: Taxe de séjour)" className="flex-1 text-xs font-bold h-10 shadow-sm min-w-[150px]" />
-          <Input id="new-item-price" type="number" step="0.01" placeholder="Prix TTC" className="w-24 text-xs font-bold h-10 shadow-sm" />
-          <select id="new-item-tva" className="w-20 text-xs font-bold h-10 border border-slate-200 rounded shadow-sm px-2 focus:ring-indigo-500 focus:border-indigo-500" defaultValue="10">
-              <option value="20">20%</option>
-              <option value="10">10%</option>
-              <option value="5.5">5.5%</option>
-              <option value="0">0%</option>
+          <Input
+            value={newItem.name}
+            onChange={e => setNewItem({...newItem, name: e.target.value})}
+            placeholder="Nom (ex: Taxe de séjour)"
+            className="flex-1 text-xs font-bold h-10 shadow-sm min-w-[150px]" />
+          <Input
+            type="number" step="0.01"
+            value={newItem.price_ttc || ''}
+            onChange={e => setNewItem({...newItem, price_ttc: parseFloat(e.target.value) || 0})}
+            placeholder="Prix TTC"
+            className="w-24 text-xs font-bold h-10 shadow-sm" />
+          <select
+            value={newItem.tva}
+            onChange={e => setNewItem({...newItem, tva: parseFloat(e.target.value)})}
+            className="w-20 text-xs font-bold h-10 border border-slate-200 rounded shadow-sm px-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <option value="20">20%</option>
+            <option value="10">10%</option>
+            <option value="5.5">5.5%</option>
+            <option value="0">0%</option>
           </select>
-          <Button 
+          <Button
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase text-[10px] px-4 h-10 w-full sm:w-auto"
             onClick={async () => {
-              const catEl = document.getElementById('new-item-cat') as HTMLSelectElement;
-              const nameEl = document.getElementById('new-item-name') as HTMLInputElement;
-              const priceEl = document.getElementById('new-item-price') as HTMLInputElement;
-              const tvaEl = document.getElementById('new-item-tva') as HTMLSelectElement;
-              
-              if (nameEl.value && priceEl.value) {
-                const { data } = await supabase.from('articles').insert([{
-                  hotel_id: hotel?.id || localStorage.getItem('selectedHotelId'),
-                  category: catEl.value,
-                  name: nameEl.value,
-                  price_ttc: parseFloat(priceEl.value),
-                  tva: parseFloat(tvaEl.value)
-                }]).select().single();
-                
-                if (data) {
-                    setCatalog([...catalog, data]);
-                    nameEl.value = "";
-                    priceEl.value = "";
-                }
+              if (!newItem.name || !newItem.price_ttc) return;
+              const { data } = await supabase.from('articles').insert([{
+                hotel_id: hotel?.id || localStorage.getItem('selectedHotelId'),
+                category: newItem.category,
+                name: newItem.name,
+                price_ttc: newItem.price_ttc,
+                tva: newItem.tva
+              }]).select().single();
+              if (data) {
+                setCatalog([...catalog, data]);
+                setNewItem({ category: 'Hébergement', name: '', price_ttc: 0, tva: 10 });
               }
             }}
           >Ajouter</Button>
