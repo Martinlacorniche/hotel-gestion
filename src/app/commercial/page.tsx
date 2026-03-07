@@ -96,11 +96,17 @@ const NT_PAYMENT_COLOR: Record<string, string> = {
 function CommentTooltip({ text }: { text: string }) {
   return (
     <div className="relative inline-flex ml-auto group/tip" onClick={(e) => e.stopPropagation()}>
-      <MessageSquareText className="w-3.5 h-3.5 text-indigo-300 cursor-default" />
-      <div className="pointer-events-none absolute bottom-full right-0 mb-2 w-64 p-3 bg-slate-900 text-white text-[10px] leading-relaxed rounded-xl shadow-2xl opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150 z-[80] whitespace-pre-wrap">
-        <div className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Notes internes</div>
+      <MessageSquareText className="w-4 h-4 text-gray-300 hover:text-gray-800 transition-colors cursor-help" />
+      
+      {/* Bulle alignée à droite (right-0) */}
+      <div className="pointer-events-none absolute bottom-full right-0 mb-2.5 w-64 p-3.5 bg-white border border-gray-200 text-gray-700 text-[11px] leading-relaxed rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.08)] opacity-0 group-hover/tip:opacity-100 transition-all duration-200 z-[100] whitespace-pre-wrap">
+        <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2 border-b border-gray-100 pb-1.5">
+          Notes internes
+        </div>
         {text}
-        <div className="absolute bottom-[-4px] right-3 w-2 h-2 bg-slate-900 rotate-45" />
+        
+        {/* Flèche vers le bas décalée sur la droite */}
+        <div className="absolute -bottom-[6px] right-2 w-3 h-3 bg-white border-b border-r border-gray-200 rotate-45" />
       </div>
     </div>
   );
@@ -747,7 +753,7 @@ export default function CommercialDashboard() {
                         const accentColor = isLate ? '#e53935' : '#e67e00';
                         return (
                           <div key={lead.id} onClick={() => openLeadModal(lead)}
-                            className="group relative nt-card rounded-2xl transition-all duration-200 cursor-pointer overflow-hidden"
+                            className="group relative nt-card rounded-2xl transition-all duration-200 cursor-pointer"
                             style={{borderLeft: `3px solid ${accentColor}`}}
                           >
                             <div className="pl-4 pr-4 pt-4 pb-3.5">
@@ -859,7 +865,7 @@ export default function CommercialDashboard() {
                           )}
 
                           <div onClick={() => openLeadModal(lead)}
-                            className="group relative nt-card rounded-2xl transition-all duration-200 cursor-pointer overflow-hidden"
+                           className="group relative nt-card rounded-2xl transition-all duration-200 cursor-pointer"
                             style={{borderLeft: `3px solid ${NT_STATUS_COLOR[lead.statut]}`}}
                           >
                             <div className="pl-4 pr-4 pt-4 pb-3.5 flex gap-4 items-start">
