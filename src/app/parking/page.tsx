@@ -14,11 +14,11 @@ import {
 import interact from "interactjs";
 
 // --- TAILLES HARDCODÉES ---
-const BOX_DATA: Record<string, string> = {
-  "Box1": "1.86m x 2.30m",
-  "Box2": "1.84m x 2.22m",
-  "Box9": "1.86m x 2.30m",
-  "Box24": "1.84m x 2.22m",
+const BOX_CONFIG: Record<string, { label: string; size: string }> = {
+  "Box1": { label: "Box 9", size: "1.86m x 2.30m" },
+  "Box2": { label: "Box 24", size: "1.84m x 2.22m" },
+  "Box9": { label: "Box 9", size: "1.86m x 2.30m" },
+  "Box24": { label: "Box 24", size: "1.84m x 2.22m" },
 };
 
 export default function ParkingPage() {
@@ -885,11 +885,13 @@ export default function ParkingPage() {
                 {parkings.map(p => (
                   <tr key={p.id} className="pf-tr">
                     <td className="pf-td-label">
-                      <div className="pf-box-name">{p.name}</div>
-                      {BOX_DATA[p.name] && (
-                        <div className="pf-box-size">{BOX_DATA[p.name]}</div>
-                      )}
-                    </td>
+  <div className="pf-box-name">
+    {BOX_CONFIG[p.name]?.label || p.name}
+  </div>
+  {BOX_CONFIG[p.name] && (
+    <div className="pf-box-size">{BOX_CONFIG[p.name].size}</div>
+  )}
+</td>
                     <td colSpan={monthDays.length} style={{ padding: 0, position: 'relative' }}>
                       {/* Clickable grid cells */}
                       <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
@@ -989,18 +991,36 @@ export default function ParkingPage() {
 
                 {/* Emplacement */}
                 <div>
-                  <label className="pf-label">Emplacement</label>
-                  <div style={{ position: 'relative' }}>
-                    <Car size={15} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#2E2E3A', zIndex: 1 }} />
-                    <select value={selectedParking || ""} onChange={(e) => setSelectedParking(e.target.value)} className="pf-input" style={{ paddingLeft: 46, cursor: 'pointer' }}>
-                      {parkings.map(p => (
-                        <option key={p.id} value={p.id} style={{ background: '#0A0A0C' }}>
-                          {p.name}{BOX_DATA[p.name] ? ` — ${BOX_DATA[p.name]}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+  <label className="pf-label">Emplacement</label>
+  <div style={{ position: 'relative' }}>
+    <Car size={15} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#2E2E3A', zIndex: 1 }} />
+    <select 
+  value={selectedParking || ""} 
+  onChange={(e) => setSelectedParking(e.target.value)} 
+  className="pf-input pf-input-select" 
+  style={{ paddingLeft: 46 }}
+>
+  {parkings
+    .reduce((acc: any[], p) => {
+      // On calcule le nom affiché (Box 9 au lieu de Box1, etc.)
+      const config = BOX_CONFIG[p.name];
+      const displayName = config ? config.label : p.name;
+      
+      // On ne l'ajoute que si ce nom n'est pas déjà dans la liste
+      if (!acc.find(item => item.displayName === displayName)) {
+        acc.push({ ...p, displayName, displaySize: config ? ` — ${config.size}` : '' });
+      }
+      return acc;
+    }, [])
+    .map(p => (
+      <option key={p.id} value={p.id}>
+        {p.displayName}{p.displaySize}
+      </option>
+    ))
+  }
+</select>
+  </div>
+</div>
 
                 {/* Dates */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
