@@ -35,7 +35,7 @@ const s = StyleSheet.create({
   },
   headerLeft: { flex: 1 },
   headerRight: { flex: 1, alignItems: 'flex-end' },
-  logo: { width: 90, height: 36 }, // hauteur fixe — pas d'auto
+  logo: { width: 50, height: 50, alignSelf: 'flex-start' },
   title: {
     fontSize: 18,
     fontFamily: 'Helvetica-Bold',
@@ -94,7 +94,9 @@ const s = StyleSheet.create({
   },
   tableRowAlt: { backgroundColor: '#fafbfc' },
   colDate:  { width: '13%', fontSize: 7, color: SLATE_400 },
-  colDesc:  { width: '42%', fontSize: 8, fontFamily: 'Helvetica-Bold', color: SLATE_800, paddingRight: 8 },
+  colDesc:       { width: '42%', paddingRight: 8 },
+  colDescTitle:  { fontSize: 8, fontFamily: 'Helvetica-Bold', color: SLATE_800 },
+  colDescDetail: { fontSize: 6.5, color: SLATE_400, marginTop: 2, lineHeight: 1.4 },
   colQty:   { width: '8%',  textAlign: 'center' },
   colPU:    { width: '13%', textAlign: 'right' },
   colTVA:   { width: '9%',  textAlign: 'center', color: SLATE_400 },
@@ -210,13 +212,16 @@ export const QuotePDF = ({ data, lines, totals }: any) => (
       </View>
 
       {lines.map((line: any, i: number) => (
-        <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]} wrap={false}>
-          <Text style={s.colDate}>{line.date}</Text>
-          <Text style={s.colDesc}>{line.description}</Text>
-          <Text style={s.colQty}>{line.quantity}</Text>
-          <Text style={s.colPU}>{line.unitPriceTTC} €</Text>
-          <Text style={s.colTVA}>{line.tvaRate}%</Text>
-          <Text style={s.colTotal}>{line.totalTTC} €</Text>
+        <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}, { alignItems: 'flex-start' }]} wrap={false}>
+          <Text style={[s.colDate, { paddingTop: 1 }]}>{line.date}</Text>
+          <View style={s.colDesc}>
+            <Text style={s.colDescTitle}>{line.description}</Text>
+            {line.detail ? <Text style={s.colDescDetail}>{line.detail}</Text> : null}
+          </View>
+          <Text style={[s.colQty, { paddingTop: 1 }]}>{line.quantity}</Text>
+          <Text style={[s.colPU,    { paddingTop: 1 }]}>{line.unitPriceTTC} €</Text>
+          <Text style={[s.colTVA,   { paddingTop: 1 }]}>{line.tvaRate}%</Text>
+          <Text style={[s.colTotal, { paddingTop: 1 }]}>{line.totalTTC} €</Text>
         </View>
       ))}
 

@@ -6,10 +6,10 @@ import { useAuth } from '@/context/AuthContext';
 import { format, isBefore, isToday, parseISO, getYear } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { 
-  Search, PlusCircle, Clock, 
+  Search, PlusCircle, Clock,
   Edit2, Trash2, Layout, XCircle, CalendarDays, ChevronDown,
   MessageSquareText, Wallet, Check,
-  FileText
+  FileText, Copy
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -329,6 +329,68 @@ export default function CommercialDashboard() {
     setLeads(prev => prev.filter(l => l.id !== id));
   };
 
+  const handleDuplicate = async (lead: Lead) => {
+    const trace = getUpdateTrace();
+    const { data: newLead, error } = await supabase
+      .from('suivi_commercial')
+      .insert([{
+        hotel_id: lead.hotel_id,
+        nom_client: lead.nom_client,
+        email: lead.email,
+        telephone: lead.telephone,
+        titre_demande: lead.titre_demande,
+        commentaires: lead.commentaires,
+        budget_estime: lead.budget_estime,
+        statut: 'Nouveau',
+        etat_paiement: 'Attente acompte',
+        montant_paye: 0,
+        date_evenement: null,
+        date_relance: null,
+        created_at: new Date().toISOString(),
+        ...trace
+      }])
+      .select()
+      .single();
+    if (error || !newLead) return alert('Erreur lors de la duplication');
+
+    // Copier le devis (lignes) si il existe
+    const { data: existingQuote } = await supabase
+      .from('quotes')
+      .select('*, quote_items(*)')
+      .eq('lead_id', lead.id)
+      .maybeSingle();
+
+    if (existingQuote?.quote_items?.length) {
+      const { data: newQuote } = await supabase
+        .from('quotes')
+        .insert([{
+          hotel_id: lead.hotel_id,
+          lead_id: newLead.id,
+          comment: existingQuote.comment,
+          status: 'draft',
+          cancellation_terms: existingQuote.cancellation_terms,
+        }])
+        .select()
+        .single();
+
+      if (newQuote) {
+        const items = existingQuote.quote_items.map((i: any, index: number) => ({
+          quote_id: newQuote.id,
+          label: i.label,
+          description: i.description || null,
+          quantity: i.quantity,
+          unit_price_ttc: i.unit_price_ttc,
+          tva_rate: i.tva_rate,
+          sort_order: index,
+        }));
+        await supabase.from('quote_items').insert(items);
+      }
+    }
+
+    await fetchLeads();
+    openLeadModal(newLead);
+  };
+
   const handleGlobalClick = () => {
     // plus de dropdowns inline
   };
@@ -359,15 +421,10 @@ export default function CommercialDashboard() {
       return matchSearch && matchFilter;
     });
 
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
     return filtered.sort((a, b) => {
-      const statusA = getRelanceStatus(a.date_relance, a.statut, a.etat_paiement);
-      const statusB = getRelanceStatus(b.date_relance, b.statut, b.etat_paiement);
-      const isUrgentA = statusA === 'late' || statusA === 'today';
-      const isUrgentB = statusB === 'late' || statusB === 'today';
-      if (isUrgentA && !isUrgentB) return -1;
-      if (!isUrgentA && isUrgentB) return 1;
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
       const timeA = a.date_evenement ? new Date(a.date_evenement).getTime() : Infinity;
       const timeB = b.date_evenement ? new Date(b.date_evenement).getTime() : Infinity;
       const isPastA = timeA < now.getTime();
@@ -621,61 +678,75 @@ export default function CommercialDashboard() {
                             ))}
                           </div>
 
-                          {/* Événements — gridRow:1, span réel */}
-                          {roomEvents.map(res=>{
-                            const endDate = res.end_date ?? res.start_date;
-                            const clL = res.start_date < WEEK[0].str;
-                            const clR = endDate > WEEK[6].str;
-                            const si = clL ? 0 : WEEK.findIndex(w=>w.str===res.start_date);
-                            const ei = clR ? 6 : WEEK.findIndex(w=>w.str===endDate);
-                            const multiDay = res.start_date !== endDate;
-                            const st = getPStyle(res.display_status);
-                            return (
-                              <div key={res.reservation_id}
-                                onClick={()=>window.open(`/devis?leadId=${res.lead_id}`,'_blank')}
-                                style={{
-                                  gridColumn:`${si+1} / ${ei+2}`,
-                                  gridRow:1,
-                                  position:'relative',
-                                  zIndex:2,
-                                  margin:`5px ${clR?0:4}px 5px ${clL?0:4}px`,
-                                  background:st.bg,
-                                  border:`1.5px solid ${st.border}`,
-                                  borderLeft: clL ? 'none' : `1.5px solid ${st.border}`,
-                                  borderRight: clR ? 'none' : `1.5px solid ${st.border}`,
-                                  color:st.color,
-                                  borderRadius:`${clL?3:10}px ${clR?3:10}px ${clR?3:10}px ${clL?3:10}px`,
-                                  cursor:'pointer',
-                                }}
-                                className="p-2 text-[10px] font-bold leading-tight transition-all hover:opacity-75">
-                                <div className="flex items-center gap-1.5 mb-0.5">
-                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:st.badge}} />
-                                  <span className="text-[8px] font-black uppercase tracking-widest opacity-60">{res.display_status}</span>
-                                  {clL && <span className="text-[8px] opacity-40 ml-0.5">←</span>}
-                                  {multiDay && !clR && <span className="ml-auto text-[8px] opacity-40">→ {endDate.substring(8)}</span>}
-                                  {clR && <span className="ml-auto text-[8px] opacity-40">→</span>}
-                                </div>
-                                <div className="font-black truncate">{res.nom_client}</div>
-                                <div className="truncate opacity-50 italic text-[9px]">{res.titre_demande||'—'}</div>
-                                {(res.start_time||res.end_time) && (
-                                  <div className="dm text-[9px] mt-1 opacity-60">{res.start_time?.substring(0,5)} – {res.end_time?.substring(0,5)}</div>
-                                )}
-                              </div>
-                            );
-                          })}
-
-                          {/* Boutons + par jour libre — gridRow:2, visibles au hover de la ligne */}
-                          {WEEK.map(({str},ci)=>{
-                            const busy = roomEvents.some(r=>r.start_date<=str&&(r.end_date??r.start_date)>=str);
-                            return (
-                              <button key={str}
-                                onClick={(e)=>{e.stopPropagation();openLeadModal(undefined,str,room.name);}}
-                                style={{gridColumn:ci+1,gridRow:2,zIndex:1,margin:'0 3px 4px 3px'}}
-                                className={`h-8 flex items-center justify-center transition-opacity rounded-xl border border-dashed border-gray-200 hover:bg-gray-50 hover:border-gray-300 ${busy?'opacity-0 pointer-events-none':'opacity-0 group-hover:opacity-100'}`}>
-                                <PlusCircle className="w-3.5 h-3.5 text-gray-300" />
-                              </button>
-                            );
-                          })}
+                          {/* Événements — placement anti-chevauchement */}
+                          {(()=>{
+                            // Calcul des lignes pour éviter les superpositions
+                            const slots: {row:number;si:number;ei:number}[] = [];
+                            let maxRow = 0;
+                            const eventsWithRows = roomEvents.map(res=>{
+                              const endDate = res.end_date ?? res.start_date;
+                              const clL = res.start_date < WEEK[0].str;
+                              const clR = endDate > WEEK[6].str;
+                              const si = clL ? 0 : WEEK.findIndex(w=>w.str===res.start_date);
+                              const ei = clR ? 6 : WEEK.findIndex(w=>w.str===endDate);
+                              let row = 1;
+                              while (slots.some(s=>s.row===row && s.si<=ei && s.ei>=si)) row++;
+                              slots.push({row,si,ei});
+                              if (row > maxRow) maxRow = row;
+                              return {res,si,ei,clL,clR,row};
+                            });
+                            return <>
+                              {eventsWithRows.map(({res,si,ei,clL,clR,row})=>{
+                                const endDate = res.end_date ?? res.start_date;
+                                const multiDay = res.start_date !== endDate;
+                                const st = getPStyle(res.display_status);
+                                return (
+                                  <div key={res.reservation_id}
+                                    onClick={()=>{ const id = res.reference_id; if(id) window.open(`/devis?leadId=${id}`,'_blank'); }}
+                                    style={{
+                                      gridColumn:`${si+1} / ${ei+2}`,
+                                      gridRow:row,
+                                      position:'relative',
+                                      zIndex:2,
+                                      margin:`5px ${clR?0:4}px 5px ${clL?0:4}px`,
+                                      background:st.bg,
+                                      border:`1.5px solid ${st.border}`,
+                                      borderLeft: clL ? 'none' : `1.5px solid ${st.border}`,
+                                      borderRight: clR ? 'none' : `1.5px solid ${st.border}`,
+                                      color:st.color,
+                                      borderRadius:`${clL?3:10}px ${clR?3:10}px ${clR?3:10}px ${clL?3:10}px`,
+                                      cursor:'pointer',
+                                    }}
+                                    className="p-2 text-[10px] font-bold leading-tight transition-all hover:opacity-75">
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:st.badge}} />
+                                      <span className="text-[8px] font-black uppercase tracking-widest opacity-60">{res.display_status}</span>
+                                      {clL && <span className="text-[8px] opacity-40 ml-0.5">←</span>}
+                                      {multiDay && !clR && <span className="ml-auto text-[8px] opacity-40">→ {endDate.substring(8)}</span>}
+                                      {clR && <span className="ml-auto text-[8px] opacity-40">→</span>}
+                                    </div>
+                                    <div className="font-black truncate">{res.nom_client}</div>
+                                    <div className="truncate opacity-50 italic text-[9px]">{res.titre_demande||'—'}</div>
+                                    {(res.start_time||res.end_time) && (
+                                      <div className="dm text-[9px] mt-1 opacity-60">{res.start_time?.substring(0,5)} – {res.end_time?.substring(0,5)}</div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {/* Boutons + par jour libre — en dessous de tous les événements */}
+                              {WEEK.map(({str},ci)=>{
+                                const busy = roomEvents.some(r=>r.start_date<=str&&(r.end_date??r.start_date)>=str);
+                                return (
+                                  <button key={str}
+                                    onClick={(e)=>{e.stopPropagation();openLeadModal(undefined,str,room.name);}}
+                                    style={{gridColumn:ci+1,gridRow:maxRow+1,zIndex:1,margin:'0 3px 4px 3px'}}
+                                    className={`h-8 flex items-center justify-center transition-opacity rounded-xl border border-dashed border-gray-200 hover:bg-gray-50 hover:border-gray-300 ${busy?'opacity-0 pointer-events-none':'opacity-0 group-hover:opacity-100'}`}>
+                                    <PlusCircle className="w-3.5 h-3.5 text-gray-300" />
+                                  </button>
+                                );
+                              })}
+                            </>;
+                          })()}
 
                         </div>
                       </div>
@@ -790,6 +861,13 @@ export default function CommercialDashboard() {
                                 title="Générer / Voir le devis"
                               >
                                 <FileText className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDuplicate(lead); }}
+                                className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-500 transition-all"
+                                title="Dupliquer ce dossier"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); openLeadModal(lead); }}
@@ -920,6 +998,13 @@ export default function CommercialDashboard() {
                                 title="Générer / Voir le devis"
                               >
                                 <FileText className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDuplicate(lead); }}
+                                className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-500 transition-all"
+                                title="Dupliquer ce dossier"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); openLeadModal(lead); }}

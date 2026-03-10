@@ -1,12 +1,16 @@
 'use client';
 import { useAuth } from '@/context/AuthContext';
-import { useState, useMemo, useEffect, Suspense } from 'react';
+import { useState, useMemo, useEffect, useRef, Suspense } from 'react';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient'; 
 import { 
-  Plus, Trash2, FileText, Send, AlertCircle, 
+  Trash2, FileText, Send, AlertCircle,
   ArrowLeft, Calculator, Calendar, User, Building2, MapPin,
-  StickyNote, Loader2, CheckCircle, Mail, Edit2 // <-- Ajout de Edit2
+  StickyNote, Loader2, CheckCircle, Mail, Edit2, Settings2, GripVertical
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +27,28 @@ const CATALOG_ITEMS = [
   { id: 'm2', category: 'Restauration', label: 'Menu Confort (3 temps)', priceTTC: 41, tva: 10 },
   { id: 's1', category: 'Salle', label: 'Location Telo Segreto', priceTTC: 358.80, tva: 20 },
 ];
+
+function SortableRow({ id, className, children }: {
+  id: string;
+  className?: string;
+  children: (dragHandleProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <tr
+      ref={setNodeRef}
+      className={className}
+      style={{
+        transform: CSS.Transform.toString(transform) || undefined,
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        background: isDragging ? '#f8fafc' : undefined,
+      }}
+    >
+      {children({ ...attributes, ...listeners })}
+    </tr>
+  );
+}
 
 function QuoteEditorContent() {
   
@@ -47,9 +73,13 @@ const [quoteDate, setQuoteDate] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<any[]>([]);
 const [showSuggestions, setShowSuggestions] = useState<string | null>(null);
 const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+const [isCatalogAdminMode, setIsCatalogAdminMode] = useState(false);
 const [editingItem, setEditingItem] = useState<any>(null);
+
+const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'} | null>(null);
-  const [newItem, setNewItem] = useState({ category: 'Hébergement', name: '', price_ttc: 0, tva: 10 });
+  const [newItem, setNewItem] = useState({ category: 'Hébergement', name: '', description: '', price_ttc: 0, tva: 10 });
 
   // ── @page print style injecté proprement ──
   useEffect(() => {
@@ -71,6 +101,26 @@ const [editingItem, setEditingItem] = useState<any>(null);
     return () => { document.getElementById('quote-print-style')?.remove(); };
   }, []);
 
+  // ── Drag and drop ──
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = lines.findIndex(l => l.id === active.id);
+      const newIndex = lines.findIndex(l => l.id === over.id);
+      setLines(arrayMove(lines, oldIndex, newIndex));
+    }
+  };
+
+  // ── Toujours une ligne vide prête en bas ──
+  useEffect(() => {
+    const last = lines[lines.length - 1];
+    if (!last || last.label.trim() !== '') {
+      const newId = Math.random().toString(36).substr(2,9);
+      setLines(prev => [...prev, { id: newId, label: '', quantity: 1, unitPriceTTC: 0, tvaRate: 10 }]);
+    }
+  }, [lines]);
+
   // ── Helper toast ──
   const showToast = (msg: string, type: 'success'|'error' = 'success') => {
     setToast({ msg, type });
@@ -79,7 +129,7 @@ const [editingItem, setEditingItem] = useState<any>(null);
 
  // 1. CHARGEMENT
   useEffect(() => {
-    if (!leadId) return;
+    if (!leadId || leadId === 'null' || leadId === 'undefined') return;
     
     async function loadData() {
       try {
@@ -127,20 +177,21 @@ const [editingItem, setEditingItem] = useState<any>(null);
             setLines(quote.quote_items
               .sort((a: any, b: any) => a.sort_order - b.sort_order)
               .map((i: any) => ({
-                id: i.id, 
-                label: i.label, 
-                quantity: i.quantity, 
-                unitPriceTTC: i.unit_price_ttc, 
+                id: i.id,
+                label: i.label,
+                description: i.description || '',
+                quantity: i.quantity,
+                unitPriceTTC: i.unit_price_ttc,
                 tvaRate: i.tva_rate,
                 date: i.date || date
               }))
             );
           }
         }
-      } catch (err) {
-        console.error("Erreur de chargement:", err);
-      } finally { 
-        setLoading(false); 
+      } catch (err: any) {
+        setLoadError(err?.message || "Erreur de chargement");
+      } finally {
+        setLoading(false);
       }
     }
     loadData();
@@ -274,14 +325,16 @@ const [editingItem, setEditingItem] = useState<any>(null);
       // --- ÉTAPE 3 : LIGNES DU DEVIS (QUOTE_ITEMS) ---
       await supabase.from('quote_items').delete().eq('quote_id', quoteId);
 
-      if (lines.length > 0) {
-        const itemsToInsert = lines.map((l, index) => ({
+      const filledLines = lines.filter(l => l.label.trim());
+      if (filledLines.length > 0) {
+        const itemsToInsert = filledLines.map((l, index) => ({
           quote_id: quoteId,
           label: l.label,
           quantity: parseInt(l.quantity) || 0,
           unit_price_ttc: parseFloat(l.unitPriceTTC) || 0,
-          tva_rate: parseFloat(l.tvaRate) || 10,
-          date: l.date || date || null, // ← colonne date dans quote_items
+          tva_rate: l.tvaRate != null ? parseFloat(l.tvaRate) : 10,
+          date: l.date || date || null,
+          description: l.description || null,
           sort_order: index
         }));
 
@@ -321,6 +374,12 @@ const [editingItem, setEditingItem] = useState<any>(null);
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /></div>;
+  if (loadError) return (
+    <div className="h-screen flex flex-col items-center justify-center gap-4 text-slate-500">
+      <p className="text-sm font-black uppercase tracking-widest text-red-400">{loadError}</p>
+      <button onClick={() => window.close()} className="text-xs font-bold underline underline-offset-2 hover:text-slate-800 transition-colors">Fermer cet onglet</button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-900 font-sans print:bg-white print:p-0">
@@ -345,9 +404,10 @@ const [editingItem, setEditingItem] = useState<any>(null);
         eventDate: date ? new Date(date).toLocaleDateString('fr-FR') : '--',
         conditions: cancellationTerms 
       }} 
-      lines={lines.map(l => ({
+      lines={lines.filter(l => l.label).map(l => ({
         date: (l.date || date) ? new Date(l.date || date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '--',
         description: l.label,
+        detail: l.description || '',
         quantity: l.quantity,
         unitPriceTTC: Number(l.unitPriceTTC).toFixed(2),
         tvaRate: l.tvaRate,
@@ -467,8 +527,11 @@ const [editingItem, setEditingItem] = useState<any>(null);
     </tr>
   </thead>
  <tbody>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <SortableContext items={lines.map(l => l.id)} strategy={verticalListSortingStrategy}>
     {lines.map((l) => (
-      <tr key={l.id} className="border-b border-slate-50 group hover:bg-slate-50/50">
+      <SortableRow key={l.id} id={l.id} className={`border-b border-slate-50 group hover:bg-slate-50/50${!l.label ? ' print:hidden' : ''}`}>
+      {(dragHandleProps) => (<>
         
         <td className="p-3 align-top">
           <div className="print:hidden">
@@ -482,11 +545,12 @@ const [editingItem, setEditingItem] = useState<any>(null);
         <td className="p-3 relative align-top">
           <div className="print:hidden">
             <textarea
-              ref={(el) => { 
-                if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } 
+              ref={(el) => {
+                lineRefs.current[l.id] = el;
+                if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
               }}
-              value={l.label} 
-              placeholder="Saisir un article..."
+              value={l.label}
+              placeholder="Tapez votre article..."
               onFocus={() => setShowSuggestions(l.id)}
               onBlur={() => setTimeout(() => setShowSuggestions(null), 200)}
               onChange={(e) => {
@@ -517,8 +581,20 @@ const [editingItem, setEditingItem] = useState<any>(null);
               </div>
             )}
           </div>
+          <textarea
+            value={l.description || ''}
+            placeholder="Détail (optionnel)..."
+            onChange={(e) => {
+              setLines(lines.map(x => x.id === l.id ? {...x, description: e.target.value} : x));
+              e.target.style.height = 'auto';
+              e.target.style.height = e.target.scrollHeight + 'px';
+            }}
+            className="w-full border-none bg-transparent text-[11px] text-slate-400 focus:ring-0 p-1 resize-none overflow-hidden leading-snug print:hidden"
+            rows={1}
+          />
           <div className="hidden print:block text-slate-800 font-bold leading-normal italic whitespace-pre-wrap break-words pt-1">
             {l.label}
+            {l.description && <div className="text-[8px] font-normal text-slate-500 mt-0.5 not-italic">{l.description}</div>}
           </div>
         </td>
 
@@ -553,28 +629,27 @@ const [editingItem, setEditingItem] = useState<any>(null);
         </td>
 
         <td className="p-3 align-top text-right print:hidden">
-          <button onClick={() => setLines(lines.filter(x => x.id !== l.id))} className="text-slate-200 hover:text-red-500 transition-colors p-1">
-            <Trash2 className="w-4 h-4"/>
-          </button>
+          <div className="flex items-center justify-end gap-0.5">
+            <button {...dragHandleProps} className="text-slate-200 hover:text-slate-500 cursor-grab active:cursor-grabbing p-1 touch-none">
+              <GripVertical className="w-4 h-4"/>
+            </button>
+            <button onClick={() => setLines(lines.filter(x => x.id !== l.id))} className="text-slate-200 hover:text-red-500 transition-colors p-1">
+              <Trash2 className="w-4 h-4"/>
+            </button>
+          </div>
         </td>
-      </tr>
+      </>)}</SortableRow>
     ))}
+    </SortableContext>
+    </DndContext>
   </tbody>
 </table>
             {/* REMPLACEMENT LIGNE 254 */}
 <div className="p-4 bg-slate-50/30 flex justify-between items-center border-t border-slate-100 print:hidden">
     <div className="flex gap-3">
-        <Button 
-          onClick={() => setLines([...lines, { id: Math.random().toString(36).substr(2,9), label: '', quantity: 1, unitPriceTTC: 0, tvaRate: 10 }])} 
-          variant="ghost" 
-          className="text-indigo-600 font-bold text-xs border border-dashed border-indigo-200 hover:bg-indigo-50"
-        >
-          <Plus className="w-4 h-4 mr-2" /> Ligne Libre
-        </Button>
-
-        <Button 
-          variant="outline" 
-          size="sm" 
+        <Button
+          variant="outline"
+          size="sm"
           className="text-[10px] font-black uppercase border-slate-200 text-slate-500 hover:text-indigo-600"
           onClick={() => setIsCatalogModalOpen(true)}
         >
@@ -726,15 +801,28 @@ const [editingItem, setEditingItem] = useState<any>(null);
       <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
         <div>
           <h2 className="text-xl font-black text-slate-800 uppercase italic">Catalogue Articles</h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gérer vos prestations et tarifs types</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cliquez sur un article pour l'ajouter au devis</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => setIsCatalogModalOpen(false)} className="rounded-full w-8 h-8 p-0">✕</Button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setIsCatalogAdminMode(v => !v); setEditingItem(null); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isCatalogAdminMode ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'text-slate-400 hover:text-slate-600 border border-slate-200'}`}
+            title="Mode admin : modifier / supprimer"
+          >
+            <Settings2 className="w-3.5 h-3.5" /> Admin
+          </button>
+          <Button variant="ghost" size="sm" onClick={() => { setIsCatalogModalOpen(false); setIsCatalogAdminMode(false); setEditingItem(null); }} className="rounded-full w-8 h-8 p-0">✕</Button>
+        </div>
       </div>
 
       <div className="p-6 max-h-[60vh] overflow-y-auto space-y-6">
+        {isCatalogAdminMode && (
+          <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-[10px] font-bold text-amber-700">
+            <Settings2 className="w-3.5 h-3.5 shrink-0" /> Mode admin actif — vous pouvez modifier et supprimer les articles.
+          </div>
+        )}
         {catalog.length === 0 && <div className="text-center py-10 text-slate-400 text-xs font-bold uppercase italic">Le catalogue est vide</div>}
-        
-        {/* Tri et regroupement automatique par catégorie */}
+
         {Object.entries(
             catalog.reduce((acc, item) => {
                 const cat = item.category || 'Général';
@@ -745,119 +833,109 @@ const [editingItem, setEditingItem] = useState<any>(null);
         ).sort(([catA], [catB]) => catA.localeCompare(catB)).map(([category, items]) => (
             <div key={category} className="space-y-2">
                 <h3 className="text-[10px] font-black uppercase text-indigo-400 tracking-widest border-b border-slate-100 pb-1">{category}</h3>
-                {items.map((item) => (
+                {(items as any[]).map((item) => (
                   editingItem?.id === item.id ? (
-                      /* MODE ÉDITION */
-                      <div key={item.id} className="flex flex-wrap gap-2 p-3 bg-indigo-50 border border-indigo-200 rounded-xl items-center">
-                          <select 
-                              value={editingItem.category || 'Général'} 
-                              onChange={e => setEditingItem({...editingItem, category: e.target.value})} 
-                              className="w-full sm:w-28 text-xs font-bold h-8 border border-slate-200 rounded px-1 focus:ring-indigo-500"
-                          >
-                              <option value="Hébergement">Hébergement</option>
-                              <option value="Restauration">Restauration</option>
-                              <option value="Salles">Salles</option>
-                              <option value="Autre">Autre</option>
-                              <option value="Général">Général</option>
-                          </select>
-                          <Input 
-                              value={editingItem.name} 
-                              onChange={e => setEditingItem({...editingItem, name: e.target.value})} 
-                              className="flex-1 text-xs font-bold h-8 px-2 min-w-[120px]" 
-                          />
-                          <Input 
-                              type="number" step="0.01" 
-                              value={editingItem.price_ttc} 
-                              onChange={e => setEditingItem({...editingItem, price_ttc: parseFloat(e.target.value)})} 
-                              className="w-20 text-xs font-bold h-8 px-2" 
-                          />
-                          <select 
-                              value={editingItem.tva} 
-                              onChange={e => setEditingItem({...editingItem, tva: parseFloat(e.target.value)})} 
-                              className="w-16 text-xs font-bold h-8 border border-slate-200 rounded px-1"
-                          >
-                              <option value="20">20%</option>
-                              <option value="10">10%</option>
-                              <option value="5.5">5.5%</option>
-                              <option value="0">0%</option>
-                          </select>
-                          <div className="flex gap-1 w-full sm:w-auto justify-end">
-                              <Button 
-                                  size="sm" 
-                                  className="bg-emerald-500 hover:bg-emerald-600 text-white h-8 px-3 text-[10px] uppercase font-black tracking-widest" 
-                                  onClick={async () => {
-                                      const { error } = await supabase.from('articles').update({ 
-                                          category: editingItem.category, 
-                                          name: editingItem.name, 
-                                          price_ttc: editingItem.price_ttc, 
-                                          tva: editingItem.tva 
-                                      }).eq('id', editingItem.id);
-                                      
-                                      if (!error) {
-                                          setCatalog(catalog.map(i => i.id === editingItem.id ? editingItem : i));
-                                          setEditingItem(null);
-                                      } else {
-                                          showToast("Erreur lors de la modification", "error");
-                                      }
-                                  }}
-                              >
-                                  OK
-                              </Button>
-                              <Button 
-                                  size="sm" 
-                                  variant="ghost" 
-                                  onClick={() => setEditingItem(null)} 
-                                  className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600"
-                              >
-                                  ✕
-                              </Button>
-                          </div>
+                    /* MODE ÉDITION (admin only) */
+                    <div key={item.id} className="flex flex-wrap gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl items-center">
+                      <select
+                        value={editingItem.category || 'Général'}
+                        onChange={e => setEditingItem({...editingItem, category: e.target.value})}
+                        className="w-full sm:w-28 text-xs font-bold h-8 border border-slate-200 rounded px-1 focus:ring-indigo-500"
+                      >
+                        <option value="Hébergement">Hébergement</option>
+                        <option value="Restauration">Restauration</option>
+                        <option value="Salles">Salles</option>
+                        <option value="Autre">Autre</option>
+                        <option value="Général">Général</option>
+                      </select>
+                      <Input
+                        value={editingItem.name}
+                        onChange={e => setEditingItem({...editingItem, name: e.target.value})}
+                        className="flex-1 text-xs font-bold h-8 px-2 min-w-[120px]"
+                      />
+                      <Input
+                        type="number" step="0.01"
+                        value={editingItem.price_ttc}
+                        onChange={e => setEditingItem({...editingItem, price_ttc: parseFloat(e.target.value)})}
+                        className="w-20 text-xs font-bold h-8 px-2"
+                      />
+                      <select
+                        value={editingItem.tva}
+                        onChange={e => setEditingItem({...editingItem, tva: parseFloat(e.target.value)})}
+                        className="w-16 text-xs font-bold h-8 border border-slate-200 rounded px-1"
+                      >
+                        <option value="20">20%</option>
+                        <option value="10">10%</option>
+                        <option value="5.5">5.5%</option>
+                        <option value="0">0%</option>
+                      </select>
+                      <Input
+                        value={editingItem.description || ''}
+                        onChange={e => setEditingItem({...editingItem, description: e.target.value})}
+                        placeholder="Description (optionnel)"
+                        className="w-full text-xs h-8 px-2"
+                      />
+                      <div className="flex gap-1 w-full sm:w-auto justify-end">
+                        <Button
+                          size="sm"
+                          className="bg-emerald-500 hover:bg-emerald-600 text-white h-8 px-3 text-[10px] uppercase font-black tracking-widest"
+                          onClick={async () => {
+                            const { error } = await supabase.from('articles').update({
+                              category: editingItem.category,
+                              name: editingItem.name,
+                              description: editingItem.description || null,
+                              price_ttc: editingItem.price_ttc,
+                              tva: editingItem.tva
+                            }).eq('id', editingItem.id);
+                            if (!error) {
+                              setCatalog(catalog.map(i => i.id === editingItem.id ? editingItem : i));
+                              setEditingItem(null);
+                            } else {
+                              showToast("Erreur lors de la modification", "error");
+                            }
+                          }}
+                        >OK</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingItem(null)} className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600">✕</Button>
                       </div>
+                    </div>
                   ) : (
-                      /* MODE LECTURE CLASSIQUE */
-                      <div key={item.id} className="flex items-center justify-between p-2 bg-white border border-slate-100 rounded-xl hover:border-indigo-200 transition-all group">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-black text-slate-700">{item.name}</span>
-                          <span className="text-[10px] font-bold text-indigo-500 uppercase">{item.price_ttc} € TTC — TVA {item.tva}%</span>
-                        </div>
-                        <div className="flex gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="text-slate-400 hover:text-indigo-600 h-8 w-8 p-0"
-                              title="Ajouter au devis"
-                              onClick={() => {
-                                setLines([...lines, { id: Math.random().toString(36).substr(2,9), label: item.name, quantity: 1, unitPriceTTC: item.price_ttc, tvaRate: item.tva }]);
-                                setIsCatalogModalOpen(false);
-                              }}
-                            >
-                              <Plus className="w-4 h-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="text-slate-400 hover:text-amber-500 h-8 w-8 p-0"
-                              title="Modifier l'article"
-                              onClick={() => setEditingItem(item)}
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="text-slate-400 hover:text-red-600 h-8 w-8 p-0"
-                              title="Supprimer"
-                              onClick={async () => {
-                                if(confirm("Supprimer définitivement cet article du catalogue ?")) {
-                                    await supabase.from('articles').delete().eq('id', item.id);
-                                    setCatalog(catalog.filter(i => i.id !== item.id));
-                                }
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                        </div>
+                    /* MODE LECTURE */
+                    <div key={item.id} className={`flex items-center justify-between p-3 bg-white border rounded-xl transition-all group ${isCatalogAdminMode ? 'border-amber-100 hover:border-amber-300' : 'border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer'}`}
+                      onClick={() => {
+                        if (isCatalogAdminMode) return;
+                        const newLine = { id: Math.random().toString(36).substr(2,9), label: item.name, description: item.description || '', quantity: 1, unitPriceTTC: item.price_ttc, tvaRate: item.tva };
+                        const last = lines[lines.length - 1];
+                        if (last && last.label.trim() === '') {
+                          setLines([...lines.slice(0, -1), newLine]);
+                        } else {
+                          setLines([...lines, newLine]);
+                        }
+                        setIsCatalogModalOpen(false);
+                      }}
+                    >
+                      <div className="flex flex-col min-w-0 mr-3">
+                        <span className="text-sm font-black text-slate-700">{item.name}</span>
+                        {item.description && <span className="text-[10px] text-slate-400 leading-snug mt-0.5">{item.description}</span>}
                       </div>
+                      <span className="text-[10px] font-bold text-indigo-500 uppercase shrink-0">{item.price_ttc} € TTC — TVA {item.tva}%</span>
+                      {isCatalogAdminMode && (
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" className="text-slate-400 hover:text-amber-500 h-8 w-8 p-0" onClick={() => setEditingItem(item)}>
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-slate-400 hover:text-red-600 h-8 w-8 p-0"
+                            onClick={async () => {
+                              if (confirm("Supprimer définitivement cet article du catalogue ?")) {
+                                await supabase.from('articles').delete().eq('id', item.id);
+                                setCatalog(catalog.filter(i => i.id !== item.id));
+                              }
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   )
                 ))}
             </div>
@@ -882,6 +960,11 @@ const [editingItem, setEditingItem] = useState<any>(null);
             placeholder="Nom (ex: Taxe de séjour)"
             className="flex-1 text-xs font-bold h-10 shadow-sm min-w-[150px]" />
           <Input
+            value={newItem.description}
+            onChange={e => setNewItem({...newItem, description: e.target.value})}
+            placeholder="Description (optionnel)"
+            className="w-full text-xs h-10 shadow-sm" />
+          <Input
             type="number" step="0.01"
             value={newItem.price_ttc || ''}
             onChange={e => setNewItem({...newItem, price_ttc: parseFloat(e.target.value) || 0})}
@@ -904,12 +987,13 @@ const [editingItem, setEditingItem] = useState<any>(null);
                 hotel_id: hotel?.id || localStorage.getItem('selectedHotelId'),
                 category: newItem.category,
                 name: newItem.name,
+                description: newItem.description || null,
                 price_ttc: newItem.price_ttc,
                 tva: newItem.tva
               }]).select().single();
               if (data) {
                 setCatalog([...catalog, data]);
-                setNewItem({ category: 'Hébergement', name: '', price_ttc: 0, tva: 10 });
+                setNewItem({ category: 'Hébergement', name: '', description: '', price_ttc: 0, tva: 10 });
               }
             }}
           >Ajouter</Button>
