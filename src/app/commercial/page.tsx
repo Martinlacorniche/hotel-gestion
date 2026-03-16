@@ -9,7 +9,7 @@ import {
   Search, PlusCircle, Clock,
   Edit2, Trash2, Layout, XCircle, CalendarDays, ChevronDown,
   MessageSquareText, Wallet, Check,
-  FileText, Copy
+  FileText, Copy, ScrollText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,7 @@ interface Lead {
   montant_paye?: number; 
   date_relance?: string | null;
   date_evenement?: string | null;
+  date_fin_evenement?: string | null;
   commentaires?: string;
   motif_perte?: string;
   updated_at?: string;
@@ -149,6 +150,7 @@ export default function CommercialDashboard() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [filterStatut, setFilterStatut] = useState<string>('Pipeline');
   const [clientSuggestions, setClientSuggestions] = useState<Lead[]>([]);
   const [planningData, setPlanningData] = useState<any[]>([]);
@@ -245,7 +247,7 @@ export default function CommercialDashboard() {
       const { data } = await supabase.from('seminar_reservations').select('*').eq('lead_id', lead.id);
       if (data) setCurrentReservations(data);
     } else {
-      setCurrentLead({ statut: 'Nouveau', etat_paiement: 'Attente acompte', budget_estime: 0, montant_paye: 0, date_relance: '', date_evenement: defaultDate || '' });
+      setCurrentLead({ statut: 'Nouveau', etat_paiement: 'Attente acompte', budget_estime: 0, montant_paye: 0, date_relance: '', date_evenement: defaultDate || '', date_fin_evenement: defaultDate || '' });
       if (defaultRoomName) {
         const room = rooms.find(r => r.name === defaultRoomName);
         if (room) {
@@ -285,13 +287,16 @@ export default function CommercialDashboard() {
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
     if (!currentLead.nom_client || !currentLead.titre_demande) return alert('Nom et Titre obligatoires');
+    setIsSaving(true);
     const trace = getUpdateTrace();
     const payload = {
       ...currentLead,
       hotel_id: selectedHotelId,
       date_relance: currentLead.date_relance === '' ? null : currentLead.date_relance,
       date_evenement: currentLead.date_evenement === '' ? null : currentLead.date_evenement,
+      date_fin_evenement: (currentLead.date_fin_evenement === '' || !currentLead.date_fin_evenement) ? (currentLead.date_evenement === '' ? null : currentLead.date_evenement) : currentLead.date_fin_evenement,
       ...trace
     };
     let leadId = currentLead.id;
@@ -310,7 +315,7 @@ export default function CommercialDashboard() {
           lead_id: leadId,
           room_id: r.room_id,
           start_date: r.start_date || currentLead.date_evenement,
-          end_date: r.start_date || currentLead.date_evenement,
+          end_date: r.end_date || r.start_date || currentLead.date_evenement,
           start_time: r.start_time || null,
           end_time: r.end_time || null,
           status: currentLead.statut === 'Confirmé' ? 'reserved' : 'option'
@@ -318,6 +323,7 @@ export default function CommercialDashboard() {
         await supabase.from('seminar_reservations').insert(resasToInsert);
       }
     }
+    setIsSaving(false);
     setShowModal(false);
     fetchLeads();
     fetchPlanning();
@@ -597,7 +603,7 @@ export default function CommercialDashboard() {
               <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-[0.15em]" style={{color:'#111'}}>
-                    Disponibilités Salles
+                    Planning & Disponibilités
                     <span className="ml-3 text-[10px] font-bold px-2 py-0.5 rounded-md bg-gray-100 text-gray-400 tracking-widest">S{weekNum}</span>
                   </h2>
                   <p className="dm text-[11px] mt-1" style={{color:'#aaa'}}>
@@ -636,6 +642,76 @@ export default function CommercialDashboard() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Ligne — Tous les événements */}
+                  {(() => {
+                    const weekLeads = leads.filter(l =>
+                      l.date_evenement &&
+                      l.statut !== 'Refus' &&
+                      l.date_evenement <= WEEK[6].str &&
+                      (l.date_fin_evenement || l.date_evenement) >= WEEK[0].str
+                    );
+                    if (weekLeads.length === 0) return null;
+                    const slots: {row:number;si:number;ei:number}[] = [];
+                    let maxRow = 0;
+                    const eventsWithRows = weekLeads.map(l => {
+                      const endDate = l.date_fin_evenement || l.date_evenement!;
+                      const clL = l.date_evenement! < WEEK[0].str;
+                      const clR = endDate > WEEK[6].str;
+                      const si = clL ? 0 : WEEK.findIndex(w => w.str === l.date_evenement);
+                      const ei = clR ? 6 : WEEK.findIndex(w => w.str === endDate);
+                      const siSafe = si < 0 ? 0 : si;
+                      const eiSafe = ei < 0 ? 6 : ei;
+                      let row = 1;
+                      while (slots.some(s => s.row === row && s.si <= eiSafe && s.ei >= siSafe)) row++;
+                      slots.push({row, si: siSafe, ei: eiSafe});
+                      if (row > maxRow) maxRow = row;
+                      return {l, si: siSafe, ei: eiSafe, clL, clR, row};
+                    });
+                    return (
+                      <div className="border-b-2 border-gray-200 group" style={{display:'grid',gridTemplateColumns:COLS,minHeight:'52px',background:'#fafafa'}}>
+                        <div className="p-4 border-r border-gray-200 sticky left-0 z-10 flex flex-col justify-center" style={{background:'#fafafa'}}>
+                          <span className="text-[9px] font-black uppercase tracking-widest" style={{color:'#aaa'}}>Tous</span>
+                        </div>
+                        <div style={{gridColumn:'span 7',position:'relative',display:'grid',gridTemplateColumns:'repeat(7,1fr)',gridAutoRows:'auto',gap:0}}>
+                          <div style={{position:'absolute',inset:0,display:'grid',gridTemplateColumns:'repeat(7,1fr)',pointerEvents:'none',zIndex:0}}>
+                            {WEEK.map(({str,tod},ci)=>(
+                              <div key={str} style={{background:tod?'#f8f9ff':'transparent',borderRight:ci<6?'1px solid #f3f4f6':'none'}} />
+                            ))}
+                          </div>
+                          {eventsWithRows.map(({l,si,ei,clL,clR,row})=>{
+                            const st = getPStyle(l.statut);
+                            const multiDay = (l.date_fin_evenement || l.date_evenement) !== l.date_evenement;
+                            return (
+                              <div key={l.id}
+                                onClick={()=>openLeadModal(l)}
+                                style={{
+                                  gridColumn:`${si+1} / ${ei+2}`,
+                                  gridRow:row,
+                                  position:'relative',
+                                  zIndex:2,
+                                  margin:`4px ${clR?0:4}px 4px ${clL?0:4}px`,
+                                  background:st.bg,
+                                  border:`1.5px solid ${st.border}`,
+                                  borderLeft: clL ? 'none' : `1.5px solid ${st.border}`,
+                                  borderRight: clR ? 'none' : `1.5px solid ${st.border}`,
+                                  color:st.color,
+                                  borderRadius:`${clL?3:10}px ${clR?3:10}px ${clR?3:10}px ${clL?3:10}px`,
+                                  cursor:'pointer',
+                                }}
+                                className="p-2 text-[10px] font-bold leading-tight transition-all hover:opacity-75">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:st.badge}} />
+                                  <span className="font-black truncate">{l.nom_client}</span>
+                                  {multiDay && !clR && <span className="ml-auto text-[8px] opacity-40">→ {(l.date_fin_evenement||'').substring(8)}</span>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Lignes salles */}
                   {rooms.map(room=>{
@@ -839,7 +915,10 @@ export default function CommercialDashboard() {
                               <div className="flex items-center gap-2 flex-wrap">
                                 {lead.date_evenement && (
                                   <span className="dm text-[10px] font-bold px-2.5 py-1 rounded-lg text-gray-500 bg-gray-50 border border-gray-100">
-                                    {format(parseISO(lead.date_evenement), 'dd MMM yy', { locale: fr }).toUpperCase()}
+                                    {lead.date_fin_evenement && lead.date_fin_evenement !== lead.date_evenement
+                                      ? `${format(parseISO(lead.date_evenement), 'dd MMM', { locale: fr })} → ${format(parseISO(lead.date_fin_evenement), 'dd MMM yy', { locale: fr })}`.toUpperCase()
+                                      : format(parseISO(lead.date_evenement), 'dd MMM yy', { locale: fr }).toUpperCase()
+                                    }
                                   </span>
                                 )}
                                 <NtStatusPill statut={lead.statut} />
@@ -861,6 +940,13 @@ export default function CommercialDashboard() {
                                 title="Générer / Voir le devis"
                               >
                                 <FileText className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); window.open(`/fiche?leadId=${lead.id}`, '_blank'); }}
+                                className="p-1.5 rounded-lg bg-violet-50 text-violet-600 border border-violet-100 hover:bg-violet-600 hover:text-white transition-all"
+                                title="Fiche de fonctions"
+                              >
+                                <ScrollText className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleDuplicate(lead); }}
@@ -998,6 +1084,13 @@ export default function CommercialDashboard() {
                                 title="Générer / Voir le devis"
                               >
                                 <FileText className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); window.open(`/fiche?leadId=${lead.id}`, '_blank'); }}
+                                className="p-1.5 rounded-lg bg-violet-50 text-violet-600 border border-violet-100 hover:bg-violet-600 hover:text-white transition-all"
+                                title="Fiche de fonctions"
+                              >
+                                <ScrollText className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleDuplicate(lead); }}
@@ -1151,7 +1244,7 @@ export default function CommercialDashboard() {
             MODAL
         ═══════════════════════════════════════ */}
         {showModal && (
-          <div className="fixed inset-0 flex items-center justify-center z-[100] p-4 sm:p-6" style={{background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)'}}>
+          <div className="fixed inset-0 flex items-center justify-center z-[100] p-4 sm:p-6" style={{background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)'}} onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
             <div className="w-full max-w-2xl flex flex-col max-h-[90vh] rounded-2xl overflow-hidden bg-white" style={{border: '1px solid #e8e8e8', boxShadow: '0 24px 80px rgba(0,0,0,0.12)'}}>
 
               <div className="flex justify-between items-center p-5 shrink-0 border-b border-gray-100">
@@ -1201,10 +1294,19 @@ export default function CommercialDashboard() {
                       </button>
                     ))}
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-[9px] font-black uppercase tracking-widest mb-2 text-gray-400">Date Événement</label>
-                      <input type="date" value={currentLead.date_evenement || ''} onChange={e => setCurrentLead({...currentLead, date_evenement: e.target.value})} className="nt-input w-full h-10 rounded-xl px-4 border outline-none" />
+                      <label className="block text-[9px] font-black uppercase tracking-widest mb-2 text-gray-400">Date début</label>
+                      <input type="date" value={currentLead.date_evenement || ''} onChange={e => {
+                        const val = e.target.value;
+                        const update: Partial<Lead> = { date_evenement: val };
+                        if (!currentLead.date_fin_evenement || currentLead.date_fin_evenement < val) update.date_fin_evenement = val;
+                        setCurrentLead({...currentLead, ...update});
+                      }} className="nt-input w-full h-10 rounded-xl px-4 border outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase tracking-widest mb-2 text-gray-400">Date fin</label>
+                      <input type="date" value={currentLead.date_fin_evenement || currentLead.date_evenement || ''} min={currentLead.date_evenement || undefined} onChange={e => setCurrentLead({...currentLead, date_fin_evenement: e.target.value})} className="nt-input w-full h-10 rounded-xl px-4 border outline-none" />
                     </div>
                     <div>
                       <label className="block text-[9px] font-black uppercase tracking-widest mb-2" style={{color: '#e67e00'}}>Prochaine Relance</label>
@@ -1291,8 +1393,8 @@ export default function CommercialDashboard() {
                 <button onClick={() => setShowModal(false)} className="px-5 h-10 rounded-xl text-sm font-black text-gray-500 hover:text-gray-900 bg-white border border-gray-200 transition-all">
                   Annuler
                 </button>
-                <button onClick={handleSave} className="px-8 h-10 rounded-xl text-sm font-black bg-gray-900 text-white hover:bg-gray-800 transition-all">
-                  Enregistrer
+                <button onClick={handleSave} disabled={isSaving} className="px-8 h-10 rounded-xl text-sm font-black bg-gray-900 text-white hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                  {isSaving ? 'Enregistrement…' : 'Enregistrer'}
                 </button>
               </div>
             </div>

@@ -514,6 +514,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
           </section>
 
           <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden print:border-none print:shadow-none">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <table className="w-full text-left border-collapse text-xs">
   <thead>
     <tr className="bg-slate-50 border-b border-slate-100 print:hidden">
@@ -527,7 +528,6 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
     </tr>
   </thead>
  <tbody>
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
     <SortableContext items={lines.map(l => l.id)} strategy={verticalListSortingStrategy}>
     {lines.map((l) => (
       <SortableRow key={l.id} id={l.id} className={`border-b border-slate-50 group hover:bg-slate-50/50${!l.label ? ' print:hidden' : ''}`}>
@@ -641,9 +641,9 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
       </>)}</SortableRow>
     ))}
     </SortableContext>
-    </DndContext>
   </tbody>
 </table>
+</DndContext>
             {/* REMPLACEMENT LIGNE 254 */}
 <div className="p-4 bg-slate-50/30 flex justify-between items-center border-t border-slate-100 print:hidden">
     <div className="flex gap-3">
