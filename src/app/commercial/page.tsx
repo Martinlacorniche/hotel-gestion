@@ -331,7 +331,15 @@ export default function CommercialDashboard() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Supprimer ce dossier ?')) return;
-    await supabase.from('suivi_commercial').delete().eq('id', id);
+    // Supprimer les dépendances d'abord
+    const { data: quotes } = await supabase.from('quotes').select('id').eq('lead_id', id);
+    if (quotes?.length) {
+      await supabase.from('quote_items').delete().in('quote_id', quotes.map(q => q.id));
+      await supabase.from('quotes').delete().eq('lead_id', id);
+    }
+    await supabase.from('seminar_reservations').delete().eq('lead_id', id);
+    const { error } = await supabase.from('suivi_commercial').delete().eq('id', id);
+    if (error) { alert(`Erreur suppression : ${error.message}`); return; }
     setLeads(prev => prev.filter(l => l.id !== id));
   };
 
