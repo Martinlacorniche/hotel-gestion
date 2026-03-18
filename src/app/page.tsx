@@ -375,6 +375,7 @@ export default function HotelDashboard() {
   const [objetsTrouves, setObjetsTrouves] = useState<any[]>([]);
   const [showAllObjets, setShowAllObjets] = useState(false);
   const [searchObjets, setSearchObjets] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     supabase.from('hotels').select('id, nom, has_parking, has_coworking')
@@ -703,7 +704,12 @@ export default function HotelDashboard() {
   };
 
   const ticketsVisibles = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     const visibles = tickets.filter((t) => {
+      if (q) {
+        const hay = `${t.titre || ''} ${t.auteur || ''} ${t.service || ''}`.toLowerCase();
+        return hay.includes(q);
+      }
       const actionDate = t.date_action ? new Date(t.date_action) : null;
       const endDate = t.date_fin ? new Date(t.date_fin) : actionDate;
       const validationDate = t.date_validation ? new Date(t.date_validation) : null;
@@ -715,13 +721,13 @@ export default function HotelDashboard() {
         return !!validationDate && current <= validationDate;
       }
       return true;
-    }).filter((t) => filterService === 'Tous' || t.service === filterService);
+    }).filter((t) => q ? true : filterService === 'Tous' || t.service === filterService);
 
     return visibles.sort((a, b) => {
       if (a.valide !== b.valide) return a.valide ? 1 : -1;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [tickets, filterService, selectedDate, showValidatedTickets]);
+  }, [tickets, filterService, selectedDate, showValidatedTickets, searchQuery]);
 
   const demandesVisibles = useMemo(() => {
     const selected = formatDate(selectedDate, 'yyyy-MM-dd');
@@ -744,7 +750,12 @@ export default function HotelDashboard() {
   }, [demandes, selectedDate, chauffeurs]);
 
   const consignesVisibles = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     let visibles = consignes.filter((c) => {
+      if (q) {
+        const hay = `${c.texte || ''} ${c.auteur || ''}`.toLowerCase();
+        return hay.includes(q);
+      }
       const creationDate = c.date_creation ? new Date(c.date_creation) : null;
       const endDate = c.date_fin ? new Date(c.date_fin) : creationDate;
       const validationDate = c.date_validation ? new Date(c.date_validation) : null;
@@ -761,7 +772,7 @@ export default function HotelDashboard() {
       if (a.valide !== b.valide) return a.valide ? 1 : -1;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [consignes, selectedDate, showValidatedConsignes]);
+  }, [consignes, selectedDate, showValidatedConsignes, searchQuery]);
 
   const taxisVisibles = useMemo(() => {
     const currentDate = format(selectedDate, 'yyyy-MM-dd');
@@ -976,6 +987,26 @@ const birthdayMessage = useMemo(() => {
             <LogOut className="w-4 h-4" />
           </Button>
         </div>
+      </div>
+
+      {/* --- BARRE DE RECHERCHE GLOBALE --- */}
+      <div className="relative mb-6 w-full max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Rechercher…"
+          className="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-200 bg-white shadow-sm text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
+          >
+            <XCircle className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* --- GRID MAIN --- */}
