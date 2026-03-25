@@ -2,13 +2,26 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { PDFDownloadLink } from '@react-pdf/renderer';
+import { BlobProvider } from '@react-pdf/renderer';
 import { FichePDF } from './FichePDF';
-import { ArrowLeft, Download, Save, Loader2, CheckCircle } from 'lucide-react';
+import { CombinedPDF } from './CombinedPDF';
+import { ArrowLeft, Printer, Save, Loader2, CheckCircle, Plus, ChevronUp, ChevronDown, Trash2, FileDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
-const DISPOSITIONS = ['Théâtre', 'En U', 'Cabaret', 'Banquet', 'Cocktail', 'Classe', 'Boardroom'];
+type RowType = 'seminaire' | 'repas' | 'pause' | 'autre';
+interface ProgRow { id: string; date: string; heure: string; label: string; salle: string; disposition: string; type: RowType; }
+
+const TYPE_STYLES: Record<RowType, string> = {
+  seminaire: 'bg-teal-50 text-teal-700 border-teal-200',
+  repas:     'bg-green-50 text-green-700 border-green-200',
+  pause:     'bg-amber-50 text-amber-700 border-amber-200',
+  autre:     'bg-gray-50 text-gray-600 border-gray-200',
+};
+
+function newRow(overrides: Partial<ProgRow> = {}): ProgRow {
+  return { id: crypto.randomUUID(), date: '', heure: '', label: '', salle: '', disposition: '', type: 'autre', ...overrides };
+}
 
 function FicheContent() {
   const searchParams = useSearchParams();
@@ -22,23 +35,13 @@ function FicheContent() {
   const [rooms, setRooms] = useState<any[]>([]);
   const [quoteItems, setQuoteItems] = useState<any[]>([]);
   const [ficheId, setFicheId] = useState<string | null>(null);
+  const [programmeRows, setProgrammeRows] = useState<ProgRow[]>([]);
+  const [quoteMetadata, setQuoteMetadata] = useState<any>(null);
 
   const [fiche, setFiche] = useState({
-    nb_personnes: '',
-    programme: '',
-    disposition_salle: 'Théâtre',
-    materiel: '',
-    heure_petitdej: '',
-    heure_pause_matin: '',
-    heure_dejeuner: '',
-    heure_pause_aprem: '',
-    heure_diner: '',
-    regimes_speciaux: '',
-    notes_housekeeping: '',
-    notes_reception: '',
-    notes_direction: '',
-    notes_food: '',
-    notes_night: '',
+    notes_generales: '',
+    notes_gaetan: '',
+    notes_facturation: '',
   });
 
   useEffect(() => {
@@ -46,63 +49,96 @@ function FicheContent() {
     async function load() {
       setLoading(true);
 
-      // Lead
       const { data: leadData } = await supabase.from('suivi_commercial').select('*').eq('id', leadId).single();
       if (leadData) setLead(leadData);
 
-      // Hotel
       const hotelId = leadData?.hotel_id || localStorage.getItem('selectedHotelId');
       if (hotelId) {
         const { data: hotelData } = await supabase.from('hotels').select('*').eq('id', hotelId).single();
         if (hotelData) setHotel(hotelData);
       }
 
-      // Réservations salles
       const { data: resaData } = await supabase
         .from('seminar_reservations')
         .select('*, seminar_rooms(name)')
         .eq('lead_id', leadId);
-      if (resaData) setRooms(resaData.map((r: any) => ({ ...r, room_name: r.seminar_rooms?.name })));
+      const roomsList = (resaData || []).map((r: any) => ({ ...r, room_name: r.seminar_rooms?.name }));
+      setRooms(roomsList);
 
-      // Quote items
       const { data: quoteData } = await supabase
         .from('quotes')
         .select('*, quote_items(*)')
         .eq('lead_id', leadId)
         .maybeSingle();
-      if (quoteData?.quote_items) setQuoteItems(quoteData.quote_items);
+      const loadedItems: any[] = quoteData?.quote_items || [];
+      if (loadedItems.length) setQuoteItems(loadedItems);
+      if (quoteData) setQuoteMetadata(quoteData);
 
-      // Fiche existante
       const { data: ficheData } = await supabase
         .from('fiches_fonctions')
         .select('*')
         .eq('lead_id', leadId)
         .maybeSingle();
+
       if (ficheData) {
         setFicheId(ficheData.id);
         setFiche({
-          nb_personnes:       ficheData.nb_personnes ?? '',
-          programme:          ficheData.programme ?? '',
-          disposition_salle:  ficheData.disposition_salle ?? 'Théâtre',
-          materiel:           ficheData.materiel ?? '',
-          heure_petitdej:     ficheData.heure_petitdej ?? '',
-          heure_pause_matin:  ficheData.heure_pause_matin ?? '',
-          heure_dejeuner:     ficheData.heure_dejeuner ?? '',
-          heure_pause_aprem:  ficheData.heure_pause_aprem ?? '',
-          heure_diner:        ficheData.heure_diner ?? '',
-          regimes_speciaux:   ficheData.regimes_speciaux ?? '',
-          notes_housekeeping: ficheData.notes_housekeeping ?? '',
-          notes_reception:    ficheData.notes_reception ?? '',
-          notes_direction:    ficheData.notes_direction ?? '',
-          notes_food:         ficheData.notes_food ?? '',
-          notes_night:        ficheData.notes_night ?? '',
+          notes_generales:   ficheData.notes_housekeeping ?? '',
+          notes_gaetan:      ficheData.notes_reception ?? '',
+          notes_facturation: ficheData.notes_food ?? '',
         });
       }
+
+      // Programme rows — charger depuis JSON ou pré-remplir depuis les salles
+      const defaultDate = (leadData?.date_evenement || '').substring(0, 10);
+      let rows: ProgRow[] = [];
+      if (ficheData?.programme) {
+        try {
+          const parsed = JSON.parse(ficheData.programme);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Combler les dates vides avec la date de l'événement
+            rows = parsed.map((r: any) => ({ ...r, date: r.date || defaultDate }));
+          }
+        } catch {}
+      }
+      if (rows.length === 0) {
+        if (roomsList.length > 0) {
+          rows = roomsList.flatMap((r: any) => [
+            newRow({ date: (r.start_date || defaultDate).substring(0, 10), heure: r.start_time?.substring(0,5) || '', label: 'Début séminaire', salle: r.room_name || '', type: 'seminaire' }),
+            newRow({ date: (r.end_date || r.start_date || defaultDate).substring(0, 10), heure: r.end_time?.substring(0,5) || '', label: 'Fin séminaire', salle: r.room_name || '', type: 'seminaire' }),
+          ]);
+        }
+        // Ajouter automatiquement les items Restauration du devis
+        const restaurItems = loadedItems.filter((i: any) => i.category === 'Restauration' && i.label?.trim());
+        rows.push(...restaurItems.map((i: any) =>
+          newRow({ date: defaultDate, label: `${i.quantity}× ${i.label}`, type: 'repas' })
+        ));
+      }
+      setProgrammeRows(rows);
 
       setLoading(false);
     }
     load();
   }, [leadId]);
+
+  // ── Handlers programme ──
+  const addRow = () => setProgrammeRows(prev => [...prev, newRow({ date: (lead?.date_evenement || '').substring(0, 10) })]);
+  const removeRow = (id: string) => setProgrammeRows(prev => prev.filter(r => r.id !== id));
+  const updateRow = (id: string, field: keyof ProgRow, val: string) =>
+    setProgrammeRows(prev => prev.map(r => r.id === id ? { ...r, [field]: val } : r));
+  const moveRow = (idx: number, dir: number) => {
+    const next = [...programmeRows];
+    const target = idx + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setProgrammeRows(next);
+  };
+  const importFromDevis = () => {
+    const toAdd = quoteItems
+      .filter(i => i.label?.trim())
+      .map(i => newRow({ date: (lead?.date_evenement || '').substring(0, 10), label: `${i.quantity}× ${i.label}`, type: 'repas' }));
+    setProgrammeRows(prev => [...prev, ...toAdd]);
+  };
 
   const handleSave = async () => {
     if (!leadId || saving) return;
@@ -111,31 +147,18 @@ function FicheContent() {
     const payload = {
       lead_id: leadId,
       hotel_id: hotelId,
-      nb_personnes:       fiche.nb_personnes ? Number(fiche.nb_personnes) : null,
-      programme:          fiche.programme || null,
-      disposition_salle:  fiche.disposition_salle || null,
-      materiel:           fiche.materiel || null,
-      heure_petitdej:     fiche.heure_petitdej || null,
-      heure_pause_matin:  fiche.heure_pause_matin || null,
-      heure_dejeuner:     fiche.heure_dejeuner || null,
-      heure_pause_aprem:  fiche.heure_pause_aprem || null,
-      heure_diner:        fiche.heure_diner || null,
-      regimes_speciaux:   fiche.regimes_speciaux || null,
-      notes_housekeeping: fiche.notes_housekeeping || null,
-      notes_reception:    fiche.notes_reception || null,
-      notes_direction:    fiche.notes_direction || null,
-      notes_food:         fiche.notes_food || null,
-      notes_night:        fiche.notes_night || null,
+      programme:          JSON.stringify(programmeRows),
+      notes_housekeeping: fiche.notes_generales || null,
+      notes_reception:    fiche.notes_gaetan || null,
+      notes_food:         fiche.notes_facturation || null,
       updated_at: new Date().toISOString(),
     };
-
     if (ficheId) {
       await supabase.from('fiches_fonctions').update(payload).eq('id', ficheId);
     } else {
       const { data } = await supabase.from('fiches_fonctions').insert([payload]).select().single();
       if (data) setFicheId(data.id);
     }
-
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -143,10 +166,51 @@ function FicheContent() {
 
   const set = (field: string, val: string) => setFiche(prev => ({ ...prev, [field]: val }));
 
-  const pdfData = {
-    lead, hotel, rooms, quoteItems, fiche,
-    ficheDate: format(new Date(), 'dd/MM/yyyy', { locale: fr }),
-  };
+  const ficheDate = format(new Date(), 'dd/MM/yyyy', { locale: fr });
+  const pdfData = { lead, hotel, rooms, quoteItems, fiche, programmeRows, ficheDate };
+
+  // Données pour le PDF combiné (fiche + devis)
+  const combinedPdfData = (() => {
+    const getHT = (ttc: number, rate: number) => ttc / (1 + rate / 100);
+    const filtered = quoteItems.filter(i => i.label?.trim());
+    const lines = filtered.map(i => ({
+      date: i.date ? new Date(i.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '--',
+      description: i.label,
+      detail: i.description || '',
+      quantity: i.quantity,
+      unitPriceTTC: i.unit_price_ttc,
+      tvaRate: i.tva_rate || 10,
+      totalTTC: ((i.quantity || 0) * (i.unit_price_ttc || 0)).toFixed(2),
+    }));
+    let ht = 0, ttc = 0;
+    const tvaDetails: Record<number, { ht: number; tva: number }> = {};
+    filtered.forEach(i => {
+      const lineTtc = (i.quantity || 0) * (i.unit_price_ttc || 0);
+      const rate = i.tva_rate || 10;
+      const lineHt = getHT(lineTtc, rate);
+      ht += lineHt; ttc += lineTtc;
+      if (!tvaDetails[rate]) tvaDetails[rate] = { ht: 0, tva: 0 };
+      tvaDetails[rate].ht += lineHt;
+      tvaDetails[rate].tva += lineTtc - lineHt;
+    });
+    return {
+      data: {
+        quoteNumber: quoteMetadata?.quote_number || 'EN COURS',
+        quoteDate: quoteMetadata?.created_at ? new Date(quoteMetadata.created_at).toLocaleDateString('fr-FR') : ficheDate,
+        clientName: lead?.nom_client || '',
+        clientEmail: lead?.email || '',
+        eventTitle: lead?.titre_demande || '',
+        eventDate: lead?.date_evenement ? new Date(lead.date_evenement).toLocaleDateString('fr-FR') : '--',
+        conditions: quoteMetadata?.cancellation_terms || [
+          "Versement de l'acompte 50% non remboursable à la signature.",
+          "Annulation et modification sans frais supplémentaire jusqu'à J-30.",
+          "Paiement du solde à réception de facture.",
+        ],
+      },
+      lines,
+      totals: { ht: ht.toFixed(2), ttc: ttc.toFixed(2), tvaDetails },
+    };
+  })();
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -167,6 +231,8 @@ function FicheContent() {
     ? ` → ${format(new Date(lead.date_fin_evenement), 'dd MMM yyyy', { locale: fr })}`
     : '';
 
+  const devisItems = quoteItems.filter((i: any) => i.label?.trim());
+
   return (
     <div className="min-h-screen bg-gray-50">
 
@@ -182,17 +248,32 @@ function FicheContent() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <PDFDownloadLink
-            document={<FichePDF data={pdfData} />}
-            fileName={`fiche-${lead.nom_client.toLowerCase().replace(/\s+/g, '-')}.pdf`}
-          >
-            {({ loading: pdfLoading }) => (
-              <button disabled={pdfLoading} className="flex items-center gap-1.5 px-4 h-9 rounded-xl text-xs font-black border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-all disabled:opacity-50">
-                <Download className="w-3.5 h-3.5" />
-                {pdfLoading ? 'Génération…' : 'Télécharger PDF'}
+          <BlobProvider document={<FichePDF data={pdfData} />}>
+            {({ url, loading: pdfLoading }) => (
+              <button
+                disabled={pdfLoading || !url}
+                onClick={() => url && window.open(url, '_blank')}
+                className="flex items-center gap-1.5 px-4 h-9 rounded-xl text-xs font-black border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-all disabled:opacity-50"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                {pdfLoading ? 'Génération…' : 'Imprimer Fiche'}
               </button>
             )}
-          </PDFDownloadLink>
+          </BlobProvider>
+          {quoteItems.length > 0 && (
+            <BlobProvider document={<CombinedPDF ficheData={pdfData} quoteData={combinedPdfData} />}>
+              {({ url, loading: pdfLoading }) => (
+                <button
+                  disabled={pdfLoading || !url}
+                  onClick={() => url && window.open(url, '_blank')}
+                  className="flex items-center gap-1.5 px-4 h-9 rounded-xl text-xs font-black border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 transition-all disabled:opacity-50"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  {pdfLoading ? 'Génération…' : 'Imprimer Fiche + Devis'}
+                </button>
+              )}
+            </BlobProvider>
+          )}
           <button onClick={handleSave} disabled={saving} className="flex items-center gap-1.5 px-5 h-9 rounded-xl text-xs font-black bg-gray-900 text-white hover:bg-gray-800 transition-all disabled:opacity-50">
             {saved ? <CheckCircle className="w-3.5 h-3.5" /> : saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             {saved ? 'Enregistré' : saving ? 'Enregistrement…' : 'Enregistrer'}
@@ -200,9 +281,9 @@ function FicheContent() {
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
+      <div className="max-w-6xl mx-auto px-8 py-8 space-y-6">
 
-        {/* ── Infos auto (lecture seule) ── */}
+        {/* ── Synthèse auto ── */}
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-300 mb-4">Synthèse (auto)</p>
           <div className="grid grid-cols-2 gap-4 text-sm">
@@ -227,10 +308,10 @@ function FicheContent() {
                 ))}
               </div>
             )}
-            {quoteItems.length > 0 && (
+            {devisItems.length > 0 && (
               <div>
                 <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1">Prestations devis</div>
-                {quoteItems.filter((i: any) => i.label?.trim()).map((i: any, idx: number) => (
+                {devisItems.map((i: any, idx: number) => (
                   <div key={idx} className="text-xs text-gray-700">{i.quantity}× {i.label}</div>
                 ))}
               </div>
@@ -238,73 +319,133 @@ function FicheContent() {
           </div>
         </div>
 
-        {/* ── Général ── */}
-        <Section title="Général" color="teal">
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Nombre de participants">
-              <input type="number" min="1" value={fiche.nb_personnes} onChange={e => set('nb_personnes', e.target.value)}
-                placeholder="ex. 30" className="nt-input w-full h-9 rounded-xl px-3 border text-sm outline-none" />
-            </Field>
-            <Field label="Disposition de salle">
-              <select value={fiche.disposition_salle} onChange={e => set('disposition_salle', e.target.value)}
-                className="nt-select w-full h-9 rounded-xl px-3 border text-sm outline-none">
-                {DISPOSITIONS.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </Field>
+        {/* ── Programme ── */}
+        <div className="bg-white rounded-2xl border border-teal-200 overflow-hidden">
+          <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-700">Programme</span>
+            {devisItems.length > 0 && (
+              <button onClick={importFromDevis}
+                className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-teal-600 hover:text-teal-900 transition-colors">
+                <FileDown className="w-3 h-3" />
+                Importer du devis
+              </button>
+            )}
           </div>
-          <Field label="Matériel requis">
-            <input value={fiche.materiel} onChange={e => set('materiel', e.target.value)}
-              placeholder="Projecteur, micro HF, paperboard, sono…" className="nt-input w-full h-9 rounded-xl px-3 border text-sm outline-none" />
-          </Field>
-          <Field label="Programme / notes générales">
-            <textarea value={fiche.programme} onChange={e => set('programme', e.target.value)}
-              placeholder="Agenda libre, informations particulières…" rows={3}
-              className="nt-input w-full rounded-xl px-3 py-2 border text-sm outline-none resize-none" />
-          </Field>
-        </Section>
-
-        {/* ── Horaires repas ── */}
-        <Section title="Food & Beverage — Horaires" color="green">
-          <div className="grid grid-cols-5 gap-3">
-            {[
-              { key: 'heure_petitdej',    label: 'Petit-déj' },
-              { key: 'heure_pause_matin', label: 'Pause matin' },
-              { key: 'heure_dejeuner',    label: 'Déjeuner' },
-              { key: 'heure_pause_aprem', label: 'Pause aprem' },
-              { key: 'heure_diner',       label: 'Dîner' },
-            ].map(({ key, label }) => (
-              <Field key={key} label={label}>
-                <input type="time" value={(fiche as any)[key]} onChange={e => set(key, e.target.value)}
-                  className="nt-input w-full h-9 rounded-xl px-2 border text-sm outline-none" />
-              </Field>
-            ))}
+          <div className="p-5">
+            {programmeRows.length > 0 && (
+              <div className="grid grid-cols-[130px_90px_110px_1fr_140px_120px_76px] gap-2 mb-2 px-1">
+                {['Date','Heure','Type','Moment','Salle','Disposition',''].map((h, i) => (
+                  <div key={i} className="text-[9px] font-black uppercase tracking-widest text-gray-400">{h}</div>
+                ))}
+              </div>
+            )}
+            <div className="space-y-1.5">
+              {programmeRows.map((row, i) => (
+                <div key={row.id} className="grid grid-cols-[130px_90px_110px_1fr_140px_120px_76px] gap-2 items-center">
+                  <input
+                    type="date" value={row.date}
+                    onChange={e => updateRow(row.id, 'date', e.target.value)}
+                    className="h-8 rounded-lg px-2 border border-gray-200 text-xs outline-none w-full focus:border-teal-400"
+                  />
+                  <input
+                    type="time" value={row.heure}
+                    onChange={e => updateRow(row.id, 'heure', e.target.value)}
+                    className="h-8 rounded-lg px-2 border border-gray-200 text-xs outline-none w-full focus:border-teal-400"
+                  />
+                  <select
+                    value={row.type}
+                    onChange={e => updateRow(row.id, 'type', e.target.value as RowType)}
+                    className={`h-8 rounded-lg px-2 border text-[10px] font-bold outline-none w-full ${TYPE_STYLES[row.type]}`}
+                  >
+                    <option value="seminaire">Séminaire</option>
+                    <option value="repas">Repas</option>
+                    <option value="pause">Pause</option>
+                    <option value="autre">Autre</option>
+                  </select>
+                  <input
+                    value={row.label}
+                    onChange={e => updateRow(row.id, 'label', e.target.value)}
+                    placeholder="Déjeuner, Pause café, Début séminaire…"
+                    className="h-8 rounded-lg px-3 border border-gray-200 text-sm outline-none w-full focus:border-teal-400"
+                  />
+                  <input
+                    value={row.salle}
+                    onChange={e => updateRow(row.id, 'salle', e.target.value)}
+                    placeholder="Salle, lieu…"
+                    className="h-8 rounded-lg px-3 border border-gray-200 text-sm outline-none w-full focus:border-teal-400"
+                  />
+                  <input
+                    value={row.disposition}
+                    onChange={e => updateRow(row.id, 'disposition', e.target.value)}
+                    placeholder={row.salle ? 'Théâtre, En U…' : ''}
+                    className={`h-8 rounded-lg px-3 border text-sm outline-none w-full focus:border-teal-400 ${row.salle ? 'border-gray-200' : 'border-gray-100 bg-gray-50 text-gray-300'}`}
+                  />
+                  <div className="flex items-center gap-0.5">
+                    <button onClick={() => moveRow(i, -1)} disabled={i === 0}
+                      className="p-1 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => moveRow(i, 1)} disabled={i === programmeRows.length - 1}
+                      className="p-1 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => removeRow(row.id)}
+                      className="p-1 rounded text-gray-300 hover:text-red-500 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button onClick={addRow}
+              className="mt-3 flex items-center gap-1.5 text-xs font-bold text-teal-600 hover:text-teal-900 transition-colors">
+              <Plus className="w-3.5 h-3.5" />
+              Ajouter une ligne
+            </button>
           </div>
-          <Field label="Régimes spéciaux / allergies">
-            <textarea value={fiche.regimes_speciaux} onChange={e => set('regimes_speciaux', e.target.value)}
-              placeholder="Sans gluten, végétarien, allergies noix…" rows={2}
-              className="nt-input w-full rounded-xl px-3 py-2 border text-sm outline-none resize-none" />
-          </Field>
-          <NoteField label="Notes Food & Bev" value={fiche.notes_food} onChange={v => set('notes_food', v)} />
+        </div>
+
+        {/* ── Notes Générales ── */}
+        <Section title="Notes Générales" color="blue">
+          <NoteField label="Notes pour toutes les équipes" value={fiche.notes_generales} onChange={v => set('notes_generales', v)} />
         </Section>
 
-        {/* ── Housekeeping ── */}
-        <Section title="Housekeeping" color="blue">
-          <NoteField label="Notes & instructions" value={fiche.notes_housekeeping} onChange={v => set('notes_housekeeping', v)} />
-        </Section>
+        {/* ── Mr. Cocktail (Gaëtan) ── */}
+        {lead.besoin_gaetan && lead.besoin_gaetan !== 'Pas besoin' && (
+          <Section title="Mr. Cocktail — Gaëtan" color="purple">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">Statut</span>
+              <span className="text-xs font-bold text-purple-700">{lead.besoin_gaetan}</span>
+            </div>
+            <NoteField label="Notes & instructions" value={fiche.notes_gaetan} onChange={v => set('notes_gaetan', v)} />
+          </Section>
+        )}
 
-        {/* ── Réception ── */}
-        <Section title="Réception" color="purple">
-          <NoteField label="Notes & instructions" value={fiche.notes_reception} onChange={v => set('notes_reception', v)} />
-        </Section>
-
-        {/* ── Direction ── */}
-        <Section title="Direction" color="amber">
-          <NoteField label="Notes & instructions" value={fiche.notes_direction} onChange={v => set('notes_direction', v)} />
-        </Section>
-
-        {/* ── Night ── */}
-        <Section title="Night" color="slate">
-          <NoteField label="Notes & instructions" value={fiche.notes_night} onChange={v => set('notes_night', v)} />
+        {/* ── Facturation ── */}
+        <Section title="Facturation" color="amber">
+          <div className="grid grid-cols-2 gap-3 mb-4 p-3 bg-amber-50 rounded-xl border border-amber-100">
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1">État paiement</div>
+              <div className="text-sm font-bold text-amber-700">{lead.etat_paiement || '—'}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1">Budget estimé</div>
+              <div className="text-sm font-bold text-gray-800">{lead.budget_estime ? `${Number(lead.budget_estime).toLocaleString('fr-FR')} €` : '—'}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1">Montant payé</div>
+              <div className="text-sm font-bold text-emerald-600">{lead.montant_paye ? `${Number(lead.montant_paye).toLocaleString('fr-FR')} €` : '—'}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1">Reste à payer</div>
+              <div className="text-sm font-bold text-red-600">
+                {(lead.budget_estime || lead.montant_paye)
+                  ? `${Math.max(0, Number(lead.budget_estime || 0) - Number(lead.montant_paye || 0)).toLocaleString('fr-FR')} €`
+                  : '—'}
+              </div>
+            </div>
+          </div>
+          <NoteField label="Notes facturation" value={fiche.notes_facturation} onChange={v => set('notes_facturation', v)} />
         </Section>
 
       </div>
@@ -312,22 +453,22 @@ function FicheContent() {
   );
 }
 
-// ── Petits composants UI ──
+// ── Composants UI ──
 
-const SECTION_COLORS: Record<string, { border: string; title: string; dot: string }> = {
-  teal:   { border: 'border-teal-200',   title: 'text-teal-700',   dot: 'bg-teal-500' },
-  green:  { border: 'border-green-200',  title: 'text-green-700',  dot: 'bg-green-500' },
-  blue:   { border: 'border-blue-200',   title: 'text-blue-700',   dot: 'bg-blue-500' },
-  purple: { border: 'border-purple-200', title: 'text-purple-700', dot: 'bg-purple-500' },
-  amber:  { border: 'border-amber-200',  title: 'text-amber-700',  dot: 'bg-amber-500' },
-  slate:  { border: 'border-gray-200',   title: 'text-gray-700',   dot: 'bg-gray-400' },
+const SECTION_COLORS: Record<string, { border: string; title: string }> = {
+  teal:   { border: 'border-teal-200',   title: 'text-teal-700'   },
+  green:  { border: 'border-green-200',  title: 'text-green-700'  },
+  blue:   { border: 'border-blue-200',   title: 'text-blue-700'   },
+  purple: { border: 'border-purple-200', title: 'text-purple-700' },
+  amber:  { border: 'border-amber-200',  title: 'text-amber-700'  },
+  slate:  { border: 'border-gray-200',   title: 'text-gray-700'   },
 };
 
 function Section({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
   const c = SECTION_COLORS[color] || SECTION_COLORS.slate;
   return (
     <div className={`bg-white rounded-2xl border ${c.border} overflow-hidden`}>
-      <div className="px-6 py-3 border-b border-gray-100 flex items-center gap-2">
+      <div className="px-6 py-3 border-b border-gray-100">
         <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${c.title}`}>{title}</span>
       </div>
       <div className="p-6 space-y-4">{children}</div>
@@ -348,7 +489,7 @@ function NoteField({ label, value, onChange }: { label: string; value: string; o
   return (
     <Field label={label}>
       <textarea value={value} onChange={e => onChange(e.target.value)}
-        placeholder="Notes pour ce service…" rows={3}
+        placeholder="Notes…" rows={3}
         className="nt-input w-full rounded-xl px-3 py-2 border text-sm outline-none resize-none" />
     </Field>
   );

@@ -166,9 +166,8 @@ const s = StyleSheet.create({
   },
 });
 
-export const QuotePDF = ({ data, lines, totals }: any) => (
-  <Document title={`Proposition Commerciale - ${data.clientName}`}>
-    <Page size="A4" style={s.page}>
+export const QuotePDFPage = ({ data, lines, totals }: any) => (
+  <Page size="A4" style={s.page}>
 
       {/* ── HEADER ── */}
       <View style={s.header} fixed>
@@ -284,6 +283,11 @@ export const QuotePDF = ({ data, lines, totals }: any) => (
         </View>
       </View>
 
-    </Page>
+  </Page>
+);
+
+export const QuotePDF = ({ data, lines, totals }: any) => (
+  <Document title={`Proposition Commerciale - ${data.clientName}`}>
+    <QuotePDFPage data={data} lines={lines} totals={totals} />
   </Document>
 );
