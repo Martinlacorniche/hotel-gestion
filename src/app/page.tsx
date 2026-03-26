@@ -10,10 +10,10 @@ import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { 
-  ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car, 
-  NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut, 
+  ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
+  NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
-  Wrench // Icône pour maintenance
+  Wrench, Tv2 // Icônes maintenance + chromecast
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
@@ -977,7 +977,12 @@ const birthdayMessage = useMemo(() => {
                 <a href={`/maintenance?hotel_id=${hotelId}`} target="_blank" className="flex flex-col items-center justify-center p-3 bg-yellow-50 hover:bg-yellow-100 rounded-lg text-yellow-700 gap-1">
                   <Wrench className="w-5 h-5" /> <span className="text-xs font-medium">Maintenance</span>
                 </a>
-                
+              )}
+              {/* Chromecast - Corniche uniquement */}
+              {currentHotel?.nom?.toLowerCase().includes("corniche") && (
+                <a href="/chromecast" target="_blank" className="flex flex-col items-center justify-center p-3 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-700 gap-1">
+                  <Tv2 className="w-5 h-5" /> <span className="text-xs font-medium">Chromecasts</span>
+                </a>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
