@@ -364,6 +364,10 @@ export default function ChromecastDashboard() {
     return () => clearInterval(interval);
   }, [user, fetchStatus]);
 
+  useEffect(() => {
+    document.title = 'Chromecast';
+  }, []);
+
   const handleDelete = async (room: Room, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm(`Supprimer ${room.name} ?`)) return;

@@ -40,7 +40,7 @@ export default function ParkingPage() {
   useEffect(() => {
     fetchParkings();
     fetchReservations();
-    document.title = 'Parking Flow | Dashboard';
+    document.title = 'Parking';
   }, []);
 
   useEffect(() => {

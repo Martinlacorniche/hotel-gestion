@@ -66,6 +66,12 @@ export default function PageCommandes() {
     }
   }, [hotelId]);
 
+  useEffect(() => {
+    const hotelName = hotels.find(h => h.id === selectedHotelId)?.nom;
+    const suffix = hotelName ? ` — ${hotelName}` : '';
+    document.title = `Commandes${suffix}`;
+  }, [selectedHotelId, hotels]);
+
   async function fetchData() {
     const { data: cmds } = await supabase.from('commandes').select('*').eq('hotel_id', hotelId).order('date_creation', { ascending: false });
     const { data: lgs } = await supabase.from('commandes_lignes').select('*');

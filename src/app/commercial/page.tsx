@@ -240,6 +240,12 @@ export default function CommercialDashboard() {
     }
   }, [selectedHotelId, viewDate]);
 
+  useEffect(() => {
+    const hotelName = hotels.find(h => h.id === selectedHotelId)?.nom;
+    const suffix = hotelName ? ` — ${hotelName}` : '';
+    document.title = `Commercial${suffix}`;
+  }, [selectedHotelId, hotels]);
+
   // --- MODAL ---
   const openLeadModal = async (lead?: Partial<Lead>, defaultDate?: string, defaultRoomName?: string) => {
     if (lead && lead.id) {

@@ -45,6 +45,11 @@ function FicheContent() {
   });
 
   useEffect(() => {
+    const hotelName = hotel?.nom ? ` — ${hotel.nom}` : '';
+    document.title = `Fiche de fonction${hotelName}`;
+  }, [hotel]);
+
+  useEffect(() => {
     if (!leadId) return;
     async function load() {
       setLoading(true);

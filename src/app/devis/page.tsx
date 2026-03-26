@@ -127,7 +127,12 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
     setTimeout(() => setToast(null), 3500);
   };
 
- // 1. CHARGEMENT
+   useEffect(() => {
+    const hotelName = hotel?.nom ? ` — ${hotel.nom}` : '';
+    document.title = `Devis${hotelName}`;
+  }, [hotel]);
+
+// 1. CHARGEMENT
   useEffect(() => {
     if (!leadId || leadId === 'null' || leadId === 'undefined') return;
     

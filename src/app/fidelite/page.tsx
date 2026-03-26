@@ -48,6 +48,10 @@ export default function FidelitePage() {
   const [savingAbo, setSavingAbo] = useState(false);
   const abonnementActif = Boolean(abonnement);
 
+  useEffect(() => {
+    document.title = 'Co-Work';
+  }, []);
+
   // Charger clients
   useEffect(() => {
     const fetchClients = async () => {

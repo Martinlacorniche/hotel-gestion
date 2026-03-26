@@ -163,6 +163,10 @@ function MaintenancePageInner() {
     })();
   }, [hotelId]);
 
+  useEffect(() => {
+    document.title = 'Maintenance';
+  }, []);
+
   // --- COMPUTED DATA ---
   const inDateRange = (iso?: string | null) => {
     if (!iso) return false;
