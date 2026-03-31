@@ -623,7 +623,7 @@ function CuriositesTab() {
     const ext = file.name.split(".").pop();
     const path = `curiosites/${item.id}.${ext}`;
     const { error } = await supabase.storage.from("wifi-images").upload(path, file, { upsert: true });
-    if (error) { toast.error("Erreur upload"); setUploading(null); return; }
+    if (error) { toast.error(`Erreur: ${error.message}`); setUploading(null); return; }
     const { data: { publicUrl } } = supabase.storage.from("wifi-images").getPublicUrl(path);
     await supabase.from("wifi_curiosites").update({ image_url: publicUrl }).eq("id", item.id);
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, image_url: publicUrl } : i));
