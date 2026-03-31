@@ -576,6 +576,10 @@ function MenuTab() {
 // ─────────────────────────────────────────────────────────────
 function CuriositesTab() {
   const [items, setItems] = useState<CurioItem[]>([]);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [editNom, setEditNom] = useState("");
+  const [editEmoji, setEditEmoji] = useState("");
+  const [saving, setSaving] = useState<string | null>(null);
   const [newNom, setNewNom] = useState("");
   const [newEmoji, setNewEmoji] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
@@ -586,17 +590,20 @@ function CuriositesTab() {
     });
   }, []);
 
-  const toggleDispo = async (item: CurioItem) => {
-    const val = !item.dispo;
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, dispo: val } : i));
-    await supabase.from("wifi_curiosites").update({ dispo: val }).eq("id", item.id);
-    toast.success(val ? "Disponible" : "Indisponible");
+  const openEdit = (item: CurioItem) => {
+    if (openId === item.id) { setOpenId(null); return; }
+    setOpenId(item.id);
+    setEditNom(item.nom);
+    setEditEmoji(item.emoji ?? "");
   };
 
-  const toggleGratuit = async (item: CurioItem) => {
-    const val = !item.gratuit;
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, gratuit: val } : i));
-    await supabase.from("wifi_curiosites").update({ gratuit: val }).eq("id", item.id);
+  const saveItem = async (id: string) => {
+    setSaving(id);
+    await supabase.from("wifi_curiosites").update({ nom: editNom.trim(), emoji: editEmoji || "📦" }).eq("id", id);
+    setItems(prev => prev.map(i => i.id === id ? { ...i, nom: editNom.trim(), emoji: editEmoji || "📦" } : i));
+    setSaving(null);
+    setOpenId(null);
+    toast.success("Modifié ✓");
   };
 
   const deleteItem = async (id: string) => {
@@ -633,56 +640,59 @@ function CuriositesTab() {
 
   return (
     <div className="space-y-2">
-      {items.map(item => (
-        <div key={item.id} className="bg-white rounded-xl border border-slate-200 p-3">
-          <div className="flex items-center gap-3">
-            {/* Vignette */}
-            <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-xl shrink-0 overflow-hidden relative">
-              {item.image_url
-                // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={item.image_url} alt="" className="w-full h-full object-cover" />
-                : item.emoji ?? "📦"
-              }
-            </div>
+      {items.map(item => {
+        const isOpen = openId === item.id;
+        return (
+          <div key={item.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div
+              className="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-50 transition select-none"
+              onClick={() => openEdit(item)}
+            >
+              {/* Vignette */}
+              <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-xl shrink-0 overflow-hidden">
+                {item.image_url
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={item.image_url} alt="" className="w-full h-full object-cover" />
+                  : item.emoji ?? "📦"
+                }
+              </div>
 
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm text-slate-900 truncate">{item.nom}</p>
-              <div className="flex items-center gap-2 mt-1">
-                {/* Badge gratuit/payant */}
-                <button
-                  onClick={() => toggleGratuit(item)}
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide transition ${
-                    item.gratuit ? "bg-amber-50 text-amber-600 border border-amber-200" : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  {item.gratuit ? "Gratuit" : "10 €"}
-                </button>
-                {/* Toggle dispo */}
-                <button
-                  onClick={() => toggleDispo(item)}
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide transition ${
-                    item.dispo ? "bg-green-50 text-green-600 border border-green-200" : "bg-red-50 text-red-400 border border-red-200"
-                  }`}
-                >
-                  {item.dispo ? "Disponible" : "Indisponible"}
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm text-slate-900 truncate">{item.nom}</p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                <UploadButton
+                  loading={uploading === item.id}
+                  onFile={file => uploadImage(item, file)}
+                  icon
+                />
+                <button onClick={() => deleteItem(item.id)} className="p-1.5 text-slate-200 hover:text-red-400 transition rounded-lg">
+                  <Trash2 size={15} />
                 </button>
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-1 shrink-0">
-              <UploadButton
-                loading={uploading === item.id}
-                onFile={file => uploadImage(item, file)}
-                icon
-              />
-              <button onClick={() => deleteItem(item.id)} className="p-1.5 text-slate-200 hover:text-red-400 transition rounded-lg">
-                <Trash2 size={15} />
-              </button>
-            </div>
+            {/* Panel édition */}
+            {isOpen && (
+              <div className="border-t border-slate-100 px-4 py-3 bg-slate-50 space-y-2">
+                <div className="flex gap-2">
+                  <Input placeholder="Emoji" value={editEmoji} onChange={e => setEditEmoji(e.target.value)} className="w-16 text-center h-9 bg-white" />
+                  <Input value={editNom} onChange={e => setEditNom(e.target.value)} className="h-9 flex-1 bg-white" />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setOpenId(null)}>Annuler</Button>
+                  <Button size="sm" onClick={() => saveItem(item.id)} disabled={saving === item.id || !editNom.trim()} className="bg-[#004e7c] hover:bg-[#003d61] text-white gap-1.5">
+                    {saving === item.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                    Enregistrer
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* Ajouter un objet */}
       <div className="bg-white rounded-xl border border-dashed border-slate-300 p-3">
