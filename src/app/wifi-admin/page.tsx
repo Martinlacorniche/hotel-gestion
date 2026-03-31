@@ -68,7 +68,13 @@ const CONFIG_FIELDS: Record<string, { key: string; label: string; type?: "textar
     { key: "note",     label: "Note", type: "textarea" },
   ],
   plage: [
-    { key: "description", label: "Description", type: "textarea" },
+    { key: "description",  label: "Description", type: "textarea" },
+    { key: "plage1_nom",   label: "Plage 1 — nom" },
+    { key: "plage1_url",   label: "Plage 1 — lien Maps" },
+    { key: "plage2_nom",   label: "Plage 2 — nom" },
+    { key: "plage2_url",   label: "Plage 2 — lien Maps" },
+    { key: "plage3_nom",   label: "Plage 3 — nom" },
+    { key: "plage3_url",   label: "Plage 3 — lien Maps" },
   ],
   menu: [
     { key: "description", label: "Description courte", type: "textarea" },
@@ -81,6 +87,9 @@ const CONFIG_FIELDS: Record<string, { key: string; label: string; type?: "textar
     { key: "description", label: "Description", type: "textarea" },
   ],
 };
+
+// Champ par défaut pour les tuiles custom (slug non reconnu)
+const DEFAULT_CONFIG_FIELD = [{ key: "texte", label: "Contenu", type: "textarea" as const }];
 
 const MENU_DATE_KEY = new Date().toISOString().split("T")[0];
 const CATEGORIES = [
@@ -140,6 +149,7 @@ function TilesTab() {
   const [openSlug, setOpenSlug] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from("wifi_tiles").select("*").order("ordre").then(({ data }) => {
@@ -180,6 +190,13 @@ function TilesTab() {
     ]);
   };
 
+  const deleteTile = async (id: string) => {
+    await supabase.from("wifi_tiles").delete().eq("id", id);
+    setTiles(prev => prev.filter(t => t.id !== id));
+    setConfirmDelete(null);
+    toast.success("Tuile supprimée");
+  };
+
   const saveTile = async (tile: Tile) => {
     setSaving(tile.id);
     const { error } = await supabase.from("wifi_tiles").update({
@@ -213,7 +230,7 @@ function TilesTab() {
     <div className="space-y-2">
       {sorted.map((tile, idx) => {
         const isOpen = openSlug === tile.slug;
-        const fields = CONFIG_FIELDS[tile.slug] ?? [];
+        const fields = CONFIG_FIELDS[tile.slug] ?? DEFAULT_CONFIG_FIELD;
         return (
           <div key={tile.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             {/* Ligne principale */}
@@ -317,7 +334,18 @@ function TilesTab() {
                 </div>
 
                 {/* Bouton save */}
-                <div className="flex justify-end pt-1">
+                <div className="flex items-center justify-between pt-1">
+                  {confirmDelete === tile.id ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-red-500">Confirmer la suppression ?</span>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)} className="h-7 px-2 text-xs">Annuler</Button>
+                      <Button size="sm" onClick={() => deleteTile(tile.id)} className="h-7 px-2 text-xs bg-red-500 hover:bg-red-600 text-white">Supprimer</Button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDelete(tile.id)} className="text-xs text-slate-300 hover:text-red-400 transition flex items-center gap-1">
+                      <Trash2 size={13} /> Supprimer
+                    </button>
+                  )}
                   <Button
                     size="sm"
                     onClick={() => saveTile(tile)}
