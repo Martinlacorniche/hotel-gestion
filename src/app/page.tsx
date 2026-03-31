@@ -13,7 +13,7 @@ import {
   ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
   NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
-  Wrench, Tv2 // Icônes maintenance + chromecast
+  Wrench, Tv2, Wifi // Icônes maintenance + chromecast + wifi
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
@@ -982,6 +982,12 @@ const birthdayMessage = useMemo(() => {
               {currentHotel?.nom?.toLowerCase().includes("corniche") && (
                 <a href="/chromecast" target="_blank" className="flex flex-col items-center justify-center p-3 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-700 gap-1">
                   <Tv2 className="w-5 h-5" /> <span className="text-xs font-medium">Chromecasts</span>
+                </a>
+              )}
+              {/* WiFi - Corniche uniquement */}
+              {currentHotel?.nom?.toLowerCase().includes("corniche") && (
+                <a href="/wifi-admin" target="_blank" className="flex flex-col items-center justify-center p-3 bg-sky-50 hover:bg-sky-100 rounded-lg text-sky-700 gap-1">
+                  <Wifi className="w-5 h-5" /> <span className="text-xs font-medium">Page WiFi</span>
                 </a>
               )}
             </DropdownMenuContent>
