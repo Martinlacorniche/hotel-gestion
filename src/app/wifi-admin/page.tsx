@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Eye, EyeOff, ChevronUp, ChevronDown, Save, Plus, Trash2,
-  ImagePlus, Loader2, Check, Wifi
+  ImagePlus, Loader2, Check, Wifi, Megaphone
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -127,14 +127,16 @@ export default function WifiAdminPage() {
 
         <Tabs defaultValue="tuiles">
           <TabsList className="w-full mb-6">
-            <TabsTrigger value="tuiles"  className="flex-1">Tuiles</TabsTrigger>
-            <TabsTrigger value="menu"    className="flex-1">Menu</TabsTrigger>
+            <TabsTrigger value="tuiles"     className="flex-1">Tuiles</TabsTrigger>
+            <TabsTrigger value="menu"       className="flex-1">Menu</TabsTrigger>
             <TabsTrigger value="curiosites" className="flex-1">Curiosités</TabsTrigger>
+            <TabsTrigger value="annonce"    className="flex-1">Annonce</TabsTrigger>
           </TabsList>
 
           <TabsContent value="tuiles"><TilesTab /></TabsContent>
           <TabsContent value="menu"><MenuTab /></TabsContent>
           <TabsContent value="curiosites"><CuriositesTab /></TabsContent>
+          <TabsContent value="annonce"><AnnonceTab /></TabsContent>
         </Tabs>
       </div>
     </div>
@@ -705,6 +707,111 @@ function CuriositesTab() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB ANNONCE
+// ─────────────────────────────────────────────────────────────
+function AnnonceTab() {
+  const [message, setMessage] = useState("");
+  const [type, setType] = useState<"info" | "urgent">("info");
+  const [active, setActive] = useState(false);
+  const [tileId, setTileId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.from("wifi_tiles").select("*").eq("slug", "annonce").single().then(({ data }) => {
+      if (data) {
+        setTileId(data.id);
+        setMessage(data.config?.message ?? "");
+        setType(data.config?.type ?? "info");
+        setActive(data.visible ?? false);
+      }
+    });
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    const payload = { slug: "annonce", emoji: "📢", title: "Annonce", tagline: "", visible: active, ordre: 999, config: { message, type } };
+    if (tileId) {
+      await supabase.from("wifi_tiles").update(payload).eq("id", tileId);
+    } else {
+      const { data } = await supabase.from("wifi_tiles").insert(payload).select().single();
+      if (data) setTileId(data.id);
+    }
+    setSaving(false);
+    toast.success(active ? "Annonce publiée ✓" : "Annonce désactivée ✓");
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Statut */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Megaphone size={16} className="text-slate-500" />
+            <span className="text-sm font-medium text-slate-800">Bandeau d&apos;annonce</span>
+          </div>
+          <button
+            onClick={() => setActive(v => !v)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${active ? "bg-[#004e7c]" : "bg-slate-200"}`}
+          >
+            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${active ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+        </div>
+        {active && (
+          <p className="text-xs text-emerald-600 mt-2 font-medium">● Affiché sur le portail WiFi</p>
+        )}
+        {!active && (
+          <p className="text-xs text-slate-400 mt-2">Désactivé — pas visible par les clients</p>
+        )}
+      </div>
+
+      {/* Type */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+        <p className="text-xs text-slate-400 uppercase tracking-widest mb-3">Type de message</p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => setType("info")}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition ${type === "info" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+          >
+            <span>ℹ️</span> Information
+          </button>
+          <button
+            onClick={() => setType("urgent")}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition ${type === "urgent" ? "border-red-300 bg-red-50 text-red-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+          >
+            <span>⚠️</span> Urgent
+          </button>
+        </div>
+      </div>
+
+      {/* Message */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+        <p className="text-xs text-slate-400 uppercase tracking-widest mb-3">Message</p>
+        <textarea
+          value={message}
+          onChange={e => setMessage(e.target.value)}
+          rows={4}
+          placeholder="Ex : L'ascenseur est momentanément hors service. Nous nous en excusons."
+          className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20"
+        />
+      </div>
+
+      {/* Prévisualisation */}
+      {message.trim() && (
+        <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2.5 ${type === "urgent" ? "bg-red-50 border-red-200 text-red-700" : "bg-blue-50 border-blue-200 text-blue-700"}`}>
+          <span className="text-base shrink-0">{type === "urgent" ? "⚠️" : "ℹ️"}</span>
+          <p className="leading-relaxed">{message}</p>
+        </div>
+      )}
+
+      <Button onClick={save} disabled={saving || !message.trim()} className="w-full bg-[#004e7c] hover:bg-[#003d61] text-white gap-2">
+        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+        Enregistrer
+      </Button>
     </div>
   );
 }
