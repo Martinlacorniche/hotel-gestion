@@ -987,7 +987,7 @@ const birthdayMessage = useMemo(() => {
               {/* WiFi - Corniche uniquement */}
               {currentHotel?.nom?.toLowerCase().includes("corniche") && (
                 <a href="/wifi-admin" target="_blank" className="flex flex-col items-center justify-center p-3 bg-sky-50 hover:bg-sky-100 rounded-lg text-sky-700 gap-1">
-                  <Wifi className="w-5 h-5" /> <span className="text-xs font-medium">Page WiFi</span>
+                  <Wifi className="w-5 h-5" /> <span className="text-xs font-medium">Acceuil Wifi</span>
                 </a>
               )}
             </DropdownMenuContent>

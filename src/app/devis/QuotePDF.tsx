@@ -230,8 +230,8 @@ export const QuotePDFPage = ({ data, lines, totals }: any) => (
           <Text style={s.label}>Détail des taxes</Text>
           {Object.entries(totals?.tvaDetails || {}).map(([rate, vals]: any) => (
             <Text key={rate} style={{ fontSize: 7, color: SLATE_400, marginBottom: 3 }}>
-              TVA {rate}% sur {Number(vals?.ht || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} € HT
-              {' '}= {Number(vals?.tva || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} € TVA
+              TVA {rate}% sur {Number(vals?.ht || 0).toFixed(2)} € HT
+              {' '}= {Number(vals?.tva || 0).toFixed(2)} € TVA
             </Text>
           ))}
         </View>

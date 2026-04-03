@@ -209,7 +209,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
     lines.forEach((line) => {
       const lineTtc = (line.quantity || 0) * (line.unitPriceTTC || 0);
-      const rate = line.tvaRate || 10;
+      const rate = line.tvaRate ?? 10;
       const lineHt = getHTFromTTC(lineTtc, rate);
       const lineTva = lineTtc - lineHt;
 
@@ -739,16 +739,16 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
             <div className="space-y-4">
               <div className="flex justify-between text-slate-500 font-bold uppercase text-[10px] tracking-widest">
                   <span>Total HT</span>
-                  <span className="text-slate-700">{totals.ht.toLocaleString(undefined, {minimumFractionDigits: 2})} €</span>
+                  <span className="text-slate-700">{totals.ht.toFixed(2)} €</span>
               </div>
               <div className="flex justify-between text-slate-500 font-bold uppercase text-[10px] tracking-widest">
                   <span>Total TVA</span>
-                  <span className="text-slate-700">{totals.tva.toLocaleString(undefined, {minimumFractionDigits: 2})} €</span>
+                  <span className="text-slate-700">{totals.tva.toFixed(2)} €</span>
               </div>
               <div className="pt-6 border-t border-slate-100 mt-6 flex flex-col gap-1 items-end">
                 <span className="text-[10px] font-black uppercase text-indigo-500 tracking-widest">Total TTC</span>
                 <span className="text-4xl font-black text-slate-900">
-                    {totals.ttc.toLocaleString(undefined, {minimumFractionDigits: 2})} €
+                    {totals.ttc.toFixed(2)} €
                 </span>
               </div>
             </div>
