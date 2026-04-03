@@ -165,6 +165,7 @@ export default function CommercialDashboard() {
     date_evenement: ''
   });
   const [currentReservations, setCurrentReservations] = useState<any[]>([]);
+  const [quoteTotal, setQuoteTotal] = useState<number>(0);
 
   // --- HELPERS ---
   const getRelanceStatus = (dateStr?: string | null, statut?: string, etatPaiement?: string | null) => {
@@ -252,8 +253,21 @@ export default function CommercialDashboard() {
       setCurrentLead(lead);
       const { data } = await supabase.from('seminar_reservations').select('*').eq('lead_id', lead.id);
       if (data) setCurrentReservations(data);
+      // Récupérer le total TTC du devis lié
+      const { data: quoteData } = await supabase
+        .from('quotes')
+        .select('quote_items(quantity, unit_price_ttc)')
+        .eq('lead_id', lead.id)
+        .maybeSingle();
+      if (quoteData?.quote_items) {
+        const ttc = (quoteData.quote_items as any[]).reduce((acc, item) => acc + (item.quantity || 0) * (item.unit_price_ttc || 0), 0);
+        setQuoteTotal(ttc);
+      } else {
+        setQuoteTotal(0);
+      }
     } else {
       setCurrentLead({ statut: 'Nouveau', etat_paiement: 'Attente acompte', budget_estime: 0, montant_paye: 0, date_relance: '', date_evenement: defaultDate || '', date_fin_evenement: defaultDate || '' });
+      setQuoteTotal(0);
       if (defaultRoomName) {
         const room = rooms.find(r => r.name === defaultRoomName);
         if (room) {
@@ -299,6 +313,7 @@ export default function CommercialDashboard() {
     const trace = getUpdateTrace();
     const payload = {
       ...currentLead,
+      budget_estime: quoteTotal,
       hotel_id: selectedHotelId,
       date_relance: currentLead.date_relance === '' ? null : currentLead.date_relance,
       date_evenement: currentLead.date_evenement === '' ? null : currentLead.date_evenement,
@@ -989,7 +1004,7 @@ export default function CommercialDashboard() {
                                 </div>
                                 <div className="w-px h-4 bg-gray-200 shrink-0" />
                                 <div className="flex items-center gap-4">
-                                  {[{l:'Budget',v:`${budget.toLocaleString()} €`,c:'#555'},{l:'Réglé',v:`${paye.toLocaleString()} €`,c:'#1aaa5a'},{l:'Solde',v:reste>0?`− ${reste.toLocaleString()} €`:'✓ Soldé',c:reste>0?'#e53935':'#1aaa5a'}].map(k=>(
+                                  {[{l:'Total devis',v:`${budget.toLocaleString()} €`,c:'#555'},{l:'Réglé',v:`${paye.toLocaleString()} €`,c:'#1aaa5a'},{l:'Solde',v:reste>0?`− ${reste.toLocaleString()} €`:'✓ Soldé',c:reste>0?'#e53935':'#1aaa5a'}].map(k=>(
                                     <div key={k.l}>
                                       <p className="text-[8px] font-black uppercase tracking-widest mb-0.5 text-gray-400">{k.l}</p>
                                       <p className="dm text-sm font-bold" style={{color:k.c}}>{k.v}</p>
@@ -1140,7 +1155,7 @@ export default function CommercialDashboard() {
                                 </div>
                                 <div className="w-px h-4 bg-gray-200 shrink-0" />
                                 <div className="flex items-center gap-4">
-                                  {[{l:'Budget',v:`${budget.toLocaleString()} €`,c:'#555'},{l:'Réglé',v:`${paye.toLocaleString()} €`,c:'#1aaa5a'},{l:'Solde',v:reste>0?`− ${reste.toLocaleString()} €`:'✓ Soldé',c:reste>0?'#e53935':'#1aaa5a'}].map(k=>(
+                                  {[{l:'Total devis',v:`${budget.toLocaleString()} €`,c:'#555'},{l:'Réglé',v:`${paye.toLocaleString()} €`,c:'#1aaa5a'},{l:'Solde',v:reste>0?`− ${reste.toLocaleString()} €`:'✓ Soldé',c:reste>0?'#e53935':'#1aaa5a'}].map(k=>(
                                     <div key={k.l}>
                                       <p className="text-[8px] font-black uppercase tracking-widest mb-0.5 text-gray-400">{k.l}</p>
                                       <p className="dm text-sm font-bold" style={{color:k.c}}>{k.v}</p>
@@ -1366,16 +1381,19 @@ export default function CommercialDashboard() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[9px] font-black uppercase tracking-widest mb-2 text-gray-400">Budget estimé (€)</label>
-                      <input type="number" value={currentLead.budget_estime || ''} onChange={e => setCurrentLead({...currentLead, budget_estime: parseFloat(e.target.value)})} className="nt-input w-full h-10 rounded-xl px-4 font-bold border outline-none" />
+                      <label className="block text-[9px] font-black uppercase tracking-widest mb-2 text-gray-400">Total à payer (€)</label>
+                      <div className="nt-input w-full h-10 rounded-xl px-4 font-bold border flex items-center bg-gray-50 text-gray-700">
+                        {quoteTotal > 0 ? quoteTotal.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : <span className="text-gray-300 font-normal text-sm">Aucun devis</span>}
+                        {quoteTotal > 0 && <span className="ml-1 text-gray-400 font-normal">€</span>}
+                      </div>
                     </div>
                   </div>
                   <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-3">
                     <div className="flex justify-between items-center">
                       <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-400">Suivi Paiement</p>
-                      {(currentLead.budget_estime || 0) > 0 && (
-                        <span className="dm text-[11px] font-bold" style={{color: (currentLead.budget_estime||0)-(currentLead.montant_paye||0) <= 0 ? '#1aaa5a' : '#e53935'}}>
-                          Reste : {Math.max(0, (currentLead.budget_estime||0)-(currentLead.montant_paye||0)).toLocaleString()} €
+                      {quoteTotal > 0 && (
+                        <span className="dm text-[11px] font-bold" style={{color: quoteTotal-(currentLead.montant_paye||0) <= 0 ? '#1aaa5a' : '#e53935'}}>
+                          Reste : {Math.max(0, quoteTotal-(currentLead.montant_paye||0)).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
                         </span>
                       )}
                     </div>
