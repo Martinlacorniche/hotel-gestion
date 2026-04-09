@@ -91,7 +91,7 @@ const CONFIG_FIELDS: Record<string, { key: string; label: string; type?: "textar
 // Champ par défaut pour les tuiles custom (slug non reconnu)
 const DEFAULT_CONFIG_FIELD = [{ key: "texte", label: "Contenu", type: "textarea" as const }];
 
-const MENU_DATE_KEY = new Date().toISOString().split("T")[0];
+
 const CATEGORIES = [
   { key: "base",      label: "Bases",      emoji: "🍽️" },
   { key: "garniture", label: "Garnitures", emoji: "🥗" },
@@ -452,7 +452,7 @@ function MenuTab() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase.from("wifi_menu").select("*").eq("date", MENU_DATE_KEY).order("ordre")
+    supabase.from("wifi_menu").select("*").order("ordre")
       .then(({ data }) => { if (data) setItems(data); });
     supabase.from("wifi_tiles").select("config").eq("slug", "menu").single()
       .then(({ data }) => {
@@ -491,7 +491,7 @@ function MenuTab() {
     setSaving(true);
     const ordre = items.filter(i => i.categorie === categorie).length;
     const { data, error } = await supabase.from("wifi_menu")
-      .insert({ date: MENU_DATE_KEY, categorie, nom, actif: true, ordre })
+      .insert({ categorie, nom, actif: true, ordre })
       .select().single();
     setSaving(false);
     if (error) { toast.error("Erreur"); return; }
