@@ -617,6 +617,24 @@ function CuriositesTab() {
   const [newEmoji, setNewEmoji] = useState("");
   const [addingSaving, setAddingSaving] = useState(false);
 
+  const moveItem = async (item: CurioItem, dir: -1 | 1) => {
+    const sorted = [...items].sort((a, b) => a.ordre - b.ordre);
+    const idx = sorted.findIndex(i => i.id === item.id);
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const a = sorted[idx];
+    const b = sorted[swapIdx];
+    setItems(prev => prev.map(i => {
+      if (i.id === a.id) return { ...i, ordre: b.ordre };
+      if (i.id === b.id) return { ...i, ordre: a.ordre };
+      return i;
+    }));
+    await Promise.all([
+      supabase.from("wifi_curiosites").update({ ordre: b.ordre }).eq("id", a.id),
+      supabase.from("wifi_curiosites").update({ ordre: a.ordre }).eq("id", b.id),
+    ]);
+  };
+
   useEffect(() => {
     supabase.from("wifi_curiosites").select("*").order("ordre").then(({ data }) => {
       if (data) setItems(data);
@@ -705,12 +723,17 @@ function CuriositesTab() {
 
   return (
     <div className="space-y-2">
-      {items.map(item => {
+      {[...items].sort((a, b) => a.ordre - b.ordre).map((item, idx, sorted) => {
         const isOpen = openId === item.id;
         return (
           <div key={item.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             {/* Ligne principale */}
             <div className="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-50 transition select-none" onClick={() => openEdit(item)}>
+              {/* Flèches ordre */}
+              <div className="flex flex-col gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                <button onClick={() => moveItem(item, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={14} /></button>
+                <button onClick={() => moveItem(item, 1)} disabled={idx === sorted.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={14} /></button>
+              </div>
               <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-xl shrink-0 overflow-hidden">
                 {item.image_url
                   // eslint-disable-next-line @next/next/no-img-element
