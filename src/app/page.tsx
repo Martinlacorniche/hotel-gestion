@@ -130,17 +130,27 @@ function weatherIconSVG(code: number) {
 export default function HotelDashboard() {
   const { user: rawUser, logout, isLoading } = useAuth();
   const [open, setOpen] = useState(false);
-  const [pinnedTools, setPinnedTools] = useState<string[]>(() => {
-    if (typeof window === "undefined") return ["planning"];
-    try { return JSON.parse(localStorage.getItem("pinned_tools") || '["planning"]'); }
-    catch { return ["planning"]; }
-  });
-  const togglePin = (id: string) => {
-    setPinnedTools(prev => {
-      const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
-      localStorage.setItem("pinned_tools", JSON.stringify(next));
-      return next;
-    });
+  const [pinnedTools, setPinnedTools] = useState<string[]>([]);
+  const [pinnedLoaded, setPinnedLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!rawUser?.id) return;
+    supabase.from("users").select("pinned_tools").eq("id_auth", rawUser.id).single()
+      .then(({ data, error }) => {
+        if (error) { console.error("fetch pinned_tools:", error); }
+        setPinnedTools(data?.pinned_tools ?? ["planning"]);
+        setPinnedLoaded(true);
+      });
+  }, [rawUser?.id]);
+
+  const togglePin = async (id: string) => {
+    if (!rawUser?.id) return;
+    const next = pinnedTools.includes(id)
+      ? pinnedTools.filter(p => p !== id)
+      : [...pinnedTools, id];
+    setPinnedTools(next);
+    const { error } = await supabase.from("users").update({ pinned_tools: next }).eq("id_auth", rawUser.id);
+    if (error) { console.error("save pinned_tools:", error); }
   };
   const [sunTimes, setSunTimes] = useState<{sunrise:string, sunset:string} | null>(null);
 
@@ -967,7 +977,7 @@ const birthdayMessage = useMemo(() => {
           )}
 
            {/* Favoris épinglés — affichés directement dans le header */}
-           {(() => {
+           {pinnedLoaded && (() => {
              const isCorniche = currentHotel?.nom?.toLowerCase().includes("corniche");
              return pinnedTools.map(pid => {
                const t = TOOLS.find(t => t.id === pid);
@@ -983,7 +993,7 @@ const birthdayMessage = useMemo(() => {
                  </a>
                );
              });
-           })()}
+           })() }
 
            {/* Apps Menu */}
            <DropdownMenu open={open} onOpenChange={setOpen}>
