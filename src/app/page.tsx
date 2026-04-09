@@ -43,7 +43,7 @@ const TOOLS: ToolDef[] = [
   { id: "maintenance", label: "Maintenance",  href: (id) => `/maintenance?hotel_id=${id}`, icon: Wrench,       bg: "bg-yellow-50",  text: "text-yellow-700", condition: "corniche" },
   { id: "chromecast",  label: "Chromecasts",  href: "/chromecast",                         icon: Tv2,          bg: "bg-slate-100",  text: "text-slate-700",  condition: "corniche" },
   { id: "wifi-admin",  label: "Accueil Wifi", href: "/wifi-admin",                         icon: Wifi,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "corniche" },
-  { id: "objets-pret", label: "Objets prêt",  href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
+  { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
 ];
 
 // --- TYPES & UTILITAIRES ---

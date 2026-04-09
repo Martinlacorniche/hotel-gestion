@@ -41,8 +41,8 @@ export default function ObjetsPretPage() {
             <Package size={20} className="text-white" />
           </div>
           <div>
-            <h1 className="font-semibold text-slate-900 text-xl">Objets en prêt</h1>
-            <p className="text-sm text-slate-400">Réservations des curiosités</p>
+            <h1 className="font-semibold text-slate-900 text-xl">Curiosités</h1>
+            <p className="text-sm text-slate-400">Réservations des objets en prêt</p>
           </div>
         </div>
         <Gantt />

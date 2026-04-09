@@ -33,7 +33,8 @@ export default function ParkingPage() {
   const [popupReservation, setPopupReservation] = useState<any | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  
+  const [tooltip, setTooltip] = useState<{ r: any; x: number; y: number } | null>(null);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
@@ -951,6 +952,9 @@ export default function ParkingPage() {
                                   : ''
                               }`}
                               onClick={(e) => { e.stopPropagation(); if (!isDragging.current) setPopupReservation(r); }}
+                              onMouseEnter={(e) => { if (!isDragging.current) setTooltip({ r, x: e.clientX, y: e.clientY }); }}
+                              onMouseMove={(e) => { if (tooltip) setTooltip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null); }}
+                              onMouseLeave={() => setTooltip(null)}
                             >
                               <span style={{ pointerEvents: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', userSelect: 'none', paddingLeft: 10, paddingRight: 10 }}>
                                 {r.client_name}
@@ -1079,6 +1083,36 @@ export default function ParkingPage() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── TOOLTIP SURVOL ── */}
+        {tooltip && (
+          <div style={{
+            position: 'fixed',
+            left: tooltip.x + 14,
+            top: tooltip.y - 10,
+            zIndex: 9999,
+            pointerEvents: 'none',
+            background: 'white',
+            border: '1px solid #e2e8f0',
+            borderRadius: 10,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+            padding: '8px 12px',
+            minWidth: 180,
+            maxWidth: 240,
+          }}>
+            <p style={{ fontWeight: 600, fontSize: 13, color: '#0f172a', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {tooltip.r.client_name}
+            </p>
+            <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>
+              {parkings.find(p => p.id === tooltip.r.parking_id)?.name}
+            </p>
+            <p style={{ fontSize: 11, color: '#94a3b8' }}>
+              {format(parseISO(tooltip.r.start_date), 'dd MMM', { locale: fr })}
+              {' → '}
+              {format(parseISO(tooltip.r.end_date), 'dd MMM yyyy', { locale: fr })}
+            </p>
           </div>
         )}
       </div>
