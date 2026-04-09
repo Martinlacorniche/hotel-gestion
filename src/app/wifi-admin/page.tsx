@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Eye, EyeOff, ChevronUp, ChevronDown, Save, Plus, Trash2,
-  ImagePlus, Loader2, Check, Wifi, Megaphone
+  ImagePlus, Loader2, Check, Wifi, Megaphone, X, Clock, Euro
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -45,11 +45,17 @@ type MenuItem = {
 type CurioItem = {
   id: string;
   nom: string;
+  nom_en: string | null;
   emoji: string;
   image_url: string | null;
   gratuit: boolean;
   dispo: boolean;
   ordre: number;
+  description: string | null;
+  description_en: string | null;
+  tags: string[];
+  duree_heures: number;
+  prix_reservation: number;
 };
 
 // Labels des champs config éditables par slug
@@ -576,15 +582,40 @@ function MenuTab() {
 // ─────────────────────────────────────────────────────────────
 // TAB CURIOSITÉS
 // ─────────────────────────────────────────────────────────────
+type EditState = {
+  nom: string; nom_en: string; emoji: string;
+  description: string; description_en: string;
+  tags: string[]; tagInput: string;
+  duree_heures: number; prix_reservation: number; dispo: boolean;
+};
+
+async function translate(text: string): Promise<string> {
+  if (!text.trim()) return "";
+  const res = await fetch("/api/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  const data = await res.json();
+  return data.result ?? "";
+}
+
+const EMPTY_EDIT: EditState = {
+  nom: "", nom_en: "", emoji: "",
+  description: "", description_en: "",
+  tags: [], tagInput: "",
+  duree_heures: 24, prix_reservation: 10, dispo: true,
+};
+
 function CuriositesTab() {
   const [items, setItems] = useState<CurioItem[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [editNom, setEditNom] = useState("");
-  const [editEmoji, setEditEmoji] = useState("");
+  const [edit, setEdit] = useState<EditState>(EMPTY_EDIT);
   const [saving, setSaving] = useState<string | null>(null);
+  const [uploading, setUploading] = useState<string | null>(null);
   const [newNom, setNewNom] = useState("");
   const [newEmoji, setNewEmoji] = useState("");
-  const [uploading, setUploading] = useState<string | null>(null);
+  const [addingSaving, setAddingSaving] = useState(false);
 
   useEffect(() => {
     supabase.from("wifi_curiosites").select("*").order("ordre").then(({ data }) => {
@@ -595,14 +626,45 @@ function CuriositesTab() {
   const openEdit = (item: CurioItem) => {
     if (openId === item.id) { setOpenId(null); return; }
     setOpenId(item.id);
-    setEditNom(item.nom);
-    setEditEmoji(item.emoji ?? "");
+    setEdit({
+      nom: item.nom, nom_en: item.nom_en ?? "",
+      emoji: item.emoji ?? "",
+      description: item.description ?? "", description_en: item.description_en ?? "",
+      tags: item.tags ?? [], tagInput: "",
+      duree_heures: item.duree_heures ?? 24,
+      prix_reservation: item.prix_reservation ?? 10,
+      dispo: item.dispo,
+    });
   };
+
+  const addTag = () => {
+    const t = edit.tagInput.trim();
+    if (!t || edit.tags.includes(t)) { setEdit(e => ({ ...e, tagInput: "" })); return; }
+    setEdit(e => ({ ...e, tags: [...e.tags, t], tagInput: "" }));
+  };
+
+  const removeTag = (tag: string) => setEdit(e => ({ ...e, tags: e.tags.filter(t => t !== tag) }));
 
   const saveItem = async (id: string) => {
     setSaving(id);
-    await supabase.from("wifi_curiosites").update({ nom: editNom.trim(), emoji: editEmoji || "📦" }).eq("id", id);
-    setItems(prev => prev.map(i => i.id === id ? { ...i, nom: editNom.trim(), emoji: editEmoji || "📦" } : i));
+    const nom = edit.nom.trim();
+    const description = edit.description.trim() || null;
+    const [nom_en, description_en] = await Promise.all([
+      translate(nom),
+      description ? translate(description) : Promise.resolve(null),
+    ]);
+    const payload = {
+      nom, nom_en: nom_en || null,
+      emoji: edit.emoji || "📦",
+      description,
+      description_en: description_en || null,
+      tags: edit.tags,
+      duree_heures: edit.duree_heures,
+      prix_reservation: edit.prix_reservation,
+      dispo: edit.dispo,
+    };
+    await supabase.from("wifi_curiosites").update(payload).eq("id", id);
+    setItems(prev => prev.map(i => i.id === id ? { ...i, ...payload } : i));
     setSaving(null);
     setOpenId(null);
     toast.success("Modifié ✓");
@@ -617,10 +679,11 @@ function CuriositesTab() {
   const addItem = async () => {
     const nom = newNom.trim();
     if (!nom) return;
-    const ordre = items.length;
+    setAddingSaving(true);
     const { data, error } = await supabase.from("wifi_curiosites")
-      .insert({ nom, emoji: newEmoji || "📦", gratuit: true, dispo: true, ordre })
+      .insert({ nom, emoji: newEmoji || "📦", gratuit: true, dispo: true, ordre: items.length, tags: [], duree_heures: 24, prix_reservation: 10 })
       .select().single();
+    setAddingSaving(false);
     if (error) { toast.error("Erreur"); return; }
     setItems(prev => [...prev, data]);
     setNewNom(""); setNewEmoji("");
@@ -646,30 +709,30 @@ function CuriositesTab() {
         const isOpen = openId === item.id;
         return (
           <div key={item.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div
-              className="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-50 transition select-none"
-              onClick={() => openEdit(item)}
-            >
-              {/* Vignette */}
+            {/* Ligne principale */}
+            <div className="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-50 transition select-none" onClick={() => openEdit(item)}>
               <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-xl shrink-0 overflow-hidden">
                 {item.image_url
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={item.image_url} alt="" className="w-full h-full object-cover" />
-                  : item.emoji ?? "📦"
-                }
+                  : item.emoji ?? "📦"}
               </div>
-
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm text-slate-900 truncate">{item.nom}</p>
+                {item.nom_en && <p className="text-xs text-slate-400 truncate italic">{item.nom_en}</p>}
+                {(item.tags ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {(item.tags ?? []).slice(0, 3).map(t => (
+                      <span key={t} className="text-[10px] bg-slate-100 text-slate-500 rounded-full px-2 py-0.5">{t}</span>
+                    ))}
+                  </div>
+                )}
               </div>
-
-              {/* Actions */}
               <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                <UploadButton
-                  loading={uploading === item.id}
-                  onFile={file => uploadImage(item, file)}
-                  icon
-                />
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${item.dispo ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}`}>
+                  {item.dispo ? "Dispo" : "Indispo"}
+                </span>
+                <UploadButton loading={uploading === item.id} onFile={file => uploadImage(item, file)} icon />
                 <button onClick={() => deleteItem(item.id)} className="p-1.5 text-slate-200 hover:text-red-400 transition rounded-lg">
                   <Trash2 size={15} />
                 </button>
@@ -678,14 +741,76 @@ function CuriositesTab() {
 
             {/* Panel édition */}
             {isOpen && (
-              <div className="border-t border-slate-100 px-4 py-3 bg-slate-50 space-y-2">
-                <div className="flex gap-2">
-                  <Input placeholder="Emoji" value={editEmoji} onChange={e => setEditEmoji(e.target.value)} className="w-16 text-center h-9 bg-white" />
-                  <Input value={editNom} onChange={e => setEditNom(e.target.value)} className="h-9 flex-1 bg-white" />
+              <div className="border-t border-slate-100 px-4 py-4 bg-slate-50 space-y-3">
+                {/* Emoji + Noms */}
+                <div className="grid grid-cols-[48px_1fr_1fr] gap-2">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Emoji</label>
+                    <Input value={edit.emoji} onChange={e => setEdit(s => ({ ...s, emoji: e.target.value }))} className="text-center text-lg h-9 bg-white" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Nom FR</label>
+                    <Input value={edit.nom} onChange={e => setEdit(s => ({ ...s, nom: e.target.value }))} className="h-9 bg-white" />
+                  </div>
                 </div>
-                <div className="flex justify-end gap-2">
+
+                {/* Descriptions */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Description FR</label>
+                    <textarea value={edit.description} onChange={e => setEdit(s => ({ ...s, description: e.target.value }))} rows={3} placeholder="Décrivez l'objet en 2-3 lignes…" className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20 resize-none" />
+                  </div>
+                </div>
+
+                {/* Tags */}
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Tags</label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {edit.tags.map(t => (
+                      <span key={t} className="inline-flex items-center gap-1 text-xs bg-[#004e7c]/10 text-[#004e7c] rounded-full px-2.5 py-0.5">
+                        {t}
+                        <button onClick={() => removeTag(t)}><X size={11} /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={edit.tagInput}
+                      onChange={e => setEdit(s => ({ ...s, tagInput: e.target.value }))}
+                      onKeyDown={e => (e.key === "Enter" || e.key === ",") && (e.preventDefault(), addTag())}
+                      placeholder="Tech, Waterproof, Détente… + Entrée"
+                      className="h-8 text-sm bg-white flex-1"
+                    />
+                    <Button size="sm" variant="ghost" onClick={addTag} className="h-8 px-3"><Plus size={13} /></Button>
+                  </div>
+                </div>
+
+                {/* Durée + Prix */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1 flex items-center gap-1"><Clock size={10} /> Durée max (heures)</label>
+                    <Input type="number" value={edit.duree_heures} onChange={e => setEdit(s => ({ ...s, duree_heures: parseInt(e.target.value) || 0 }))} className="h-9 bg-white" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1 flex items-center gap-1"><Euro size={10} /> Prix réservation (€)</label>
+                    <Input type="number" value={edit.prix_reservation} onChange={e => setEdit(s => ({ ...s, prix_reservation: parseFloat(e.target.value) || 0 }))} className="h-9 bg-white" />
+                  </div>
+                </div>
+
+                {/* Dispo toggle */}
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-sm text-slate-700">Disponible</span>
+                  <button
+                    onClick={() => setEdit(s => ({ ...s, dispo: !s.dispo }))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${edit.dispo ? "bg-[#004e7c]" : "bg-slate-200"}`}
+                  >
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${edit.dispo ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
                   <Button variant="ghost" size="sm" onClick={() => setOpenId(null)}>Annuler</Button>
-                  <Button size="sm" onClick={() => saveItem(item.id)} disabled={saving === item.id || !editNom.trim()} className="bg-[#004e7c] hover:bg-[#003d61] text-white gap-1.5">
+                  <Button size="sm" onClick={() => saveItem(item.id)} disabled={saving === item.id || !edit.nom.trim()} className="bg-[#004e7c] hover:bg-[#003d61] text-white gap-1.5">
                     {saving === item.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                     Enregistrer
                   </Button>
@@ -700,10 +825,10 @@ function CuriositesTab() {
       <div className="bg-white rounded-xl border border-dashed border-slate-300 p-3">
         <p className="text-xs text-slate-400 mb-2 uppercase tracking-widest">Ajouter un objet</p>
         <div className="flex gap-2">
-          <Input placeholder="Emoji" value={newEmoji} onChange={e => setNewEmoji(e.target.value)} className="w-16 text-center h-9" />
+          <Input placeholder="📦" value={newEmoji} onChange={e => setNewEmoji(e.target.value)} className="w-14 text-center h-9" />
           <Input placeholder="Nom de l'objet" value={newNom} onChange={e => setNewNom(e.target.value)} onKeyDown={e => e.key === "Enter" && addItem()} className="h-9 flex-1" />
-          <Button size="sm" onClick={addItem} disabled={!newNom.trim()} className="h-9 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
-            <Plus size={14} />
+          <Button size="sm" onClick={addItem} disabled={!newNom.trim() || addingSaving} className="h-9 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
+            {addingSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
           </Button>
         </div>
       </div>

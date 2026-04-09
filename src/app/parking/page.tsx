@@ -133,7 +133,7 @@ export default function ParkingPage() {
     if (!isValid(baseDate)) return;
 
     const newStart = addDays(baseDate, deltaDaysStart);
-    const newEnd = addDays(newStart, Math.max(0, newWidthDays - 1));
+    const newEnd = addDays(newStart, Math.max(1, newWidthDays));
 
     if (!isValid(newStart) || !isValid(newEnd)) {
       console.error("Calcul de date invalide :", { newStart, newEnd });
@@ -909,17 +909,22 @@ export default function ParkingPage() {
                         {reservations.filter(r => r.parking_id === p.id).map(r => {
                           const barStyle = (function () {
                             const rStart = parseISO(r.start_date);
-                            const rEnd = endOfDay(parseISO(r.end_date));
+                            const rEnd = parseISO(r.end_date);
                             const mStart = startOfMonth(currentMonth);
                             const mEnd = endOfMonth(currentMonth);
-                            const effectiveStart = max([rStart, mStart]);
-                            const effectiveEnd = min([rEnd, mEnd]);
-                            if (isBefore(effectiveEnd, effectiveStart)) return null;
-                            const startOffset = differenceInCalendarDays(effectiveStart, mStart);
-                            const duration = differenceInCalendarDays(effectiveEnd, effectiveStart) + 1;
+                            const total = monthDays.length;
+                            // Pas d'overlap avec le mois affiché
+                            if (isAfter(rStart, mEnd) || isBefore(rEnd, mStart)) return null;
+                            // Position : centre du jour d'arrivée → centre du jour de départ
+                            // Si la resa débute avant le mois, on part du bord gauche (0)
+                            const startIdx = differenceInCalendarDays(rStart, mStart);
+                            const endIdx   = differenceInCalendarDays(rEnd,   mStart);
+                            const left  = startIdx < 0         ? 0 : (startIdx + 0.5) / total;
+                            const right = endIdx   >= total    ? 1 : (endIdx   + 0.5) / total;
+                            if (right <= left) return null;
                             return {
-                              left: `${(startOffset / monthDays.length) * 100}%`,
-                              width: `${(duration / monthDays.length) * 100}%`,
+                              left:  `${left  * 100}%`,
+                              width: `${(right - left) * 100}%`,
                             };
                           })();
                           if (!barStyle) return null;
