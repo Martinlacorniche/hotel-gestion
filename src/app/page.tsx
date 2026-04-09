@@ -13,7 +13,7 @@ import {
   ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
   NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
-  Wrench, Tv2, Wifi // Icônes maintenance + chromecast + wifi
+  Wrench, Tv2, Wifi, Package, Star // Icônes maintenance + chromecast + wifi + objets + favoris
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
@@ -26,6 +26,25 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+// --- OUTILS / MENU ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ToolDef = { id: string; label: string; href: string | ((id: string) => string); icon: any; bg: string; text: string; condition?: "parking" | "coworking" | "corniche" };
+
+const TOOLS: ToolDef[] = [
+  { id: "planning",    label: "Planning",     href: "/planning",                           icon: CalendarDays, bg: "bg-indigo-50",  text: "text-indigo-600" },
+  { id: "parking",     label: "Parking",      href: "/parking",                            icon: Car,          bg: "bg-green-50",   text: "text-green-700",  condition: "parking" },
+  { id: "fidelite",    label: "Co-Work",      href: "/fidelite",                           icon: Stamp,        bg: "bg-purple-50",  text: "text-purple-700", condition: "coworking" },
+  { id: "commandes",   label: "Commandes",    href: "/commandes",                          icon: ShoppingCart, bg: "bg-orange-50",  text: "text-orange-700" },
+  { id: "trousseau",   label: "Identifiants", href: (id) => `/trousseau?hotel_id=${id}`,   icon: KeyRound,     bg: "bg-cyan-50",    text: "text-cyan-700" },
+  { id: "repertoire",  label: "Contacts",     href: (id) => `/repertoire?hotel_id=${id}`,  icon: NotebookText, bg: "bg-blue-50",    text: "text-blue-700" },
+  { id: "process",     label: "Process",      href: (id) => `/process?hotel_id=${id}`,     icon: Settings,     bg: "bg-gray-50",    text: "text-gray-700" },
+  { id: "commercial",  label: "Commercial",   href: (id) => `/commercial?hotel_id=${id}`,  icon: ShoppingCart, bg: "bg-violet-50",  text: "text-violet-700" },
+  { id: "maintenance", label: "Maintenance",  href: (id) => `/maintenance?hotel_id=${id}`, icon: Wrench,       bg: "bg-yellow-50",  text: "text-yellow-700", condition: "corniche" },
+  { id: "chromecast",  label: "Chromecasts",  href: "/chromecast",                         icon: Tv2,          bg: "bg-slate-100",  text: "text-slate-700",  condition: "corniche" },
+  { id: "wifi-admin",  label: "Accueil Wifi", href: "/wifi-admin",                         icon: Wifi,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "corniche" },
+  { id: "objets-pret", label: "Objets prêt",  href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
+];
 
 // --- TYPES & UTILITAIRES ---
 
@@ -111,6 +130,18 @@ function weatherIconSVG(code: number) {
 export default function HotelDashboard() {
   const { user: rawUser, logout, isLoading } = useAuth();
   const [open, setOpen] = useState(false);
+  const [pinnedTools, setPinnedTools] = useState<string[]>(() => {
+    if (typeof window === "undefined") return ["planning"];
+    try { return JSON.parse(localStorage.getItem("pinned_tools") || '["planning"]'); }
+    catch { return ["planning"]; }
+  });
+  const togglePin = (id: string) => {
+    setPinnedTools(prev => {
+      const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
+      localStorage.setItem("pinned_tools", JSON.stringify(next));
+      return next;
+    });
+  };
   const [sunTimes, setSunTimes] = useState<{sunrise:string, sunset:string} | null>(null);
 
   const user = rawUser as CustomUser | null;
@@ -935,6 +966,25 @@ const birthdayMessage = useMemo(() => {
             </div>
           )}
 
+           {/* Favoris épinglés — affichés directement dans le header */}
+           {(() => {
+             const isCorniche = currentHotel?.nom?.toLowerCase().includes("corniche");
+             return pinnedTools.map(pid => {
+               const t = TOOLS.find(t => t.id === pid);
+               if (!t) return null;
+               if (t.condition === "parking" && !currentHotel?.has_parking) return null;
+               if (t.condition === "coworking" && !currentHotel?.has_coworking) return null;
+               if (t.condition === "corniche" && !isCorniche) return null;
+               const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;
+               return (
+                 <a key={t.id} href={href} target="_blank" title={t.label}
+                   className={`flex items-center justify-center w-9 h-9 rounded-full ${t.bg} ${t.text} hover:opacity-80 transition shrink-0`}>
+                   <t.icon className="w-4 h-4" />
+                 </a>
+               );
+             });
+           })()}
+
            {/* Apps Menu */}
            <DropdownMenu open={open} onOpenChange={setOpen}>
             <DropdownMenuTrigger asChild>
@@ -942,53 +992,40 @@ const birthdayMessage = useMemo(() => {
                 <Grid className="w-4 h-4 text-slate-600" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 p-2 grid grid-cols-2 gap-2">
-              <a href="/planning" target="_blank" className="col-span-2 flex items-center gap-3 p-2 hover:bg-slate-50 rounded-md transition-colors">
-                  <div className="bg-indigo-50 p-2 rounded-md"><CalendarDays className="w-4 h-4 text-indigo-600"/></div>
-                  <span className="text-sm font-medium">Planning</span>
-              </a>
-              {currentHotel?.has_parking && (
-                <a href="/parking" target="_blank" className="flex flex-col items-center justify-center p-3 bg-green-50 hover:bg-green-100 rounded-lg text-green-700 gap-1">
-                  <Car className="w-5 h-5" /> <span className="text-xs font-medium">Parking</span>
-                </a>
-              )}
-               {currentHotel?.has_coworking && (
-                <a href="/fidelite" target="_blank" className="flex flex-col items-center justify-center p-3 bg-purple-50 hover:bg-purple-100 rounded-lg text-purple-700 gap-1">
-                  <Stamp className="w-5 h-5" /> <span className="text-xs font-medium">Co-Work</span>
-                </a>
-              )}
-              <a href="/commandes" target="_blank" className="flex flex-col items-center justify-center p-3 bg-orange-50 hover:bg-orange-100 rounded-lg text-orange-700 gap-1">
-                <ShoppingCart className="w-5 h-5" /> <span className="text-xs font-medium">Commandes</span>
-              </a>
-              <a href={`/trousseau?hotel_id=${hotelId}`} target="_blank" className="flex flex-col items-center justify-center p-3 bg-cyan-50 hover:bg-cyan-100 rounded-lg text-cyan-700 gap-1">
-                <KeyRound className="w-5 h-5" /> <span className="text-xs font-medium">Identifiants</span>
-              </a>
-              <a href={`/repertoire?hotel_id=${hotelId}`} target="_blank" className="flex flex-col items-center justify-center p-3 bg-blue-50 hover:bg-blue-100 rounded-lg text-blue-700 gap-1">
-                <NotebookText className="w-5 h-5" /> <span className="text-xs font-medium">Contacts</span>
-              </a>
-               <a href={`/process?hotel_id=${hotelId}`} target="_blank" className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-gray-700 gap-1">
-                <Settings className="w-5 h-5" /> <span className="text-xs font-medium">Process</span>
-              </a>
-              <a href={`/commercial?hotel_id=${hotelId}`} target="_blank" className="flex flex-col items-center justify-center p-3 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-700 gap-1">
-  <ShoppingCart className="w-5 h-5" /> <span className="text-xs font-medium">Commercial</span>
-</a>
-              {/* Maintenance - Corniche uniquement */}
-              {currentHotel?.nom?.toLowerCase().includes("corniche") && (
-                <a href={`/maintenance?hotel_id=${hotelId}`} target="_blank" className="flex flex-col items-center justify-center p-3 bg-yellow-50 hover:bg-yellow-100 rounded-lg text-yellow-700 gap-1">
-                  <Wrench className="w-5 h-5" /> <span className="text-xs font-medium">Maintenance</span>
-                </a>
-              )}
-              {/* Chromecast - Corniche uniquement */}
-              {currentHotel?.nom?.toLowerCase().includes("corniche") && (
-                <a href="/chromecast" target="_blank" className="flex flex-col items-center justify-center p-3 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-700 gap-1">
-                  <Tv2 className="w-5 h-5" /> <span className="text-xs font-medium">Chromecasts</span>
-                </a>
-              )}
-              {/* WiFi - Corniche uniquement */}
-              {currentHotel?.nom?.toLowerCase().includes("corniche") && (
-                <a href="/wifi-admin" target="_blank" className="flex flex-col items-center justify-center p-3 bg-sky-50 hover:bg-sky-100 rounded-lg text-sky-700 gap-1">
-                  <Wifi className="w-5 h-5" /> <span className="text-xs font-medium">Acceuil Wifi</span>
-                </a>
+            <DropdownMenuContent align="end" className="w-72 p-3 space-y-2">
+              <p className="text-[10px] uppercase tracking-widest text-slate-400 px-1 pb-1">Applications</p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(() => {
+                  const isCorniche = currentHotel?.nom?.toLowerCase().includes("corniche");
+                  return TOOLS.filter(t => {
+                    if (t.condition === "parking")  return currentHotel?.has_parking;
+                    if (t.condition === "coworking") return currentHotel?.has_coworking;
+                    if (t.condition === "corniche")  return isCorniche;
+                    return true;
+                  }).map(t => {
+                    const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;
+                    const pinned = pinnedTools.includes(t.id);
+                    return (
+                      <div key={t.id} className="relative group">
+                        <a href={href} target="_blank"
+                          className={`flex flex-col items-center justify-center gap-1 p-2.5 rounded-xl ${t.bg} ${t.text} hover:opacity-80 transition w-full`}>
+                          <t.icon className="w-5 h-5" />
+                          <span className="text-[10px] font-medium text-center leading-tight">{t.label}</span>
+                        </a>
+                        <button
+                          onClick={e => { e.preventDefault(); e.stopPropagation(); togglePin(t.id); }}
+                          title={pinned ? "Retirer des favoris" : "Épingler"}
+                          className={`absolute top-1 right-1 rounded-full p-0.5 transition opacity-0 group-hover:opacity-100 ${pinned ? "opacity-100 text-amber-500" : "text-slate-300 hover:text-amber-400"}`}
+                        >
+                          <Star className="w-3 h-3" fill={pinned ? "currentColor" : "none"} />
+                        </button>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+              {pinnedTools.length > 0 && (
+                <p className="text-[10px] text-slate-400 text-center pt-1">⭐ = épinglé dans la barre</p>
               )}
             </DropdownMenuContent>
           </DropdownMenu>

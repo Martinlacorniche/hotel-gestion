@@ -10,8 +10,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Eye, EyeOff, ChevronUp, ChevronDown, Save, Plus, Trash2,
-  ImagePlus, Loader2, Check, Wifi, Megaphone, X, Clock, Euro
+  Eye, EyeOff, ChevronUp, ChevronDown,
+  Save, Plus, Trash2, ImagePlus, Loader2, Check, Wifi, Megaphone,
+  X, Clock, Euro
 } from "lucide-react";
 import toast from "react-hot-toast";
 
