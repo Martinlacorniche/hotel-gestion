@@ -34,6 +34,18 @@ type Tile = {
   config: TileConfig;
 };
 
+type BarItem = {
+  id: string;
+  categorie: string;
+  nom: string;
+  description: string | null;
+  prix: string;
+  actif: boolean;
+  ordre: number;
+  quantite: number | null;
+  local: boolean;
+};
+
 type MenuItem = {
   id: string;
   date: string;
@@ -93,6 +105,9 @@ const CONFIG_FIELDS: Record<string, { key: string; label: string; type?: "textar
   byca: [
     { key: "description", label: "Description", type: "textarea" },
   ],
+  bar: [
+    { key: "description", label: "Description courte", type: "textarea" },
+  ],
 };
 
 // Champ par défaut pour les tuiles custom (slug non reconnu)
@@ -136,12 +151,14 @@ export default function WifiAdminPage() {
           <TabsList className="w-full mb-6">
             <TabsTrigger value="tuiles"     className="flex-1">Tuiles</TabsTrigger>
             <TabsTrigger value="menu"       className="flex-1">Menu</TabsTrigger>
+            <TabsTrigger value="bar"        className="flex-1">Bar</TabsTrigger>
             <TabsTrigger value="curiosites" className="flex-1">Curiosités</TabsTrigger>
             <TabsTrigger value="annonce"    className="flex-1">Annonce</TabsTrigger>
           </TabsList>
 
           <TabsContent value="tuiles"><TilesTab /></TabsContent>
           <TabsContent value="menu"><MenuTab /></TabsContent>
+          <TabsContent value="bar"><BarTab /></TabsContent>
           <TabsContent value="curiosites"><CuriositesTab /></TabsContent>
           <TabsContent value="annonce"><AnnonceTab /></TabsContent>
         </Tabs>
@@ -162,7 +179,7 @@ function TilesTab() {
 
   useEffect(() => {
     supabase.from("wifi_tiles").select("*").order("ordre").then(({ data }) => {
-      if (data) setTiles(data);
+      if (data) setTiles(data.filter(t => t.slug !== "annonce"));
     });
   }, []);
 
@@ -576,6 +593,263 @@ function MenuTab() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB BAR
+// ─────────────────────────────────────────────────────────────
+const DEFAULT_BAR_CATEGORIES = ["Softs", "Bières", "Vins", "Cocktails", "Chauds"];
+
+function BarTab() {
+  const [items, setItems] = useState<BarItem[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, { nom: string; description: string; prix: string; quantite: string }>>({});
+  const [categories, setCategories] = useState<string[]>(DEFAULT_BAR_CATEGORIES);
+  const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set());
+  const [barTileId, setBarTileId] = useState<string | null>(null);
+  const [barConfig, setBarConfig] = useState<Record<string, unknown>>({});
+  const [newNom, setNewNom] = useState<Record<string, string>>({});
+  const [newPrix, setNewPrix] = useState<Record<string, string>>({});
+  const [newCat, setNewCat] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("wifi_bar").select("*").order("ordre"),
+      supabase.from("wifi_tiles").select("id, config").eq("slug", "bar").single(),
+    ]).then(([{ data: barData }, { data: tileData }]) => {
+      if (barData) {
+        setItems(barData);
+        const init: typeof drafts = {};
+        barData.forEach((i: BarItem) => {
+          init[i.id] = { nom: i.nom, description: i.description ?? "", prix: i.prix, quantite: i.quantite != null ? String(i.quantite) : "" };
+        });
+        setDrafts(init);
+        const dbCats = [...new Set(barData.map((i: BarItem) => i.categorie))];
+        if (tileData?.config?.categories_ordre) {
+          setCategories([...new Set([...(tileData.config.categories_ordre as string[]), ...dbCats])]);
+        } else {
+          setCategories(prev => [...new Set([...prev, ...dbCats])]);
+        }
+      }
+      if (tileData) {
+        setBarTileId(tileData.id);
+        setBarConfig(tileData.config ?? {});
+        if (tileData.config?.categories_masquees) {
+          setHiddenCats(new Set(tileData.config.categories_masquees as string[]));
+        }
+      }
+    });
+  }, []);
+
+  const persistConfig = async (patch: Record<string, unknown>) => {
+    if (!barTileId) return;
+    const next = { ...barConfig, ...patch };
+    setBarConfig(next);
+    await supabase.from("wifi_tiles").update({ config: next }).eq("id", barTileId);
+  };
+
+  const persistCatsOrdre = async (cats: string[]) => persistConfig({ categories_ordre: cats });
+
+  const toggleHiddenCat = async (cat: string) => {
+    const next = new Set(hiddenCats);
+    next.has(cat) ? next.delete(cat) : next.add(cat);
+    setHiddenCats(next);
+    await persistConfig({ categories_masquees: [...next] });
+  };
+
+  const moveCategory = async (idx: number, dir: -1 | 1) => {
+    const next = [...categories];
+    const swap = idx + dir;
+    if (swap < 0 || swap >= next.length) return;
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    setCategories(next);
+    await persistCatsOrdre(next);
+  };
+
+  const patch = (id: string, field: string, value: string) => {
+    setDrafts(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
+    setDirty(prev => new Set(prev).add(id));
+  };
+
+  const toggleActif = async (item: BarItem) => {
+    const val = !item.actif;
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, actif: val } : i));
+    await supabase.from("wifi_bar").update({ actif: val }).eq("id", item.id);
+  };
+
+  const toggleLocal = async (item: BarItem) => {
+    const val = !item.local;
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, local: val } : i));
+    await supabase.from("wifi_bar").update({ local: val }).eq("id", item.id);
+  };
+
+  const deleteItem = async (id: string) => {
+    setItems(prev => prev.filter(i => i.id !== id));
+    setDrafts(prev => { const n = { ...prev }; delete n[id]; return n; });
+    await supabase.from("wifi_bar").delete().eq("id", id);
+    toast.success("Article supprimé");
+  };
+
+  const saveAll = async () => {
+    if (dirty.size === 0) return;
+    setSaving(true);
+    let hasError = false;
+    await Promise.all([...dirty].map(async id => {
+      const d = drafts[id];
+      if (!d) return;
+      const nom = (d.nom ?? "").trim();
+      const description = (d.description ?? "").trim() || null;
+      const prix = (d.prix ?? "").trim();
+      const quantite = !(d.quantite ?? "").trim() ? null : parseInt(d.quantite, 10);
+      const { error } = await supabase.from("wifi_bar").update({ nom, prix, quantite }).eq("id", id);
+      if (error) { toast.error(error.message ?? JSON.stringify(error)); hasError = true; return; }
+      if (description !== null) {
+        const { error: err2 } = await supabase.from("wifi_bar").update({ description }).eq("id", id);
+        if (err2) toast.error("description: " + (err2.message ?? JSON.stringify(err2)));
+      }
+      setItems(prev => prev.map(i => i.id === id ? { ...i, nom, description, prix, quantite } : i));
+    }));
+    setDirty(new Set());
+    setSaving(false);
+    if (hasError) toast.error("Erreur lors de la sauvegarde — vérifiez la console");
+    else toast.success("Sauvegardé ✓");
+  };
+
+  const addItem = async (categorie: string) => {
+    const nom = (newNom[categorie] ?? "").trim();
+    const prix = (newPrix[categorie] ?? "").trim();
+    if (!nom || !prix) return;
+    setAdding(true);
+    const ordre = items.filter(i => i.categorie === categorie).length;
+    const { data, error } = await supabase.from("wifi_bar")
+      .insert({ categorie, nom, prix, actif: true, ordre, quantite: null, local: false, description: null })
+      .select().single();
+    setAdding(false);
+    if (error) { toast.error("Erreur"); return; }
+    setItems(prev => [...prev, data]);
+    setDrafts(prev => ({ ...prev, [data.id]: { nom: data.nom, description: "", prix: data.prix, quantite: "" } }));
+    setNewNom(prev => ({ ...prev, [categorie]: "" }));
+    setNewPrix(prev => ({ ...prev, [categorie]: "" }));
+    toast.success("Article ajouté ✓");
+  };
+
+  const addCategorie = () => {
+    const cat = newCat.trim();
+    if (!cat || categories.includes(cat)) return;
+    const next = [...categories, cat];
+    setCategories(next);
+    setNewCat("");
+    persistCatsOrdre(next);
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Bouton global */}
+      <div className="flex justify-end">
+        <Button
+          onClick={saveAll}
+          disabled={saving || dirty.size === 0}
+          className="bg-[#004e7c] hover:bg-[#003d61] text-white gap-2"
+          size="sm"
+        >
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          {dirty.size > 0 ? `Enregistrer (${dirty.size})` : "Enregistrer"}
+        </Button>
+      </div>
+
+      {categories.map((cat, idx) => {
+        const opts = items.filter(i => i.categorie === cat);
+        const isHidden = hiddenCats.has(cat);
+        return (
+          <div key={cat} className={`bg-white rounded-xl border overflow-hidden ${isHidden ? "border-slate-100 opacity-60" : "border-slate-200"}`}>
+            {/* Header */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50">
+              <div className="flex flex-col gap-0.5">
+                <button onClick={() => moveCategory(idx, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={13} /></button>
+                <button onClick={() => moveCategory(idx, 1)} disabled={idx === categories.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={13} /></button>
+              </div>
+              <span className={`text-xs font-semibold uppercase tracking-widest ${isHidden ? "text-slate-300" : "text-slate-500"}`}>{cat}</span>
+              <button
+                onClick={() => toggleHiddenCat(cat)}
+                className={`ml-auto p-1.5 rounded-lg transition ${isHidden ? "text-slate-300 bg-slate-100" : "text-[#004e7c] bg-blue-50"}`}
+              >
+                {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+
+            {/* Articles */}
+            <ul className="divide-y divide-slate-50">
+              {opts.map(item => {
+                const d = drafts[item.id] ?? { nom: item.nom, description: "", prix: item.prix, quantite: "" };
+                return (
+                  <li key={item.id} className="px-4 py-3 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      {/* Actif */}
+                      <button
+                        onClick={() => toggleActif(item)}
+                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[#004e7c] border-[#004e7c]" : "border-slate-300"}`}
+                      >
+                        {item.actif && <Check size={10} className="text-white" />}
+                      </button>
+                      {/* Nom */}
+                      <Input value={d.nom} onChange={e => patch(item.id, "nom", e.target.value)} className="h-7 text-sm flex-1" />
+                      {/* Prix */}
+                      <Input value={d.prix} onChange={e => patch(item.id, "prix", e.target.value)} className="h-7 w-20 text-sm text-center tabular-nums" placeholder="Prix" />
+                      {/* cl */}
+                      <Input value={d.quantite} onChange={e => patch(item.id, "quantite", e.target.value)} className="h-7 w-14 text-sm text-center tabular-nums" placeholder="cl" type="number" min="0" />
+                      {/* Local */}
+                      <button
+                        onClick={() => toggleLocal(item)}
+                        title="Produit local"
+                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition shrink-0 ${item.local ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "border-slate-200 text-slate-300 hover:text-slate-400"}`}
+                      >
+                        🌿
+                      </button>
+                      {/* Modifié */}
+                      {dirty.has(item.id) && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+                      {/* Supprimer */}
+                      <button onClick={() => deleteItem(item.id)} className="text-slate-200 hover:text-red-400 transition shrink-0">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                    {/* Description */}
+                    <Input
+                      value={d.description}
+                      onChange={e => patch(item.id, "description", e.target.value)}
+                      className="h-7 text-sm text-slate-400 ml-6"
+                      placeholder="Description (facultatif)"
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+
+            {/* Ajouter un article */}
+            <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
+              <Input placeholder="Nom de l'article" value={newNom[cat] ?? ""} onChange={e => setNewNom(prev => ({ ...prev, [cat]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(cat)} className="h-8 text-sm flex-1" />
+              <Input placeholder="Prix" value={newPrix[cat] ?? ""} onChange={e => setNewPrix(prev => ({ ...prev, [cat]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(cat)} className="h-8 text-sm w-20" />
+              <Button size="sm" onClick={() => addItem(cat)} disabled={adding || !newNom[cat]?.trim() || !newPrix[cat]?.trim()} className="h-8 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
+                <Plus size={14} />
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Ajouter une catégorie */}
+      <div className="bg-white rounded-xl border border-dashed border-slate-300 p-4">
+        <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-2">Nouvelle catégorie</p>
+        <div className="flex gap-2">
+          <Input placeholder="Ex: Vins pétillants" value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCategorie()} className="h-8 text-sm" />
+          <Button size="sm" onClick={addCategorie} disabled={!newCat.trim() || categories.includes(newCat.trim())} className="h-8 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
+            <Plus size={14} />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
