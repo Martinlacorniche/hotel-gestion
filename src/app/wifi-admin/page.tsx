@@ -2,7 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useRef } from "react";
+import React, { createContext, useContext, Suspense, useEffect, useState, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
@@ -15,6 +16,18 @@ import {
   X, Clock, Euro
 } from "lucide-react";
 import toast from "react-hot-toast";
+
+// ─────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────
+const CORNICHE_ID = "f9d59e56-9a2f-433e-bcf4-f9753f105f32";
+const VOILES_ID   = "ded6e6fb-ff3c-4fa8-ad07-403ee316be53";
+
+// ─────────────────────────────────────────────────────────────
+// CONTEXT
+// ─────────────────────────────────────────────────────────────
+const HotelCtx = createContext<string>(CORNICHE_ID);
+function useHotelId() { return useContext(HotelCtx); }
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
@@ -81,6 +94,10 @@ const CONFIG_FIELDS: Record<string, { key: string; label: string; type?: "textar
     { key: "weekend", label: "Horaires Sam-Dim" },
     { key: "prix",    label: "Tarif" },
   ],
+  checkin: [
+    { key: "heure", label: "Heure d'arrivée standard" },
+    { key: "note",  label: "Note", type: "textarea" },
+  ],
   checkout: [
     { key: "standard", label: "Départ standard" },
     { key: "late",     label: "Late check-out" },
@@ -108,11 +125,19 @@ const CONFIG_FIELDS: Record<string, { key: string; label: string; type?: "textar
   bar: [
     { key: "description", label: "Description courte", type: "textarea" },
   ],
+  rooftop: [
+    { key: "description", label: "Description courte", type: "textarea" },
+  ],
+  urgences: [
+    { key: "message",    label: "Message principal", type: "textarea" },
+    { key: "telephone",  label: "Téléphone réception" },
+  ],
+  regles: [
+    { key: "texte", label: "Règles de la maison", type: "textarea" },
+  ],
 };
 
-// Champ par défaut pour les tuiles custom (slug non reconnu)
 const DEFAULT_CONFIG_FIELD = [{ key: "texte", label: "Contenu", type: "textarea" as const }];
-
 
 const CATEGORIES = [
   { key: "base",      label: "Bases",      emoji: "🍽️" },
@@ -121,11 +146,22 @@ const CATEGORIES = [
 ] as const;
 
 // ─────────────────────────────────────────────────────────────
-// PAGE
+// PAGE (entry point with Suspense)
 // ─────────────────────────────────────────────────────────────
 export default function WifiAdminPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <WifiAdminContent />
+    </Suspense>
+  );
+}
+
+function WifiAdminContent() {
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const hotelId = searchParams?.get("hotel_id") ?? CORNICHE_ID;
+  const isVoiles = hotelId === VOILES_ID;
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
@@ -134,36 +170,40 @@ export default function WifiAdminPage() {
   if (authLoading || !user) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-9 h-9 rounded-xl bg-[#004e7c] flex items-center justify-center">
-            <Wifi size={18} className="text-white" />
+    <HotelCtx.Provider value={hotelId}>
+      <div className="min-h-screen bg-slate-50">
+        <div className="max-w-2xl mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-9 h-9 rounded-xl bg-[#004e7c] flex items-center justify-center">
+              <Wifi size={18} className="text-white" />
+            </div>
+            <div>
+              <h1 className="font-semibold text-slate-900 text-lg">Gestion de l&apos;interface WiFi</h1>
+              <p className="text-xs text-slate-400">
+                {isVoiles ? "Les Voiles" : "BW+ La Corniche"} · Portail clients
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-semibold text-slate-900 text-lg">Page WiFi</h1>
-            <p className="text-xs text-slate-400">Gestion du portail clients</p>
-          </div>
+
+          <Tabs defaultValue="tuiles">
+            <TabsList className="w-full mb-6">
+              <TabsTrigger value="tuiles"     className="flex-1">Tuiles</TabsTrigger>
+              <TabsTrigger value="menu"       className="flex-1">Menu</TabsTrigger>
+              <TabsTrigger value="bar"        className="flex-1">{isVoiles ? "Rooftop" : "Bar"}</TabsTrigger>
+              {!isVoiles && <TabsTrigger value="curiosites" className="flex-1">Curiosités</TabsTrigger>}
+              <TabsTrigger value="annonce"    className="flex-1">Annonce</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="tuiles"><TilesTab /></TabsContent>
+            <TabsContent value="menu"><MenuTab /></TabsContent>
+            <TabsContent value="bar"><BarTab /></TabsContent>
+            {!isVoiles && <TabsContent value="curiosites"><CuriositesTab /></TabsContent>}
+            <TabsContent value="annonce"><AnnonceTab /></TabsContent>
+          </Tabs>
         </div>
-
-        <Tabs defaultValue="tuiles">
-          <TabsList className="w-full mb-6">
-            <TabsTrigger value="tuiles"     className="flex-1">Tuiles</TabsTrigger>
-            <TabsTrigger value="menu"       className="flex-1">Menu</TabsTrigger>
-            <TabsTrigger value="bar"        className="flex-1">Bar</TabsTrigger>
-            <TabsTrigger value="curiosites" className="flex-1">Curiosités</TabsTrigger>
-            <TabsTrigger value="annonce"    className="flex-1">Annonce</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="tuiles"><TilesTab /></TabsContent>
-          <TabsContent value="menu"><MenuTab /></TabsContent>
-          <TabsContent value="bar"><BarTab /></TabsContent>
-          <TabsContent value="curiosites"><CuriositesTab /></TabsContent>
-          <TabsContent value="annonce"><AnnonceTab /></TabsContent>
-        </Tabs>
       </div>
-    </div>
+    </HotelCtx.Provider>
   );
 }
 
@@ -171,6 +211,7 @@ export default function WifiAdminPage() {
 // TAB TUILES
 // ─────────────────────────────────────────────────────────────
 function TilesTab() {
+  const hotelId = useHotelId();
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [openSlug, setOpenSlug] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -178,10 +219,10 @@ function TilesTab() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from("wifi_tiles").select("*").order("ordre").then(({ data }) => {
-      if (data) setTiles(data.filter(t => t.slug !== "annonce"));
+    supabase.from("wifi_tiles").select("*").eq("hotel_id", hotelId).order("ordre").then(({ data }) => {
+      if (data) setTiles(data.filter((t: Tile) => t.slug !== "annonce"));
     });
-  }, []);
+  }, [hotelId]);
 
   const update = (id: string, patch: Partial<Tile>) =>
     setTiles(prev => prev.map(t => (t.id === id ? { ...t, ...patch } : t)));
@@ -259,12 +300,10 @@ function TilesTab() {
         const fields = CONFIG_FIELDS[tile.slug] ?? DEFAULT_CONFIG_FIELD;
         return (
           <div key={tile.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            {/* Ligne principale */}
             <div
               className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition select-none"
               onClick={() => setOpenSlug(isOpen ? null : tile.slug)}
             >
-              {/* Ordre */}
               <div className="flex flex-col gap-0.5" onClick={e => e.stopPropagation()}>
                 <button onClick={() => move(tile, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20">
                   <ChevronUp size={14} />
@@ -280,7 +319,6 @@ function TilesTab() {
                 <p className="text-xs text-slate-400 truncate">{tile.tagline}</p>
               </div>
 
-              {/* Toggle visible */}
               <button
                 onClick={(e) => { e.stopPropagation(); toggleVisible(tile); }}
                 className={`p-1.5 rounded-lg transition ${tile.visible ? "text-[#004e7c] bg-blue-50" : "text-slate-300 bg-slate-100"}`}
@@ -289,11 +327,8 @@ function TilesTab() {
               </button>
             </div>
 
-            {/* Panneau d'édition */}
             {isOpen && (
               <div className="border-t border-slate-100 px-4 py-4 space-y-4 bg-slate-50/50">
-
-                {/* Emoji / Titre / Tagline */}
                 <div className="grid grid-cols-[56px_1fr_1fr] gap-2">
                   <div>
                     <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Emoji</label>
@@ -309,7 +344,6 @@ function TilesTab() {
                   </div>
                 </div>
 
-                {/* Champs config */}
                 {fields.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[10px] uppercase tracking-widest text-slate-400">Contenu</p>
@@ -331,7 +365,6 @@ function TilesTab() {
                   </div>
                 )}
 
-                {/* Photo */}
                 <div>
                   <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-2">Photo de fond</p>
                   <div className="flex items-center gap-3">
@@ -359,7 +392,6 @@ function TilesTab() {
                   </div>
                 </div>
 
-                {/* Bouton save */}
                 <div className="flex items-center justify-between pt-1">
                   {confirmDelete === tile.id ? (
                     <div className="flex items-center gap-2">
@@ -388,7 +420,6 @@ function TilesTab() {
         );
       })}
 
-      {/* ── Ajouter une tuile ── */}
       <AddTileForm onAdd={tile => setTiles(prev => [...prev, tile])} nextOrdre={sorted.length} />
     </div>
   );
@@ -398,6 +429,7 @@ function TilesTab() {
 // Formulaire ajout de tuile
 // ─────────────────────────────────────────────────────────────
 function AddTileForm({ onAdd, nextOrdre }: { onAdd: (t: Tile) => void; nextOrdre: number }) {
+  const hotelId = useHotelId();
   const [open, setOpen] = useState(false);
   const [emoji, setEmoji] = useState("");
   const [title, setTitle] = useState("");
@@ -416,6 +448,7 @@ function AddTileForm({ onAdd, nextOrdre }: { onAdd: (t: Tile) => void; nextOrdre
       visible: true,
       ordre: nextOrdre,
       config: {},
+      hotel_id: hotelId,
     }).select().single();
     setSaving(false);
     if (error) { toast.error("Erreur"); return; }
@@ -467,6 +500,7 @@ function AddTileForm({ onAdd, nextOrdre }: { onAdd: (t: Tile) => void; nextOrdre
 // TAB MENU
 // ─────────────────────────────────────────────────────────────
 function MenuTab() {
+  const hotelId = useHotelId();
   const [items, setItems] = useState<MenuItem[]>([]);
   const [newNom, setNewNom] = useState<Record<string, string>>({ base: "", garniture: "", dessert: "" });
   const [prixPlat, setPrixPlat] = useState("");
@@ -476,9 +510,9 @@ function MenuTab() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase.from("wifi_menu").select("*").order("ordre")
+    supabase.from("wifi_menu").select("*").eq("hotel_id", hotelId).order("ordre")
       .then(({ data }) => { if (data) setItems(data); });
-    supabase.from("wifi_tiles").select("config").eq("slug", "menu").single()
+    supabase.from("wifi_tiles").select("config").eq("slug", "menu").eq("hotel_id", hotelId).single()
       .then(({ data }) => {
         if (data?.config) {
           setPrixPlat(data.config.prix_plat ?? "");
@@ -486,14 +520,14 @@ function MenuTab() {
           setPrixMenu(data.config.prix_menu ?? "");
         }
       });
-  }, []);
+  }, [hotelId]);
 
   const savePrix = async () => {
     setSavingPrix(true);
-    const { data: current } = await supabase.from("wifi_tiles").select("config").eq("slug", "menu").single();
+    const { data: current } = await supabase.from("wifi_tiles").select("config").eq("slug", "menu").eq("hotel_id", hotelId).single();
     await supabase.from("wifi_tiles").update({
       config: { ...(current?.config ?? {}), prix_plat: prixPlat, prix_dessert: prixDessert, prix_menu: prixMenu }
-    }).eq("slug", "menu");
+    }).eq("slug", "menu").eq("hotel_id", hotelId);
     setSavingPrix(false);
     toast.success("Prix enregistrés ✓");
   };
@@ -515,7 +549,7 @@ function MenuTab() {
     setSaving(true);
     const ordre = items.filter(i => i.categorie === categorie).length;
     const { data, error } = await supabase.from("wifi_menu")
-      .insert({ categorie, nom, actif: true, ordre })
+      .insert({ categorie, nom, actif: true, ordre, hotel_id: hotelId })
       .select().single();
     setSaving(false);
     if (error) { toast.error("Erreur"); return; }
@@ -526,8 +560,6 @@ function MenuTab() {
 
   return (
     <div className="space-y-3">
-
-      {/* En-tête date + prix */}
       <div className="bg-white rounded-xl border border-slate-200 px-4 py-4 space-y-3">
         <p className="text-xs text-slate-400">
           Menu du <strong className="text-slate-700">
@@ -598,11 +630,15 @@ function MenuTab() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// TAB BAR
+// TAB BAR / ROOFTOP
 // ─────────────────────────────────────────────────────────────
 const DEFAULT_BAR_CATEGORIES = ["Softs", "Bières", "Vins", "Cocktails", "Chauds"];
 
 function BarTab() {
+  const hotelId = useHotelId();
+  const isVoiles = hotelId === VOILES_ID;
+  const barSlug = isVoiles ? "rooftop" : "bar";
+
   const [items, setItems] = useState<BarItem[]>([]);
   const [drafts, setDrafts] = useState<Record<string, { nom: string; description: string; prix: string; quantite: string }>>({});
   const [categories, setCategories] = useState<string[]>(DEFAULT_BAR_CATEGORIES);
@@ -612,14 +648,16 @@ function BarTab() {
   const [newNom, setNewNom] = useState<Record<string, string>>({});
   const [newPrix, setNewPrix] = useState<Record<string, string>>({});
   const [newCat, setNewCat] = useState("");
+  const [editingCat, setEditingCat] = useState<string | null>(null);
+  const [editingCatVal, setEditingCatVal] = useState("");
   const [adding, setAdding] = useState(false);
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     Promise.all([
-      supabase.from("wifi_bar").select("*").order("ordre"),
-      supabase.from("wifi_tiles").select("id, config").eq("slug", "bar").single(),
+      supabase.from("wifi_bar").select("*").eq("hotel_id", hotelId).order("ordre"),
+      supabase.from("wifi_tiles").select("id, config").eq("slug", barSlug).eq("hotel_id", hotelId).single(),
     ]).then(([{ data: barData }, { data: tileData }]) => {
       if (barData) {
         setItems(barData);
@@ -643,7 +681,7 @@ function BarTab() {
         }
       }
     });
-  }, []);
+  }, [hotelId, barSlug]);
 
   const persistConfig = async (patch: Record<string, unknown>) => {
     if (!barTileId) return;
@@ -726,7 +764,7 @@ function BarTab() {
     setAdding(true);
     const ordre = items.filter(i => i.categorie === categorie).length;
     const { data, error } = await supabase.from("wifi_bar")
-      .insert({ categorie, nom, prix, actif: true, ordre, quantite: null, local: false, description: null })
+      .insert({ categorie, nom, prix, actif: true, ordre, quantite: null, local: false, description: null, hotel_id: hotelId })
       .select().single();
     setAdding(false);
     if (error) { toast.error("Erreur"); return; }
@@ -746,9 +784,56 @@ function BarTab() {
     persistCatsOrdre(next);
   };
 
+  const deleteCategorie = async (cat: string) => {
+    const hasItems = items.some(i => i.categorie === cat);
+    if (hasItems) {
+      if (!confirm(`La catégorie "${cat}" contient des articles. Supprimer quand même (les articles seront aussi supprimés) ?`)) return;
+      const ids = items.filter(i => i.categorie === cat).map(i => i.id);
+      await supabase.from("wifi_bar").delete().in("id", ids);
+      setItems(prev => prev.filter(i => i.categorie !== cat));
+      setDrafts(prev => {
+        const n = { ...prev };
+        ids.forEach(id => delete n[id]);
+        return n;
+      });
+    }
+    const next = categories.filter(c => c !== cat);
+    setCategories(next);
+    await persistCatsOrdre(next);
+    toast.success(`Catégorie "${cat}" supprimée`);
+  };
+
+  const startRenameCat = (cat: string) => {
+    setEditingCat(cat);
+    setEditingCatVal(cat);
+  };
+
+  const confirmRenameCat = async (oldCat: string) => {
+    const newName = editingCatVal.trim();
+    if (!newName || newName === oldCat) { setEditingCat(null); return; }
+    if (categories.includes(newName)) { toast.error("Ce nom existe déjà"); return; }
+    const ids = items.filter(i => i.categorie === oldCat).map(i => i.id);
+    if (ids.length > 0) {
+      await supabase.from("wifi_bar").update({ categorie: newName }).in("id", ids);
+    }
+    setItems(prev => prev.map(i => i.categorie === oldCat ? { ...i, categorie: newName } : i));
+    const next = categories.map(c => c === oldCat ? newName : c);
+    setCategories(next);
+    if (hiddenCats.has(oldCat)) {
+      const nextHidden = new Set(hiddenCats);
+      nextHidden.delete(oldCat);
+      nextHidden.add(newName);
+      setHiddenCats(nextHidden);
+      await persistConfig({ categories_ordre: next, categories_masquees: [...nextHidden] });
+    } else {
+      await persistCatsOrdre(next);
+    }
+    setEditingCat(null);
+    toast.success("Catégorie renommée ✓");
+  };
+
   return (
     <div className="space-y-3">
-      {/* Bouton global */}
       <div className="flex justify-end">
         <Button
           onClick={saveAll}
@@ -766,13 +851,29 @@ function BarTab() {
         const isHidden = hiddenCats.has(cat);
         return (
           <div key={cat} className={`bg-white rounded-xl border overflow-hidden ${isHidden ? "border-slate-100 opacity-60" : "border-slate-200"}`}>
-            {/* Header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50">
               <div className="flex flex-col gap-0.5">
                 <button onClick={() => moveCategory(idx, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={13} /></button>
                 <button onClick={() => moveCategory(idx, 1)} disabled={idx === categories.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={13} /></button>
               </div>
-              <span className={`text-xs font-semibold uppercase tracking-widest ${isHidden ? "text-slate-300" : "text-slate-500"}`}>{cat}</span>
+              {editingCat === cat ? (
+                <input
+                  autoFocus
+                  value={editingCatVal}
+                  onChange={e => setEditingCatVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") confirmRenameCat(cat); if (e.key === "Escape") setEditingCat(null); }}
+                  onBlur={() => confirmRenameCat(cat)}
+                  className="text-xs font-semibold uppercase tracking-widest bg-white border border-slate-300 rounded px-1.5 py-0.5 w-32 focus:outline-none focus:border-[#004e7c]"
+                />
+              ) : (
+                <span className={`text-xs font-semibold uppercase tracking-widest ${isHidden ? "text-slate-300" : "text-slate-500"}`}>{cat}</span>
+              )}
+              <button onClick={() => startRenameCat(cat)} className="text-slate-300 hover:text-slate-500 transition p-1" title="Renommer">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button onClick={() => deleteCategorie(cat)} className="text-slate-300 hover:text-red-400 transition p-1" title="Supprimer la catégorie">
+                <Trash2 size={12} />
+              </button>
               <button
                 onClick={() => toggleHiddenCat(cat)}
                 className={`ml-auto p-1.5 rounded-lg transition ${isHidden ? "text-slate-300 bg-slate-100" : "text-[#004e7c] bg-blue-50"}`}
@@ -781,27 +882,21 @@ function BarTab() {
               </button>
             </div>
 
-            {/* Articles */}
             <ul className="divide-y divide-slate-50">
               {opts.map(item => {
                 const d = drafts[item.id] ?? { nom: item.nom, description: "", prix: item.prix, quantite: "" };
                 return (
                   <li key={item.id} className="px-4 py-3 space-y-1.5">
                     <div className="flex items-center gap-2">
-                      {/* Actif */}
                       <button
                         onClick={() => toggleActif(item)}
                         className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[#004e7c] border-[#004e7c]" : "border-slate-300"}`}
                       >
                         {item.actif && <Check size={10} className="text-white" />}
                       </button>
-                      {/* Nom */}
                       <Input value={d.nom} onChange={e => patch(item.id, "nom", e.target.value)} className="h-7 text-sm flex-1" />
-                      {/* Prix */}
                       <Input value={d.prix} onChange={e => patch(item.id, "prix", e.target.value)} className="h-7 w-20 text-sm text-center tabular-nums" placeholder="Prix" />
-                      {/* cl */}
                       <Input value={d.quantite} onChange={e => patch(item.id, "quantite", e.target.value)} className="h-7 w-14 text-sm text-center tabular-nums" placeholder="cl" type="number" min="0" />
-                      {/* Local */}
                       <button
                         onClick={() => toggleLocal(item)}
                         title="Produit local"
@@ -809,14 +904,11 @@ function BarTab() {
                       >
                         🌿
                       </button>
-                      {/* Modifié */}
                       {dirty.has(item.id) && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
-                      {/* Supprimer */}
                       <button onClick={() => deleteItem(item.id)} className="text-slate-200 hover:text-red-400 transition shrink-0">
                         <Trash2 size={13} />
                       </button>
                     </div>
-                    {/* Description */}
                     <Input
                       value={d.description}
                       onChange={e => patch(item.id, "description", e.target.value)}
@@ -828,7 +920,6 @@ function BarTab() {
               })}
             </ul>
 
-            {/* Ajouter un article */}
             <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
               <Input placeholder="Nom de l'article" value={newNom[cat] ?? ""} onChange={e => setNewNom(prev => ({ ...prev, [cat]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(cat)} className="h-8 text-sm flex-1" />
               <Input placeholder="Prix" value={newPrix[cat] ?? ""} onChange={e => setNewPrix(prev => ({ ...prev, [cat]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(cat)} className="h-8 text-sm w-20" />
@@ -840,11 +931,10 @@ function BarTab() {
         );
       })}
 
-      {/* Ajouter une catégorie */}
       <div className="bg-white rounded-xl border border-dashed border-slate-300 p-4">
         <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-2">Nouvelle catégorie</p>
         <div className="flex gap-2">
-          <Input placeholder="Ex: Vins pétillants" value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCategorie()} className="h-8 text-sm" />
+          <Input placeholder="Ex: Cocktails sans alcool" value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCategorie()} className="h-8 text-sm" />
           <Button size="sm" onClick={addCategorie} disabled={!newCat.trim() || categories.includes(newCat.trim())} className="h-8 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
             <Plus size={14} />
           </Button>
@@ -855,7 +945,7 @@ function BarTab() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// TAB CURIOSITÉS
+// TAB CURIOSITÉS (BW uniquement)
 // ─────────────────────────────────────────────────────────────
 type EditState = {
   nom: string; nom_en: string; emoji: string;
@@ -1002,9 +1092,7 @@ function CuriositesTab() {
         const isOpen = openId === item.id;
         return (
           <div key={item.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            {/* Ligne principale */}
             <div className="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-50 transition select-none" onClick={() => openEdit(item)}>
-              {/* Flèches ordre */}
               <div className="flex flex-col gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
                 <button onClick={() => moveItem(item, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={14} /></button>
                 <button onClick={() => moveItem(item, 1)} disabled={idx === sorted.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={14} /></button>
@@ -1037,10 +1125,8 @@ function CuriositesTab() {
               </div>
             </div>
 
-            {/* Panel édition */}
             {isOpen && (
               <div className="border-t border-slate-100 px-4 py-4 bg-slate-50 space-y-3">
-                {/* Emoji + Noms */}
                 <div className="grid grid-cols-[48px_1fr_1fr] gap-2">
                   <div>
                     <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Emoji</label>
@@ -1052,7 +1138,6 @@ function CuriositesTab() {
                   </div>
                 </div>
 
-                {/* Descriptions */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Description FR</label>
@@ -1060,7 +1145,6 @@ function CuriositesTab() {
                   </div>
                 </div>
 
-                {/* Tags */}
                 <div>
                   <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Tags</label>
                   <div className="flex flex-wrap gap-1.5 mb-2">
@@ -1083,7 +1167,6 @@ function CuriositesTab() {
                   </div>
                 </div>
 
-                {/* Durée + Prix */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1 flex items-center gap-1"><Clock size={10} /> Durée max (heures)</label>
@@ -1095,7 +1178,6 @@ function CuriositesTab() {
                   </div>
                 </div>
 
-                {/* Dispo toggle */}
                 <div className="flex items-center justify-between py-1">
                   <span className="text-sm text-slate-700">Disponible</span>
                   <button
@@ -1119,7 +1201,6 @@ function CuriositesTab() {
         );
       })}
 
-      {/* Ajouter un objet */}
       <div className="bg-white rounded-xl border border-dashed border-slate-300 p-3">
         <p className="text-xs text-slate-400 mb-2 uppercase tracking-widest">Ajouter un objet</p>
         <div className="flex gap-2">
@@ -1138,6 +1219,7 @@ function CuriositesTab() {
 // TAB ANNONCE
 // ─────────────────────────────────────────────────────────────
 function AnnonceTab() {
+  const hotelId = useHotelId();
   const [message, setMessage] = useState("");
   const [type, setType] = useState<"info" | "urgent">("info");
   const [active, setActive] = useState(false);
@@ -1145,7 +1227,7 @@ function AnnonceTab() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase.from("wifi_tiles").select("*").eq("slug", "annonce").single().then(({ data }) => {
+    supabase.from("wifi_tiles").select("*").eq("slug", "annonce").eq("hotel_id", hotelId).single().then(({ data }) => {
       if (data) {
         setTileId(data.id);
         setMessage(data.config?.message ?? "");
@@ -1153,11 +1235,11 @@ function AnnonceTab() {
         setActive(data.visible ?? false);
       }
     });
-  }, []);
+  }, [hotelId]);
 
   const save = async () => {
     setSaving(true);
-    const payload = { slug: "annonce", emoji: "📢", title: "Annonce", tagline: "", visible: active, ordre: 999, config: { message, type } };
+    const payload = { slug: "annonce", emoji: "📢", title: "Annonce", tagline: "", visible: active, ordre: 999, config: { message, type }, hotel_id: hotelId };
     if (tileId) {
       await supabase.from("wifi_tiles").update(payload).eq("id", tileId);
     } else {
@@ -1170,7 +1252,6 @@ function AnnonceTab() {
 
   return (
     <div className="space-y-4">
-      {/* Statut */}
       <div className="bg-white rounded-xl border border-slate-200 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -1184,15 +1265,12 @@ function AnnonceTab() {
             <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${active ? "translate-x-6" : "translate-x-1"}`} />
           </button>
         </div>
-        {active && (
-          <p className="text-xs text-emerald-600 mt-2 font-medium">● Affiché sur le portail WiFi</p>
-        )}
-        {!active && (
-          <p className="text-xs text-slate-400 mt-2">Désactivé — pas visible par les clients</p>
-        )}
+        {active
+          ? <p className="text-xs text-emerald-600 mt-2 font-medium">● Affiché sur le portail WiFi</p>
+          : <p className="text-xs text-slate-400 mt-2">Désactivé — pas visible par les clients</p>
+        }
       </div>
 
-      {/* Type */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
         <p className="text-xs text-slate-400 uppercase tracking-widest mb-3">Type de message</p>
         <div className="grid grid-cols-2 gap-2">
@@ -1211,7 +1289,6 @@ function AnnonceTab() {
         </div>
       </div>
 
-      {/* Message */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
         <p className="text-xs text-slate-400 uppercase tracking-widest mb-3">Message</p>
         <textarea
@@ -1223,7 +1300,6 @@ function AnnonceTab() {
         />
       </div>
 
-      {/* Prévisualisation */}
       {message.trim() && (
         <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2.5 ${type === "urgent" ? "bg-red-50 border-red-200 text-red-700" : "bg-blue-50 border-blue-200 text-blue-700"}`}>
           <span className="text-base shrink-0">{type === "urgent" ? "⚠️" : "ℹ️"}</span>
