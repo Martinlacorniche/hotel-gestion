@@ -39,6 +39,7 @@ interface Lead {
   updated_by?: string;
   hotel_id?: string;
   besoin_gaetan?: 'Pas besoin' | 'À valider' | 'Validé' | 'Pas dispo';
+  source?: string;
 }
 
 // --- CONSTANTES ---
@@ -935,10 +936,15 @@ export default function CommercialDashboard() {
                             <div className="pl-4 pr-4 pt-4 pb-3.5">
                               <div className="flex items-start justify-between gap-2 mb-1">
                                 <p className="font-black text-[14px] leading-snug tracking-tight text-gray-900">{lead.nom_client}</p>
-                                <span className="shrink-0 dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md"
-                                  style={{color: accentColor, background: `${accentColor}14`}}>
-                                  {isLate ? 'RETARD' : 'AUJ.'}
-                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {lead.source === 'Site web' && (
+                                    <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md bg-blue-50 text-blue-500 border border-blue-100">🌐 Web</span>
+                                  )}
+                                  <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md"
+                                    style={{color: accentColor, background: `${accentColor}14`}}>
+                                    {isLate ? 'RETARD' : 'AUJ.'}
+                                  </span>
+                                </div>
                               </div>
                               <p className="text-[11px] mb-3 leading-relaxed truncate text-gray-400">{lead.titre_demande}</p>
                               <div className="flex items-center gap-2 flex-wrap">
@@ -1089,12 +1095,17 @@ export default function CommercialDashboard() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-start gap-2 mb-0.5">
                                   <p className="font-black text-[14px] leading-snug tracking-tight flex-1 min-w-0 truncate text-gray-900">{lead.nom_client}</p>
-                                  {isUrgent && (
-                                    <span className="dm text-[9px] font-bold shrink-0 px-2 py-0.5 rounded-md"
-                                      style={{color: rs==='late'?'#e53935':'#e67e00', background: rs==='late'?'#e5393514':'#e67e0014'}}>
-                                      {rs === 'late' ? 'RETARD' : 'AUJ.'}
-                                    </span>
-                                  )}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {lead.source === 'Site web' && (
+                                      <span className="dm text-[9px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-500 border border-blue-100">🌐 Web</span>
+                                    )}
+                                    {isUrgent && (
+                                      <span className="dm text-[9px] font-bold px-2 py-0.5 rounded-md"
+                                        style={{color: rs==='late'?'#e53935':'#e67e00', background: rs==='late'?'#e5393514':'#e67e0014'}}>
+                                        {rs === 'late' ? 'RETARD' : 'AUJ.'}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                                 <p className="text-[11px] mb-3 leading-relaxed truncate text-gray-400">{lead.titre_demande}</p>
                                 <div className="flex items-center gap-1.5 flex-wrap">

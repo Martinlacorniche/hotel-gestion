@@ -42,7 +42,7 @@ const TOOLS: ToolDef[] = [
   { id: "commercial",  label: "Commercial",   href: (id) => `/commercial?hotel_id=${id}`,  icon: ShoppingCart, bg: "bg-violet-50",  text: "text-violet-700" },
   { id: "maintenance", label: "Maintenance",  href: (id) => `/maintenance?hotel_id=${id}`, icon: Wrench,       bg: "bg-yellow-50",  text: "text-yellow-700", condition: "corniche" },
   { id: "chromecast",  label: "Chromecasts",  href: "/chromecast",                         icon: Tv2,          bg: "bg-slate-100",  text: "text-slate-700",  condition: "corniche" },
-  { id: "wifi-admin",  label: "Accueil Wifi", href: "/wifi-admin",                         icon: Wifi,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "corniche" },
+  { id: "wifi-admin",  label: "Interface WiFi", href: "/wifi-admin",                         icon: Wifi,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "corniche" },
   { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
 ];
 
@@ -657,6 +657,14 @@ export default function HotelDashboard() {
     setChauffeurs((prev) => prev.filter((c) => c.id !== id));
   };
 
+  const createChauffeur = async () => {
+    if (!newChauffeur.trim()) return;
+    const { data, error } = await supabase.from("chauffeurs").insert([{ nom: newChauffeur.trim(), hotel_id: hotelId }]).select().single();
+    if (error) { alert("Erreur : " + error.message); return; }
+    setChauffeurs(prev => [...prev, data]);
+    setNewChauffeur('');
+  };
+
   const createTaxi = () => {
     if (!newTaxi.chambre || !newTaxi.dateAction) return;
     setTaxis([...taxis, { ...newTaxi }]);
@@ -1269,13 +1277,18 @@ const birthdayMessage = useMemo(() => {
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
                  <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-slate-800">🚖 Taxis & Réveils</h3>
-                    <button onClick={() => {
-                        setNewTaxi({ type: 'Taxi', chambre: '', heure: '', statut: 'Prévu', dateAction: formatDate(selectedDate, 'yyyy-MM-dd'), prix:'', chauffeur:'' });
-                        setEditDemandeIndex(null);
-                        setShowTaxiModal(true);
-                    }} className="w-6 h-6 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-600 transition">
-                        <PlusCircle className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => setShowChauffeurModal(true)} className="w-6 h-6 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-600 transition" title="Gérer les chauffeurs VTC">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                      </button>
+                      <button onClick={() => {
+                          setNewTaxi({ type: 'Taxi', chambre: '', heure: '', statut: 'Prévu', dateAction: formatDate(selectedDate, 'yyyy-MM-dd'), prix:'', chauffeur:'' });
+                          setEditDemandeIndex(null);
+                          setShowTaxiModal(true);
+                      }} className="w-6 h-6 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-600 transition">
+                          <PlusCircle className="w-4 h-4" />
+                      </button>
+                    </div>
                  </div>
                  
                  <div className="space-y-2">
@@ -1321,6 +1334,21 @@ const birthdayMessage = useMemo(() => {
                     ))}
                     {demandesVisibles.length === 0 && <div className="text-xs text-slate-400 text-center py-2">Aucun taxi / réveil</div>}
                  </div>
+
+                 {/* Récap VTC mensuel */}
+                 {Object.keys(totalVTCMoisParChauffeur).length > 0 && (
+                   <div className="mt-4 pt-3 border-t border-slate-100">
+                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">VTC ce mois</p>
+                     <div className="space-y-1">
+                       {Object.entries(totalVTCMoisParChauffeur).map(([nom, total]) => (
+                         <div key={nom} className="flex justify-between items-center text-xs">
+                           <span className="text-slate-600">{nom}</span>
+                           <span className="font-bold text-slate-800">{(total as number).toLocaleString('fr-FR')} €</span>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+                 )}
             </div>
 
             {/* KPIS - VERSION CLEAN & MODERNE */}
@@ -1680,6 +1708,43 @@ const birthdayMessage = useMemo(() => {
             <div className="flex justify-end gap-2 mt-4">
               <Button variant="ghost" onClick={() => setShowTaxiModal(false)}>Annuler</Button>
               <Button onClick={createDemande} className="bg-indigo-600 text-white hover:bg-indigo-700">{editDemandeIndex !== null ? 'Modifier' : 'Créer'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Chauffeurs VTC */}
+      {showChauffeurModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm space-y-4 animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-bold text-slate-800">Chauffeurs VTC</h2>
+              <button onClick={() => setShowChauffeurModal(false)} className="text-slate-400 hover:text-slate-700"><XCircle className="w-5 h-5" /></button>
+            </div>
+
+            {/* Liste existante */}
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {chauffeurs.length === 0 && <p className="text-xs text-slate-400 text-center py-3">Aucun chauffeur enregistré</p>}
+              {chauffeurs.map(c => (
+                <div key={c.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <span className="text-sm font-medium text-slate-700">{c.nom}</span>
+                  <button onClick={() => deleteChauffeur(c.id)} className="text-slate-300 hover:text-red-500 transition-colors"><XCircle className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
+
+            {/* Ajout */}
+            <div className="flex gap-2 pt-1 border-t border-slate-100">
+              <Input
+                placeholder="Nom du chauffeur"
+                value={newChauffeur}
+                onChange={e => setNewChauffeur(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && createChauffeur()}
+                className="text-sm"
+              />
+              <Button onClick={createChauffeur} disabled={!newChauffeur.trim()} className="bg-indigo-600 text-white hover:bg-indigo-700 shrink-0">
+                Ajouter
+              </Button>
             </div>
           </div>
         </div>
