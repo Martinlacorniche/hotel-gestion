@@ -1326,7 +1326,7 @@ export default function CommercialDashboard() {
                   <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-400">02 · L'événement</p>
                   <input placeholder="Titre de l'événement" value={currentLead.titre_demande || ''} onChange={e => setCurrentLead({...currentLead, titre_demande: e.target.value})} className="nt-input w-full h-10 rounded-xl px-4 border outline-none" />
                   <div className="flex flex-wrap gap-2">
-                    {["Séminaire", "Séminaire résidentiel", "Hébergement", "Restauration", "Journée d'étude", "Soirée Cocktail"].map(tag => (
+                    {["Location de salle sèche", "Journée d'étude", "Event", "Mariage", "Soirée cocktail", "Location de chambres"].map(tag => (
                       <button key={tag} type="button"
                         onClick={() => { const c = currentLead.titre_demande || ''; if (!c.includes(tag)) setCurrentLead({ ...currentLead, titre_demande: c ? `${c} + ${tag}` : tag }); }}
                         className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all text-gray-400 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-100">
