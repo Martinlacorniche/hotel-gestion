@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import {
   Eye, EyeOff, ChevronUp, ChevronDown,
   Save, Plus, Trash2, ImagePlus, Loader2, Check, Wifi, Megaphone,
-  X, Clock, Euro
+  X, Clock, Euro, Sparkles
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -51,7 +51,9 @@ type BarItem = {
   id: string;
   categorie: string;
   nom: string;
+  nom_en: string | null;
   description: string | null;
+  description_en: string | null;
   prix: string;
   actif: boolean;
   ordre: number;
@@ -64,6 +66,7 @@ type MenuItem = {
   date: string;
   categorie: "base" | "garniture" | "dessert";
   nom: string;
+  nom_en: string | null;
   actif: boolean;
   ordre: number;
 };
@@ -85,26 +88,26 @@ type CurioItem = {
 };
 
 // Labels des champs config éditables par slug
-const CONFIG_FIELDS: Record<string, { key: string; label: string; type?: "textarea" }[]> = {
+type ConfigField = { key: string; label: string; type?: "textarea"; translate?: true };
+const CONFIG_FIELDS: Record<string, ConfigField[]> = {
   reception: [
-    { key: "message", label: "Message affiché", type: "textarea" },
+    { key: "message", label: "Message affiché", type: "textarea", translate: true },
   ],
   pdj: [
-    { key: "semaine", label: "Horaires Lun-Ven" },
-    { key: "weekend", label: "Horaires Sam-Dim" },
+    { key: "semaine", label: "Horaires Lun-Ven", translate: true },
+    { key: "weekend", label: "Horaires Sam-Dim", translate: true },
     { key: "prix",    label: "Tarif" },
   ],
   checkin: [
-    { key: "heure", label: "Heure d'arrivée standard" },
-    { key: "note",  label: "Note", type: "textarea" },
+    { key: "heure", label: "Heure d'arrivée standard", translate: true },
+    { key: "note",  label: "Note", type: "textarea", translate: true },
   ],
   checkout: [
-    { key: "standard", label: "Départ standard" },
-    { key: "late",     label: "Late check-out" },
-    { key: "note",     label: "Note", type: "textarea" },
+    { key: "standard", label: "Départ standard", translate: true },
+    { key: "note",     label: "Note", type: "textarea", translate: true },
   ],
   plage: [
-    { key: "description",  label: "Description", type: "textarea" },
+    { key: "description",  label: "Description", type: "textarea", translate: true },
     { key: "plage1_nom",   label: "Plage 1 — nom" },
     { key: "plage1_url",   label: "Plage 1 — lien Maps" },
     { key: "plage2_nom",   label: "Plage 2 — nom" },
@@ -113,31 +116,41 @@ const CONFIG_FIELDS: Record<string, { key: string; label: string; type?: "textar
     { key: "plage3_url",   label: "Plage 3 — lien Maps" },
   ],
   menu: [
-    { key: "description", label: "Description courte", type: "textarea" },
+    { key: "description", label: "Description courte", type: "textarea", translate: true },
   ],
   curiosites: [
-    { key: "description", label: "Description courte", type: "textarea" },
-    { key: "note_prix",   label: "Note tarif" },
+    { key: "description", label: "Description courte", type: "textarea", translate: true },
+    { key: "note_prix",   label: "Note tarif", translate: true },
   ],
   byca: [
-    { key: "description", label: "Description", type: "textarea" },
+    { key: "description", label: "Description", type: "textarea", translate: true },
   ],
   bar: [
-    { key: "description", label: "Description courte", type: "textarea" },
+    { key: "description", label: "Description courte", type: "textarea", translate: true },
   ],
   rooftop: [
-    { key: "description", label: "Description courte", type: "textarea" },
+    { key: "description", label: "Description courte", type: "textarea", translate: true },
   ],
   urgences: [
-    { key: "message",    label: "Message principal", type: "textarea" },
+    { key: "message",    label: "Message principal", type: "textarea", translate: true },
     { key: "telephone",  label: "Téléphone réception" },
   ],
   regles: [
-    { key: "texte", label: "Règles de la maison", type: "textarea" },
+    { key: "texte", label: "Règles de la maison", type: "textarea", translate: true },
   ],
 };
 
-const DEFAULT_CONFIG_FIELD = [{ key: "texte", label: "Contenu", type: "textarea" as const }];
+const DEFAULT_CONFIG_FIELD: ConfigField[] = [{ key: "texte", label: "Contenu", type: "textarea", translate: true }];
+
+function getConfigFields(slug: string, isVoiles: boolean): ConfigField[] {
+  if (slug === "pdj" && isVoiles) {
+    return [
+      { key: "horaires", label: "Horaires (tous les jours)", translate: true },
+      { key: "prix",     label: "Tarif" },
+    ];
+  }
+  return CONFIG_FIELDS[slug] ?? DEFAULT_CONFIG_FIELD;
+}
 
 const CATEGORIES = [
   { key: "base",      label: "Bases",      emoji: "🍽️" },
@@ -189,14 +202,14 @@ function WifiAdminContent() {
           <Tabs defaultValue="tuiles">
             <TabsList className="w-full mb-6">
               <TabsTrigger value="tuiles"     className="flex-1">Tuiles</TabsTrigger>
-              <TabsTrigger value="menu"       className="flex-1">Menu</TabsTrigger>
+              {!isVoiles && <TabsTrigger value="menu" className="flex-1">Menu</TabsTrigger>}
               <TabsTrigger value="bar"        className="flex-1">{isVoiles ? "Rooftop" : "Bar"}</TabsTrigger>
               {!isVoiles && <TabsTrigger value="curiosites" className="flex-1">Curiosités</TabsTrigger>}
               <TabsTrigger value="annonce"    className="flex-1">Annonce</TabsTrigger>
             </TabsList>
 
             <TabsContent value="tuiles"><TilesTab /></TabsContent>
-            <TabsContent value="menu"><MenuTab /></TabsContent>
+            {!isVoiles && <TabsContent value="menu"><MenuTab /></TabsContent>}
             <TabsContent value="bar"><BarTab /></TabsContent>
             {!isVoiles && <TabsContent value="curiosites"><CuriositesTab /></TabsContent>}
             <TabsContent value="annonce"><AnnonceTab /></TabsContent>
@@ -212,6 +225,7 @@ function WifiAdminContent() {
 // ─────────────────────────────────────────────────────────────
 function TilesTab() {
   const hotelId = useHotelId();
+  const isVoiles = hotelId === VOILES_ID;
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [openSlug, setOpenSlug] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -229,6 +243,18 @@ function TilesTab() {
 
   const updateConfig = (id: string, key: string, value: string) =>
     setTiles(prev => prev.map(t => t.id === id ? { ...t, config: { ...t.config, [key]: value } } : t));
+
+  const updateEnConfig = (id: string, key: string, value: string) =>
+    setTiles(prev => prev.map(t => {
+      if (t.id !== id) return t;
+      const en: Record<string, string> = { ...(t.config?.en ?? {}) };
+      if (value) en[key] = value;
+      else delete en[key];
+      const nextConfig = { ...t.config };
+      if (Object.keys(en).length > 0) nextConfig.en = en;
+      else delete nextConfig.en;
+      return { ...t, config: nextConfig };
+    }));
 
   const toggleVisible = async (tile: Tile) => {
     const newVal = !tile.visible;
@@ -297,7 +323,7 @@ function TilesTab() {
     <div className="space-y-2">
       {sorted.map((tile, idx) => {
         const isOpen = openSlug === tile.slug;
-        const fields = CONFIG_FIELDS[tile.slug] ?? DEFAULT_CONFIG_FIELD;
+        const fields = getConfigFields(tile.slug, isVoiles);
         return (
           <div key={tile.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div
@@ -344,6 +370,34 @@ function TilesTab() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-[56px_1fr_1fr] gap-2">
+                  <div />
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] uppercase tracking-widest text-slate-400">Titre EN</label>
+                      <TranslateBtn source={tile.title} onResult={v => updateEnConfig(tile.id, "title", v)} />
+                    </div>
+                    <Input
+                      value={tile.config?.en?.title ?? ""}
+                      onChange={e => updateEnConfig(tile.id, "title", e.target.value)}
+                      placeholder={tile.title}
+                      className="h-10"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] uppercase tracking-widest text-slate-400">Sous-titre EN</label>
+                      <TranslateBtn source={tile.tagline ?? ""} onResult={v => updateEnConfig(tile.id, "tagline", v)} />
+                    </div>
+                    <Input
+                      value={tile.config?.en?.tagline ?? ""}
+                      onChange={e => updateEnConfig(tile.id, "tagline", e.target.value)}
+                      placeholder={tile.tagline ?? ""}
+                      className="h-10"
+                    />
+                  </div>
+                </div>
+
                 {fields.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[10px] uppercase tracking-widest text-slate-400">Contenu</p>
@@ -359,6 +413,30 @@ function TilesTab() {
                           />
                         ) : (
                           <Input value={tile.config[f.key] ?? ""} onChange={e => updateConfig(tile.id, f.key, e.target.value)} className="h-9" />
+                        )}
+                        {f.translate && (
+                          <div className="mt-1.5">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className="text-[10px] text-slate-400">EN</label>
+                              <TranslateBtn source={tile.config[f.key] ?? ""} onResult={v => updateEnConfig(tile.id, f.key, v)} />
+                            </div>
+                            {f.type === "textarea" ? (
+                              <textarea
+                                value={tile.config?.en?.[f.key] ?? ""}
+                                onChange={e => updateEnConfig(tile.id, f.key, e.target.value)}
+                                rows={3}
+                                placeholder={tile.config[f.key] ?? ""}
+                                className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20 resize-none"
+                              />
+                            ) : (
+                              <Input
+                                value={tile.config?.en?.[f.key] ?? ""}
+                                onChange={e => updateEnConfig(tile.id, f.key, e.target.value)}
+                                placeholder={tile.config[f.key] ?? ""}
+                                className="h-9"
+                              />
+                            )}
+                          </div>
                         )}
                       </div>
                     ))}
@@ -502,6 +580,7 @@ function AddTileForm({ onAdd, nextOrdre }: { onAdd: (t: Tile) => void; nextOrdre
 function MenuTab() {
   const hotelId = useHotelId();
   const [items, setItems] = useState<MenuItem[]>([]);
+  const [itemDrafts, setItemDrafts] = useState<Record<string, { nom: string; nom_en: string }>>({});
   const [newNom, setNewNom] = useState<Record<string, string>>({ base: "", garniture: "", dessert: "" });
   const [prixPlat, setPrixPlat] = useState("");
   const [prixDessert, setPrixDessert] = useState("");
@@ -511,7 +590,14 @@ function MenuTab() {
 
   useEffect(() => {
     supabase.from("wifi_menu").select("*").eq("hotel_id", hotelId).order("ordre")
-      .then(({ data }) => { if (data) setItems(data); });
+      .then(({ data }) => {
+        if (data) {
+          setItems(data);
+          const drafts: Record<string, { nom: string; nom_en: string }> = {};
+          data.forEach((i: MenuItem) => { drafts[i.id] = { nom: i.nom, nom_en: i.nom_en ?? "" }; });
+          setItemDrafts(drafts);
+        }
+      });
     supabase.from("wifi_tiles").select("config").eq("slug", "menu").eq("hotel_id", hotelId).single()
       .then(({ data }) => {
         if (data?.config) {
@@ -521,6 +607,19 @@ function MenuTab() {
         }
       });
   }, [hotelId]);
+
+  const patchItem = (id: string, field: "nom" | "nom_en", value: string) =>
+    setItemDrafts(prev => ({ ...prev, [id]: { ...(prev[id] ?? { nom: "", nom_en: "" }), [field]: value } }));
+
+  const saveItemField = async (id: string, field: "nom" | "nom_en") => {
+    const draft = itemDrafts[id];
+    if (!draft) return;
+    const value = draft[field].trim();
+    const payload = field === "nom_en" ? { nom_en: value || null } : { nom: value };
+    const { error } = await supabase.from("wifi_menu").update(payload).eq("id", id);
+    if (error) { toast.error("Erreur sauvegarde"); return; }
+    setItems(prev => prev.map(i => i.id === id ? { ...i, ...payload } : i));
+  };
 
   const savePrix = async () => {
     setSavingPrix(true);
@@ -554,6 +653,7 @@ function MenuTab() {
     setSaving(false);
     if (error) { toast.error("Erreur"); return; }
     setItems(prev => [...prev, data]);
+    setItemDrafts(prev => ({ ...prev, [data.id]: { nom: data.nom, nom_en: "" } }));
     setNewNom(prev => ({ ...prev, [categorie]: "" }));
     toast.success("Option ajoutée ✓");
   };
@@ -597,17 +697,40 @@ function MenuTab() {
             </div>
 
             <ul className="divide-y divide-slate-50">
-              {opts.map(item => (
-                <li key={item.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <button onClick={() => toggleActif(item)} className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[#004e7c] border-[#004e7c]" : "border-slate-300"}`}>
-                    {item.actif && <Check size={10} className="text-white" />}
-                  </button>
-                  <span className={`text-sm flex-1 ${item.actif ? "text-slate-700" : "text-slate-300 line-through"}`}>{item.nom}</span>
-                  <button onClick={() => deleteItem(item.id)} className="text-slate-200 hover:text-red-400 transition">
-                    <Trash2 size={14} />
-                  </button>
-                </li>
-              ))}
+              {opts.map(item => {
+                const d = itemDrafts[item.id] ?? { nom: item.nom, nom_en: item.nom_en ?? "" };
+                return (
+                  <li key={item.id} className="px-4 py-2.5 space-y-1">
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => toggleActif(item)} className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[#004e7c] border-[#004e7c]" : "border-slate-300"}`}>
+                        {item.actif && <Check size={10} className="text-white" />}
+                      </button>
+                      <Input
+                        value={d.nom}
+                        onChange={e => patchItem(item.id, "nom", e.target.value)}
+                        onBlur={() => saveItemField(item.id, "nom")}
+                        className={`h-7 text-sm flex-1 ${item.actif ? "" : "line-through text-slate-300"}`}
+                      />
+                      <button onClick={() => deleteItem(item.id)} className="text-slate-200 hover:text-red-400 transition shrink-0">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 ml-7">
+                      <Input
+                        value={d.nom_en}
+                        onChange={e => patchItem(item.id, "nom_en", e.target.value)}
+                        onBlur={() => saveItemField(item.id, "nom_en")}
+                        placeholder="Nom EN"
+                        className="h-7 text-sm italic text-slate-500"
+                      />
+                      <TranslateBtn
+                        source={d.nom}
+                        onResult={v => { patchItem(item.id, "nom_en", v); supabase.from("wifi_menu").update({ nom_en: v }).eq("id", item.id).then(() => setItems(prev => prev.map(i => i.id === item.id ? { ...i, nom_en: v } : i))); }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
 
             <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
@@ -640,8 +763,9 @@ function BarTab() {
   const barSlug = isVoiles ? "rooftop" : "bar";
 
   const [items, setItems] = useState<BarItem[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, { nom: string; description: string; prix: string; quantite: string }>>({});
+  const [drafts, setDrafts] = useState<Record<string, { nom: string; nom_en: string; description: string; description_en: string; prix: string; quantite: string }>>({});
   const [categories, setCategories] = useState<string[]>(DEFAULT_BAR_CATEGORIES);
+  const [catEn, setCatEn] = useState<Record<string, string>>({});
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set());
   const [barTileId, setBarTileId] = useState<string | null>(null);
   const [barConfig, setBarConfig] = useState<Record<string, unknown>>({});
@@ -663,7 +787,14 @@ function BarTab() {
         setItems(barData);
         const init: typeof drafts = {};
         barData.forEach((i: BarItem) => {
-          init[i.id] = { nom: i.nom, description: i.description ?? "", prix: i.prix, quantite: i.quantite != null ? String(i.quantite) : "" };
+          init[i.id] = {
+            nom: i.nom,
+            nom_en: i.nom_en ?? "",
+            description: i.description ?? "",
+            description_en: i.description_en ?? "",
+            prix: i.prix,
+            quantite: i.quantite != null ? String(i.quantite) : "",
+          };
         });
         setDrafts(init);
         const dbCats = [...new Set(barData.map((i: BarItem) => i.categorie))];
@@ -679,6 +810,8 @@ function BarTab() {
         if (tileData.config?.categories_masquees) {
           setHiddenCats(new Set(tileData.config.categories_masquees as string[]));
         }
+        const enCats = tileData.config?.en?.categories as Record<string, string> | undefined;
+        if (enCats) setCatEn(enCats);
       }
     });
   }, [hotelId, barSlug]);
@@ -691,6 +824,19 @@ function BarTab() {
   };
 
   const persistCatsOrdre = async (cats: string[]) => persistConfig({ categories_ordre: cats });
+
+  const persistCatEn = async (next: Record<string, string>) => {
+    const en = { ...(barConfig.en as Record<string, unknown> ?? {}), categories: next };
+    await persistConfig({ en });
+  };
+
+  const setCatEnValue = (cat: string, value: string) => {
+    const next = { ...catEn };
+    if (value.trim()) next[cat] = value.trim();
+    else delete next[cat];
+    setCatEn(next);
+    persistCatEn(next);
+  };
 
   const toggleHiddenCat = async (cat: string) => {
     const next = new Set(hiddenCats);
@@ -740,16 +886,16 @@ function BarTab() {
       const d = drafts[id];
       if (!d) return;
       const nom = (d.nom ?? "").trim();
+      const nom_en = (d.nom_en ?? "").trim() || null;
       const description = (d.description ?? "").trim() || null;
+      const description_en = (d.description_en ?? "").trim() || null;
       const prix = (d.prix ?? "").trim();
       const quantite = !(d.quantite ?? "").trim() ? null : parseInt(d.quantite, 10);
-      const { error } = await supabase.from("wifi_bar").update({ nom, prix, quantite }).eq("id", id);
+      const { error } = await supabase.from("wifi_bar")
+        .update({ nom, nom_en, description, description_en, prix, quantite })
+        .eq("id", id);
       if (error) { toast.error(error.message ?? JSON.stringify(error)); hasError = true; return; }
-      if (description !== null) {
-        const { error: err2 } = await supabase.from("wifi_bar").update({ description }).eq("id", id);
-        if (err2) toast.error("description: " + (err2.message ?? JSON.stringify(err2)));
-      }
-      setItems(prev => prev.map(i => i.id === id ? { ...i, nom, description, prix, quantite } : i));
+      setItems(prev => prev.map(i => i.id === id ? { ...i, nom, nom_en, description, description_en, prix, quantite } : i));
     }));
     setDirty(new Set());
     setSaving(false);
@@ -769,7 +915,7 @@ function BarTab() {
     setAdding(false);
     if (error) { toast.error("Erreur"); return; }
     setItems(prev => [...prev, data]);
-    setDrafts(prev => ({ ...prev, [data.id]: { nom: data.nom, description: "", prix: data.prix, quantite: "" } }));
+    setDrafts(prev => ({ ...prev, [data.id]: { nom: data.nom, nom_en: "", description: "", description_en: "", prix: data.prix, quantite: "" } }));
     setNewNom(prev => ({ ...prev, [categorie]: "" }));
     setNewPrix(prev => ({ ...prev, [categorie]: "" }));
     toast.success("Article ajouté ✓");
@@ -800,6 +946,12 @@ function BarTab() {
     const next = categories.filter(c => c !== cat);
     setCategories(next);
     await persistCatsOrdre(next);
+    if (catEn[cat]) {
+      const nextEn = { ...catEn };
+      delete nextEn[cat];
+      setCatEn(nextEn);
+      await persistCatEn(nextEn);
+    }
     toast.success(`Catégorie "${cat}" supprimée`);
   };
 
@@ -827,6 +979,13 @@ function BarTab() {
       await persistConfig({ categories_ordre: next, categories_masquees: [...nextHidden] });
     } else {
       await persistCatsOrdre(next);
+    }
+    if (catEn[oldCat]) {
+      const nextEn = { ...catEn };
+      nextEn[newName] = nextEn[oldCat];
+      delete nextEn[oldCat];
+      setCatEn(nextEn);
+      await persistCatEn(nextEn);
     }
     setEditingCat(null);
     toast.success("Catégorie renommée ✓");
@@ -874,6 +1033,16 @@ function BarTab() {
               <button onClick={() => deleteCategorie(cat)} className="text-slate-300 hover:text-red-400 transition p-1" title="Supprimer la catégorie">
                 <Trash2 size={12} />
               </button>
+              <div className="flex items-center gap-1 ml-3">
+                <Input
+                  value={catEn[cat] ?? ""}
+                  onChange={e => setCatEn(prev => ({ ...prev, [cat]: e.target.value }))}
+                  onBlur={e => setCatEnValue(cat, e.target.value)}
+                  placeholder="EN"
+                  className="h-6 w-24 text-[11px] uppercase tracking-wider"
+                />
+                <TranslateBtn source={cat} onResult={v => setCatEnValue(cat, v)} />
+              </div>
               <button
                 onClick={() => toggleHiddenCat(cat)}
                 className={`ml-auto p-1.5 rounded-lg transition ${isHidden ? "text-slate-300 bg-slate-100" : "text-[#004e7c] bg-blue-50"}`}
@@ -884,7 +1053,7 @@ function BarTab() {
 
             <ul className="divide-y divide-slate-50">
               {opts.map(item => {
-                const d = drafts[item.id] ?? { nom: item.nom, description: "", prix: item.prix, quantite: "" };
+                const d = drafts[item.id] ?? { nom: item.nom, nom_en: "", description: "", description_en: "", prix: item.prix, quantite: "" };
                 return (
                   <li key={item.id} className="px-4 py-3 space-y-1.5">
                     <div className="flex items-center gap-2">
@@ -909,12 +1078,30 @@ function BarTab() {
                         <Trash2 size={13} />
                       </button>
                     </div>
+                    <div className="flex items-center gap-2 ml-6">
+                      <Input
+                        value={d.nom_en}
+                        onChange={e => patch(item.id, "nom_en", e.target.value)}
+                        className="h-7 text-sm italic text-slate-500"
+                        placeholder="Nom EN"
+                      />
+                      <TranslateBtn source={d.nom} onResult={v => patch(item.id, "nom_en", v)} />
+                    </div>
                     <Input
                       value={d.description}
                       onChange={e => patch(item.id, "description", e.target.value)}
                       className="h-7 text-sm text-slate-400 ml-6"
                       placeholder="Description (facultatif)"
                     />
+                    <div className="flex items-center gap-2 ml-6">
+                      <Input
+                        value={d.description_en}
+                        onChange={e => patch(item.id, "description_en", e.target.value)}
+                        className="h-7 text-sm italic text-slate-400"
+                        placeholder="Description EN (facultatif)"
+                      />
+                      <TranslateBtn source={d.description} onResult={v => patch(item.id, "description_en", v)} />
+                    </div>
                   </li>
                 );
               })}
@@ -963,6 +1150,35 @@ async function translate(text: string): Promise<string> {
   });
   const data = await res.json();
   return data.result ?? "";
+}
+
+function TranslateBtn({ source, onResult }: { source: string; onResult: (s: string) => void }) {
+  const [loading, setLoading] = useState(false);
+  const run = async () => {
+    if (!source.trim() || loading) return;
+    setLoading(true);
+    try {
+      const out = await translate(source);
+      if (out) onResult(out);
+      else toast.error("Traduction vide");
+    } catch {
+      toast.error("Erreur de traduction");
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={run}
+      disabled={loading || !source.trim()}
+      title="Auto-traduire depuis le FR"
+      className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[#004e7c] hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed rounded-md px-1.5 py-0.5 border border-slate-200 transition"
+    >
+      {loading ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+      <span>Auto</span>
+    </button>
+  );
 }
 
 const EMPTY_EDIT: EditState = {
@@ -1032,9 +1248,13 @@ function CuriositesTab() {
     setSaving(id);
     const nom = edit.nom.trim();
     const description = edit.description.trim() || null;
+    const nomEnManual = edit.nom_en.trim();
+    const descEnManual = edit.description_en.trim();
     const [nom_en, description_en] = await Promise.all([
-      translate(nom),
-      description ? translate(description) : Promise.resolve(null),
+      nomEnManual ? Promise.resolve(nomEnManual) : translate(nom),
+      !description
+        ? Promise.resolve(null)
+        : (descEnManual ? Promise.resolve(descEnManual) : translate(description)),
     ]);
     const payload = {
       nom, nom_en: nom_en || null,
@@ -1136,12 +1356,37 @@ function CuriositesTab() {
                     <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Nom FR</label>
                     <Input value={edit.nom} onChange={e => setEdit(s => ({ ...s, nom: e.target.value }))} className="h-9 bg-white" />
                   </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] uppercase tracking-widest text-slate-400">Nom EN</label>
+                      <TranslateBtn source={edit.nom} onResult={v => setEdit(s => ({ ...s, nom_en: v }))} />
+                    </div>
+                    <Input
+                      value={edit.nom_en}
+                      onChange={e => setEdit(s => ({ ...s, nom_en: e.target.value }))}
+                      placeholder="Laisser vide = auto-traduit"
+                      className="h-9 bg-white"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Description FR</label>
                     <textarea value={edit.description} onChange={e => setEdit(s => ({ ...s, description: e.target.value }))} rows={3} placeholder="Décrivez l'objet en 2-3 lignes…" className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20 resize-none" />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] uppercase tracking-widest text-slate-400">Description EN</label>
+                      <TranslateBtn source={edit.description} onResult={v => setEdit(s => ({ ...s, description_en: v }))} />
+                    </div>
+                    <textarea
+                      value={edit.description_en}
+                      onChange={e => setEdit(s => ({ ...s, description_en: e.target.value }))}
+                      rows={3}
+                      placeholder="Laisser vide = auto-traduit"
+                      className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20 resize-none"
+                    />
                   </div>
                 </div>
 
@@ -1221,6 +1466,7 @@ function CuriositesTab() {
 function AnnonceTab() {
   const hotelId = useHotelId();
   const [message, setMessage] = useState("");
+  const [messageEn, setMessageEn] = useState("");
   const [type, setType] = useState<"info" | "urgent">("info");
   const [active, setActive] = useState(false);
   const [tileId, setTileId] = useState<string | null>(null);
@@ -1231,6 +1477,7 @@ function AnnonceTab() {
       if (data) {
         setTileId(data.id);
         setMessage(data.config?.message ?? "");
+        setMessageEn(data.config?.en?.message ?? "");
         setType(data.config?.type ?? "info");
         setActive(data.visible ?? false);
       }
@@ -1239,7 +1486,9 @@ function AnnonceTab() {
 
   const save = async () => {
     setSaving(true);
-    const payload = { slug: "annonce", emoji: "📢", title: "Annonce", tagline: "", visible: active, ordre: 999, config: { message, type }, hotel_id: hotelId };
+    const config: TileConfig = { message, type };
+    if (messageEn.trim()) config.en = { message: messageEn.trim() };
+    const payload = { slug: "annonce", emoji: "📢", title: "Annonce", tagline: "", visible: active, ordre: 999, config, hotel_id: hotelId };
     if (tileId) {
       await supabase.from("wifi_tiles").update(payload).eq("id", tileId);
     } else {
@@ -1296,6 +1545,17 @@ function AnnonceTab() {
           onChange={e => setMessage(e.target.value)}
           rows={4}
           placeholder="Ex : L'ascenseur est momentanément hors service. Nous nous en excusons."
+          className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20"
+        />
+        <div className="flex items-center justify-between mt-3 mb-1">
+          <p className="text-[10px] text-slate-400 uppercase tracking-widest">Message EN</p>
+          <TranslateBtn source={message} onResult={setMessageEn} />
+        </div>
+        <textarea
+          value={messageEn}
+          onChange={e => setMessageEn(e.target.value)}
+          rows={4}
+          placeholder={message || "Ex: The elevator is temporarily out of service. We apologize."}
           className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20"
         />
       </div>
