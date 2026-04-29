@@ -3,6 +3,46 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 // react-pdf n'accepte pas gap, height:'auto', display:'flex' dans StyleSheet
 // Tous ces problèmes sont corrigés ci-dessous.
 
+const VOILES_ID   = 'ded6e6fb-ff3c-4fa8-ad07-403ee316be53';
+const CORNICHE_ID = 'f9d59e56-9a2f-433e-bcf4-f9753f105f32';
+
+export type HotelBranding = {
+  name: string;
+  logo: string;
+  addressLine1: string;
+  addressLine2: string;
+  phone?: string;
+  website?: string;
+  email?: string;
+  legalFooter: string;
+};
+
+const CORNICHE_BRANDING: HotelBranding = {
+  name: 'Hôtel La Corniche****',
+  logo: '/logo-la corniche.png',
+  addressLine1: '17 Littoral Frédéric Mistral',
+  addressLine2: '83000 Toulon, France',
+  phone: '+33 (0)4 94 41 35 12',
+  website: 'hotel-corniche.com',
+  email: 'contact@hotel-corniche.com',
+  legalFooter: 'HÔTEL LA CORNICHE — 17 LITTORAL FRÉDÉRIC MISTRAL, 83000 TOULON — +33 (0)4 94 41 35 12 — HOTEL-CORNICHE.COM',
+};
+
+const VOILES_BRANDING: HotelBranding = {
+  name: 'Hôtel Les Voiles',
+  logo: '/voiles.jpg',
+  addressLine1: '124 rue Gubler',
+  addressLine2: '83000 Toulon, France',
+  legalFooter: 'HÔTEL LES VOILES — 124 RUE GUBLER, 83000 TOULON',
+};
+
+export function getHotelBranding(hotelId?: string | null, hotelName?: string | null): HotelBranding {
+  if (hotelId === VOILES_ID) return VOILES_BRANDING;
+  if (hotelId === CORNICHE_ID) return CORNICHE_BRANDING;
+  if (hotelName && /voiles/i.test(hotelName)) return VOILES_BRANDING;
+  return CORNICHE_BRANDING;
+}
+
 const BLUE      = '#075985';
 const BLUE_MID  = '#0369a1';
 const BLUE_LIGHT= '#0ea5e9';
@@ -166,7 +206,10 @@ const s = StyleSheet.create({
   },
 });
 
-export const QuotePDFPage = ({ data, lines, totals }: any) => (
+export const QuotePDFPage = ({ data, lines, totals }: any) => {
+  const branding: HotelBranding = data.branding || getHotelBranding(data.hotelId, data.hotelName);
+  const contactLine = [branding.phone, branding.website].filter(Boolean).join(' — ');
+  return (
   <Page size="A4" style={s.page}>
 
       {/* ── HEADER ── */}
@@ -175,11 +218,11 @@ export const QuotePDFPage = ({ data, lines, totals }: any) => (
           <Text style={s.title}>Proposition</Text>
           <Text style={s.refLine}>RÉF : {data.quoteNumber} — Émise le {data.quoteDate}</Text>
         </View>
-        <Image src="/logo-la corniche.png" style={s.logo} />
+        <Image src={branding.logo} style={s.logo} />
         <View style={s.headerRight}>
-          <Text style={s.hotelName}>Hôtel La Corniche****</Text>
-          <Text style={s.hotelAddress}>17 Littoral Frédéric Mistral, 83000 Toulon</Text>
-          <Text style={s.hotelAddress}>+33 (0)4 94 41 35 12 — hotel-corniche.com</Text>
+          <Text style={s.hotelName}>{branding.name}</Text>
+          <Text style={s.hotelAddress}>{branding.addressLine1}, {branding.addressLine2}</Text>
+          {contactLine ? <Text style={s.hotelAddress}>{contactLine}</Text> : null}
         </View>
       </View>
 
@@ -279,12 +322,13 @@ export const QuotePDFPage = ({ data, lines, totals }: any) => (
         {/* Mentions légales */}
         <View style={s.legal}>
           <Text>SARL AU CAPITAL DE 10 000€ — SIRET : 341 797 199 00013 — TVA INTRACOM : FR50341797199 — RCS TOULON 87800562</Text>
-          <Text>HÔTEL LA CORNICHE — 17 LITTORAL FRÉDÉRIC MISTRAL, 83000 TOULON — +33 (0)4 94 41 35 12 — HOTEL-CORNICHE.COM</Text>
+          <Text>{branding.legalFooter}</Text>
         </View>
       </View>
 
   </Page>
-);
+  );
+};
 
 export const QuotePDF = ({ data, lines, totals }: any) => (
   <Document title={`Proposition Commerciale - ${data.clientName}`}>

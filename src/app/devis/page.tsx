@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PDFDownloadLink } from '@react-pdf/renderer';
-import { QuotePDF } from './QuotePDF';
+import { QuotePDF, getHotelBranding } from './QuotePDF';
 
 
 // --- UTILITAIRES ---
@@ -356,6 +356,8 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
     }
   };
 
+  const branding = getHotelBranding(hotel?.id, hotel?.nom);
+
   const handleSendMail = () => {
     const refLabel = quoteNumber ? `REF : ${quoteNumber}` : 'REF : EN COURS';
     const subject = encodeURIComponent(`Proposition commerciale ${refLabel} - ${client?.nom_client}`);
@@ -364,14 +366,14 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
       `Veuillez trouver ci-joint notre proposition commerciale ${refLabel} pour votre événement prévu le ${date}.\n\n` +
       `Montant total : ${totals.ttc.toFixed(2)}€ TTC.\n\n` +
       `Cordialement,\n\n` +
-      `Service Commercial - La Corniche`
+      `Service Commercial - ${hotel?.nom || branding.name}`
     );
     window.location.href = `mailto:${client?.email}?subject=${subject}&body=${body}`;
   };
 
   // ── Print helper (doit être déclaré avant tout return conditionnel) ──
   const handlePrint = () => {
-    const fileName = `Devis ${client?.nom_client || 'Client'} - ${hotel?.nom || 'La Corniche'}`;
+    const fileName = `Devis ${client?.nom_client || 'Client'} - ${hotel?.nom || branding.name}`;
     const originalTitle = document.title;
     document.title = fileName;
     window.print();
@@ -397,9 +399,9 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
       <div className="max-w-7xl mx-auto flex justify-between items-center mb-6 print:hidden">
         <div className="flex gap-3">
   {/* Nouveau bouton PDF Pro */}
- <PDFDownloadLink 
+ <PDFDownloadLink
   document={
-    <QuotePDF 
+    <QuotePDF
       data={{
         quoteNumber: quoteNumber ?? 'EN COURS',
         quoteDate: quoteDate ? new Date(quoteDate).toLocaleDateString('fr-FR') : '01/03/2026',
@@ -407,8 +409,11 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
         clientEmail: client?.email,
         eventTitle: client?.titre_demande,
         eventDate: date ? new Date(date).toLocaleDateString('fr-FR') : '--',
-        conditions: cancellationTerms 
-      }} 
+        conditions: cancellationTerms,
+        hotelId: hotel?.id,
+        hotelName: hotel?.nom,
+        branding
+      }}
       lines={lines.filter(l => l.label).map(l => ({
         date: (l.date || date) ? new Date(l.date || date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '--',
         description: l.label,
@@ -425,7 +430,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
       }} 
     />
   } 
-  fileName={`Devis ${client?.nom_client || 'Client'} - ${hotel?.nom || 'La Corniche'}.pdf`}
+  fileName={`Devis ${client?.nom_client || 'Client'} - ${hotel?.nom || branding.name}.pdf`}
 >
   {({ loading }) => (
     <Button variant="outline" className="bg-white border-slate-200 font-bold shadow-sm">
@@ -470,10 +475,9 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
         {hotel?.nom || 'Chargement...'}
     </div>
     <div className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-tight">
-        {/* Pour l'instant on garde l'adresse en dur car elle n'est pas dans ton SQL hotels */}
-        17 Littoral Frédéric Mistral<br />
-        83000 Toulon, France<br />
-        04 94 41 35 12
+        {branding.addressLine1}<br />
+        {branding.addressLine2}
+        {branding.phone && (<><br />{branding.phone}</>)}
     </div>
 </div>
             </div>
@@ -794,7 +798,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
             {/* MENTIONS LÉGALES */}
             <div className="mt-8 text-[7px] text-slate-400 font-medium leading-relaxed text-center">
-                <p>Hôtel La Corniche - 17 Littoral Frédéric Mistral 83000 Toulon - 04 94 41 35 12 - contact@hotel-corniche.com</p>
+                <p>{[branding.name, `${branding.addressLine1} ${branding.addressLine2}`, branding.phone, branding.email].filter(Boolean).join(' - ')}</p>
                 <p>SARL au capital de 10 000€ - Siret : 341 797 199 00013 - TVA : FR50341797199 - RCS : 87800562</p>
             </div>
         </div>
