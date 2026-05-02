@@ -41,7 +41,7 @@ const TOOLS: ToolDef[] = [
   { id: "repertoire",  label: "Contacts",     href: (id) => `/repertoire?hotel_id=${id}`,  icon: NotebookText, bg: "bg-blue-50",    text: "text-blue-700" },
   { id: "process",     label: "Process",      href: (id) => `/process?hotel_id=${id}`,     icon: Settings,     bg: "bg-gray-50",    text: "text-gray-700" },
   { id: "commercial",  label: "Commercial",   href: (id) => `/commercial?hotel_id=${id}`,  icon: ShoppingCart, bg: "bg-violet-50",  text: "text-violet-700" },
-  { id: "maintenance", label: "Maintenance",  href: (id) => `/maintenance?hotel_id=${id}`, icon: Wrench,       bg: "bg-yellow-50",  text: "text-yellow-700", condition: "corniche" },
+  { id: "maintenance", label: "Maintenance",  href: (id) => `/maintenance?hotel_id=${id}`, icon: Wrench,       bg: "bg-yellow-50",  text: "text-yellow-700" },
   { id: "chromecast",  label: "Chromecasts",  href: "/chromecast",                         icon: Tv2,          bg: "bg-slate-100",  text: "text-slate-700",  condition: "corniche" },
   { id: "wifi-admin",  label: "Interface WiFi", href: (id: string) => `/wifi-admin?hotel_id=${id}`, icon: Wifi, bg: "bg-sky-50", text: "text-sky-700" },
   { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },

@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,14 +11,24 @@ import { fr as frLocale } from 'date-fns/locale';
 import { format as dfFormat, parse as dfParse } from 'date-fns';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { 
-  ChevronDown, ChevronRight, Wrench, Lightbulb, Droplets, Fan, Hammer, 
+import {
+  ChevronDown, ChevronRight, Wrench, Lightbulb, Droplets, Fan, Hammer,
   PaintRoller, DoorClosed, PlugZap, Plus, Calendar,
   CheckCircle, AlertCircle, Clock, Euro, ArrowRight, Trash2, Edit2,
-  LayoutGrid, List, History
+  LayoutGrid, List, History, MessageCircle, Send, XCircle
 } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
 
 // --- TYPES & CONSTANTES ---
+
+type ChatReply = {
+  id: string;
+  auteur: string;
+  auteur_id: string | null;
+  texte: string;
+  created_at: string;
+  edited_at?: string;
+};
 
 type MaintItem = {
   id: string;
@@ -35,14 +45,21 @@ type MaintItem = {
   budget?: number | null;
   commentaire?: string | null;
   created_at?: string;
+  replies?: ChatReply[] | null;
 };
 
 const getRooms = (it: MaintItem) => it.chambre ? [it.chambre] : (it.chambres || []);
 
-const ROOM_OPTIONS = [
+const ROOM_OPTIONS_CORNICHE = [
   '2','3','4','5','6','7','11','12','14','15','16','17','18',
   '21','22','23','24','25','26','27','31','32','33','34','35','36','37',
   '41','42','Patio','Lobby','PDJ','Seminaire','Couloirs','Sous-Sol'
+];
+
+const ROOM_OPTIONS_VOILES = [
+  'Lobby','Rooftop','Cuisine',
+  '11','12','14','15','16','21','22','23','24','25','31','32','33','34','35','36',
+  'Patio'
 ];
 
 const TYPE_OPTIONS = [
@@ -106,14 +123,35 @@ function MaintenancePageInner() {
   const searchParams = useSearchParams();
 
   const [hotelId, setHotelId] = useState<string>('');
+  const [hotelName, setHotelName] = useState<string>('');
+  const [hotels, setHotels] = useState<{ id: string; nom: string }[]>([]);
   const [items, setItems] = useState<MaintItem[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Liste des chambres / zones selon l'hôtel
+  const isVoiles = hotelName.toLowerCase().includes('voiles');
+  const ROOM_OPTIONS = isVoiles ? ROOM_OPTIONS_VOILES : ROOM_OPTIONS_CORNICHE;
 
   // UI States
   const [showCreate, setShowCreate] = useState(false);
   const [showClose, setShowClose] = useState<null | MaintItem>(null);
   const [editItem, setEditItem] = useState<MaintItem | null>(null);
-  
+
+  // Chat (style SMS) sur tickets maintenance
+  const [chatItem, setChatItem] = useState<MaintItem | null>(null);
+  const [chatInput, setChatInput] = useState('');
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [editingReplyText, setEditingReplyText] = useState('');
+
+  useEffect(() => {
+    if (chatItem && chatScrollRef.current) {
+      requestAnimationFrame(() => {
+        if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      });
+    }
+  }, [chatItem?.id]);
+
   // Forms
   const [editForm, setEditForm] = useState({ titre: '', type: TYPE_OPTIONS[0], chambre: '', commentaire: '' });
   const [newItem, setNewItem] = useState<Partial<MaintItem>>({ titre: '', type: TYPE_OPTIONS[0], chambres: [], commentaire: '' });
@@ -162,6 +200,27 @@ function MaintenancePageInner() {
       setLoading(false);
     })();
   }, [hotelId]);
+
+  useEffect(() => {
+    (async () => {
+      if (!hotelId) { setHotelName(''); return; }
+      const { data } = await supabase.from('hotels').select('nom').eq('id', hotelId).maybeSingle();
+      setHotelName(data?.nom || '');
+    })();
+  }, [hotelId]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('hotels').select('id, nom').order('nom', { ascending: true });
+      setHotels(data || []);
+    })();
+  }, []);
+
+  const switchHotel = (newId: string) => {
+    if (!newId || newId === hotelId) return;
+    setHotelId(newId);
+    if (typeof window !== 'undefined') window.localStorage.setItem('selectedHotelId', newId);
+  };
 
   useEffect(() => {
     document.title = 'Maintenance';
@@ -260,6 +319,75 @@ function MaintenancePageInner() {
     setEditItem(null);
   };
 
+  // --- CHAT ACTIONS ---
+  const meName = (rawUser as any)?.name || rawUser?.email || 'Anonyme';
+  const meId = rawUser?.id || null;
+
+  const sendReply = async () => {
+    if (!chatItem || chatInput.trim() === '') return;
+    const reply: ChatReply = {
+      id: uuidv4(),
+      auteur: meName,
+      auteur_id: meId,
+      texte: chatInput.trim(),
+      created_at: new Date().toISOString(),
+    };
+    const newReplies = [...(chatItem.replies || []), reply];
+    const { error } = await supabase.from('maintenance').update({ replies: newReplies }).eq('id', chatItem.id);
+    if (error) { alert('Erreur envoi : ' + error.message); return; }
+    setItems(prev => prev.map(x => x.id === chatItem.id ? { ...x, replies: newReplies } : x));
+    setChatItem(prev => prev ? { ...prev, replies: newReplies } : null);
+    setChatInput('');
+    requestAnimationFrame(() => {
+      if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    });
+  };
+
+  const startEditReply = (r: ChatReply) => {
+    setEditingReplyId(r.id);
+    setEditingReplyText(r.texte);
+  };
+
+  const cancelEditReply = () => {
+    setEditingReplyId(null);
+    setEditingReplyText('');
+  };
+
+  const saveEditReply = async () => {
+    if (!chatItem || !editingReplyId) return;
+    const trimmed = editingReplyText.trim();
+    if (trimmed === '') return;
+    const current = Array.isArray(chatItem.replies) ? chatItem.replies : [];
+    const newReplies = current.map((r) =>
+      r.id === editingReplyId ? { ...r, texte: trimmed, edited_at: new Date().toISOString() } : r
+    );
+    const { error } = await supabase.from('maintenance').update({ replies: newReplies }).eq('id', chatItem.id);
+    if (error) { alert('Erreur édition : ' + error.message); return; }
+    setItems(prev => prev.map(x => x.id === chatItem.id ? { ...x, replies: newReplies } : x));
+    setChatItem(prev => prev ? { ...prev, replies: newReplies } : null);
+    setEditingReplyId(null);
+    setEditingReplyText('');
+  };
+
+  const deleteReply = async (replyId: string) => {
+    if (!chatItem) return;
+    if (!confirm('Supprimer ce message ?')) return;
+    const current = Array.isArray(chatItem.replies) ? chatItem.replies : [];
+    const newReplies = current.filter((r) => r.id !== replyId);
+    const { error } = await supabase.from('maintenance').update({ replies: newReplies }).eq('id', chatItem.id);
+    if (error) { alert('Erreur suppression : ' + error.message); return; }
+    setItems(prev => prev.map(x => x.id === chatItem.id ? { ...x, replies: newReplies } : x));
+    setChatItem(prev => prev ? { ...prev, replies: newReplies } : null);
+    if (editingReplyId === replyId) cancelEditReply();
+  };
+
+  const openChat = (it: MaintItem) => {
+    setChatItem(it);
+    setChatInput('');
+    setEditingReplyId(null);
+    setEditingReplyText('');
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
       
@@ -267,14 +395,25 @@ function MaintenancePageInner() {
       <div className="flex-1 flex flex-col overflow-hidden relative">
         
         {/* Header Flottant Moderne */}
-        <div className="h-20 shrink-0 flex items-center justify-between px-8 z-20">
-            <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-2xl shadow-sm flex items-center justify-center">
+        <div className="h-20 shrink-0 flex items-center justify-between px-8 z-20 gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 bg-white rounded-2xl shadow-sm flex items-center justify-center shrink-0">
                     <Wrench className="w-5 h-5 text-indigo-600" />
                 </div>
                 <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">Maintenance</h1>
+                {hotels.length > 1 && (
+                    <select
+                        value={hotelId}
+                        onChange={(e) => switchHotel(e.target.value)}
+                        className="ml-3 bg-white border border-slate-200 rounded-xl px-3 h-10 text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 focus:ring-2 focus:ring-indigo-500 outline-none transition"
+                    >
+                        {hotels.map(h => (
+                            <option key={h.id} value={h.id}>{h.nom}</option>
+                        ))}
+                    </select>
+                )}
             </div>
-            <Button onClick={() => setShowCreate(true)} disabled={!hotelId} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200 rounded-2xl px-6 h-12 text-sm font-bold transition-all hover:-translate-y-0.5">
+            <Button onClick={() => setShowCreate(true)} disabled={!hotelId} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200 rounded-2xl px-6 h-12 text-sm font-bold transition-all hover:-translate-y-0.5 shrink-0">
                 <Plus className="w-5 h-5 mr-2" /> Signalement
             </Button>
         </div>
@@ -322,11 +461,12 @@ function MaintenancePageInner() {
                                     {open && (
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                                             {enCours.map(it => (
-                                                <TaskCard 
-                                                    key={it.id} item={it} 
+                                                <TaskCard
+                                                    key={it.id} item={it}
                                                     onEdit={() => { setEditItem(it); setEditForm({ titre: it.titre, type: it.type, chambre: getRooms(it)[0] || '', commentaire: it.commentaire || '' }); }}
                                                     onClose={() => setShowClose(it)}
                                                     onDelete={() => removeItem(it.id)}
+                                                    onChat={() => openChat(it)}
                                                 />
                                             ))}
                                         </div>
@@ -361,11 +501,12 @@ function MaintenancePageInner() {
                                     {open && (
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                                             {enCours.map(it => (
-                                                <TaskCard 
-                                                    key={it.id} item={it} 
+                                                <TaskCard
+                                                    key={it.id} item={it}
                                                     onEdit={() => { setEditItem(it); setEditForm({ titre: it.titre, type: it.type, chambre: getRooms(it)[0] || '', commentaire: it.commentaire || '' }); }}
                                                     onClose={() => setShowClose(it)}
                                                     onDelete={() => removeItem(it.id)}
+                                                    onChat={() => openChat(it)}
                                                 />
                                             ))}
                                         </div>
@@ -430,14 +571,14 @@ function MaintenancePageInner() {
                             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                                 <TabsContent value="h-type" className="space-y-4 mt-0">
                                     {histByType.map(([type, arr]) => (
-                                        <HistoryFolder key={type} title={type} items={arr} openState={openHistTypes} toggleFunc={() => toggleHistType(type)} id={type} onReopen={reopenItem} />
+                                        <HistoryFolder key={type} title={type} items={arr} openState={openHistTypes} toggleFunc={() => toggleHistType(type)} id={type} onReopen={reopenItem} onChat={openChat} />
                                     ))}
                                     {histByType.length === 0 && <EmptyState message="Aucun historique." />}
                                 </TabsContent>
 
                                 <TabsContent value="h-room" className="space-y-4 mt-0">
                                     {histByRoom.map(([room, arr]) => (
-                                        <HistoryFolder key={room} title={`Chambre ${room}`} items={arr} openState={openHistRooms} toggleFunc={() => toggleHistRoom(room)} id={room} onReopen={reopenItem} />
+                                        <HistoryFolder key={room} title={`Chambre ${room}`} items={arr} openState={openHistRooms} toggleFunc={() => toggleHistRoom(room)} id={room} onReopen={reopenItem} onChat={openChat} />
                                     ))}
                                 </TabsContent>
                             </div>
@@ -500,8 +641,169 @@ function MaintenancePageInner() {
 
       {/* EDIT */}
       {editItem && (
-        <EditModal item={editItem} form={editForm} setForm={setEditForm} onCancel={() => setEditItem(null)} onSave={saveEdit} />
+        <EditModal item={editItem} form={editForm} setForm={setEditForm} onCancel={() => setEditItem(null)} onSave={saveEdit} ROOM_OPTIONS={ROOM_OPTIONS} />
       )}
+
+      {/* CHAT */}
+      {chatItem && (() => {
+        const replies: ChatReply[] = Array.isArray(chatItem.replies) ? chatItem.replies : [];
+        const formatChatTime = (iso: string) => {
+          if (!iso || isNaN(Date.parse(iso))) return '';
+          const d = new Date(iso);
+          const today = new Date();
+          const sameDay = d.toDateString() === today.toDateString();
+          return sameDay
+            ? dfFormat(d, 'HH:mm', { locale: frLocale })
+            : dfFormat(d, 'dd MMM HH:mm', { locale: frLocale });
+        };
+        const initials = (n?: string) => (n ? n.substring(0, 2).toUpperCase() : 'AN');
+        return (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col h-[85vh] animate-in fade-in zoom-in duration-200 overflow-hidden">
+              {/* Header */}
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                    <Wrench className="w-4 h-4" />
+                  </div>
+                  <div className="leading-tight min-w-0">
+                    <div className="text-sm font-semibold text-slate-800 truncate">{chatItem.titre}</div>
+                    <div className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
+                      <span className="capitalize">{chatItem.type}</span>
+                      {getRooms(chatItem).length > 0 && <span>· #{getRooms(chatItem).join(', ')}</span>}
+                      <span>· {toFr(chatItem.date_creation)}</span>
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${chatItem.statut === 'Fait' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{chatItem.statut}</span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setChatItem(null); setChatInput(''); cancelEditReply(); }}
+                  className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-700 transition shrink-0 ml-2"
+                  aria-label="Fermer"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Fil de discussion */}
+              <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-4 bg-slate-50 space-y-3">
+                {/* Bulle d'origine = description du ticket */}
+                <div className="flex items-end gap-2">
+                  <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 shrink-0">
+                    <Wrench className="w-3 h-3" />
+                  </div>
+                  <div className="max-w-[75%]">
+                    <div className="text-[10px] text-slate-400 mb-0.5 ml-1">Signalement</div>
+                    <div className="bg-white border border-slate-200 text-slate-800 px-3 py-2 rounded-2xl rounded-bl-sm text-sm whitespace-pre-wrap break-words shadow-sm">
+                      <div className="font-bold">{chatItem.titre}</div>
+                      {chatItem.commentaire && <div className="text-slate-600 italic mt-1">"{chatItem.commentaire}"</div>}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 ml-1">{formatChatTime(chatItem.created_at || chatItem.date_creation)}</div>
+                  </div>
+                </div>
+
+                {/* Réponses */}
+                {replies.map((r) => {
+                  const mine = !!meId && r.auteur_id === meId;
+                  const isEditing = editingReplyId === r.id;
+                  return (
+                    <div key={r.id} className={`group/msg flex items-end gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${mine ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>
+                        {initials(r.auteur)}
+                      </div>
+                      <div className="max-w-[75%]">
+                        <div className={`text-[10px] text-slate-400 mb-0.5 ${mine ? 'text-right mr-1' : 'ml-1'}`}>{r.auteur}</div>
+
+                        {isEditing ? (
+                          <div className={`p-2 rounded-2xl shadow-sm ${mine ? 'bg-indigo-600 rounded-br-sm' : 'bg-white border border-slate-200 rounded-bl-sm'}`}>
+                            <textarea
+                              value={editingReplyText}
+                              onChange={(e) => setEditingReplyText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditReply(); }
+                                if (e.key === 'Escape') { e.preventDefault(); cancelEditReply(); }
+                              }}
+                              autoFocus
+                              rows={2}
+                              className={`w-full resize-none outline-none text-sm rounded-lg px-2 py-1 ${mine ? 'bg-indigo-500 text-white placeholder-indigo-200' : 'bg-slate-50 text-slate-800'}`}
+                            />
+                            <div className="flex justify-end gap-2 mt-1">
+                              <button
+                                onClick={cancelEditReply}
+                                className={`text-[11px] px-2 py-0.5 rounded ${mine ? 'text-indigo-100 hover:bg-indigo-500' : 'text-slate-500 hover:bg-slate-100'}`}
+                              >Annuler</button>
+                              <button
+                                onClick={saveEditReply}
+                                disabled={editingReplyText.trim() === ''}
+                                className={`text-[11px] px-2 py-0.5 rounded font-medium ${mine ? 'bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50' : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'}`}
+                              >Enregistrer</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`relative px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words shadow-sm ${mine ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'}`}>
+                            {r.texte}
+                            {mine && (
+                              <div className={`absolute top-1/2 -translate-y-1/2 ${mine ? '-left-14' : '-right-14'} flex gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity`}>
+                                <button
+                                  onClick={() => startEditReply(r)}
+                                  className="p-1 rounded-full bg-white shadow text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition"
+                                  title="Modifier"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => deleteReply(r.id)}
+                                  className="p-1 rounded-full bg-white shadow text-slate-500 hover:text-red-600 hover:bg-slate-50 transition"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className={`text-[10px] text-slate-400 mt-0.5 ${mine ? 'text-right mr-1' : 'ml-1'}`}>
+                          {formatChatTime(r.created_at)}
+                          {r.edited_at ? <span className="italic"> · modifié</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Composer */}
+              <div className="border-t border-slate-100 p-3 bg-white">
+                <div className="flex items-end gap-2">
+                  <textarea
+                    placeholder="Votre réponse..."
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendReply();
+                      }
+                    }}
+                    rows={1}
+                    className="flex-1 resize-none bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none max-h-32"
+                  />
+                  <button
+                    onClick={sendReply}
+                    disabled={chatInput.trim() === ''}
+                    className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-full w-10 h-10 flex items-center justify-center shadow-md transition shrink-0"
+                    aria-label="Envoyer"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1 ml-2">Entrée pour envoyer · Shift+Entrée pour aller à la ligne</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
@@ -509,7 +811,8 @@ function MaintenancePageInner() {
 
 // --- SUB COMPONENTS (MODERNIZED) ---
 
-function TaskCard({ item, onEdit, onClose, onDelete }: { item: MaintItem, onEdit: () => void, onClose: () => void, onDelete: () => void }) {
+function TaskCard({ item, onEdit, onClose, onDelete, onChat }: { item: MaintItem, onEdit: () => void, onClose: () => void, onDelete: () => void, onChat: () => void }) {
+    const replyCount = Array.isArray(item.replies) ? item.replies.length : 0;
     return (
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col gap-3 group">
             <div className="flex justify-between items-start">
@@ -521,7 +824,7 @@ function TaskCard({ item, onEdit, onClose, onDelete }: { item: MaintItem, onEdit
                 </div>
                 <TypeBadge type={item.type} />
             </div>
-            
+
             {item.commentaire && (
                 <div className="text-xs text-slate-500 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
                     "{item.commentaire}"
@@ -529,8 +832,18 @@ function TaskCard({ item, onEdit, onClose, onDelete }: { item: MaintItem, onEdit
             )}
 
             <div className="mt-auto pt-3 flex items-center justify-between border-t border-slate-50">
-                <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Calendar className="w-3 h-3"/> {toFr(item.date_creation)}</span>
-                
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Calendar className="w-3 h-3"/> {toFr(item.date_creation)}</span>
+                    <button
+                        onClick={onChat}
+                        className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full transition ${replyCount > 0 ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100' : 'text-slate-400 hover:bg-slate-100'}`}
+                        title="Conversation"
+                    >
+                        <MessageCircle className="w-3 h-3" />
+                        {replyCount > 0 ? replyCount : ''}
+                    </button>
+                </div>
+
                 <div className="flex items-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={onEdit} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"><Edit2 className="w-4 h-4"/></button>
                     <button onClick={onDelete} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"><Trash2 className="w-4 h-4"/></button>
@@ -543,7 +856,7 @@ function TaskCard({ item, onEdit, onClose, onDelete }: { item: MaintItem, onEdit
     )
 }
 
-function HistoryFolder({ title, items, openState, toggleFunc, id, onReopen }: any) {
+function HistoryFolder({ title, items, openState, toggleFunc, id, onReopen, onChat }: any) {
     const open = !!openState[id];
     // CALCULS SÉCURISÉS
     const totalTime = items.reduce((acc:any, curr:any) => acc + (Number(curr.temps_travail) || 0), 0);
@@ -589,7 +902,22 @@ function HistoryFolder({ title, items, openState, toggleFunc, id, onReopen }: an
                                     </span>
                                 </div>
                             </div>
-                            <Button size="sm" variant="ghost" onClick={() => onReopen(it.id)} className="text-xs h-8 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 text-slate-600">Rouvrir</Button>
+                            <div className="flex items-center gap-2">
+                                {onChat && (() => {
+                                    const replyCount = Array.isArray(it.replies) ? it.replies.length : 0;
+                                    return (
+                                        <button
+                                            onClick={() => onChat(it)}
+                                            className={`flex items-center gap-1 text-xs h-8 px-2.5 rounded-lg border transition ${replyCount > 0 ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                                            title="Conversation"
+                                        >
+                                            <MessageCircle className="w-3.5 h-3.5" />
+                                            {replyCount > 0 ? replyCount : ''}
+                                        </button>
+                                    );
+                                })()}
+                                <Button size="sm" variant="ghost" onClick={() => onReopen(it.id)} className="text-xs h-8 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 text-slate-600">Rouvrir</Button>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -636,7 +964,7 @@ function CloseModal({ item, onCancel, onConfirm }: any) {
   );
 }
 
-function EditModal({ item, form, setForm, onCancel, onSave }: any) {
+function EditModal({ item, form, setForm, onCancel, onSave, ROOM_OPTIONS }: any) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white p-6 rounded-3xl w-full max-w-lg space-y-4 shadow-2xl">
@@ -648,7 +976,7 @@ function EditModal({ item, form, setForm, onCancel, onSave }: any) {
             </select>
             <select className="w-full border rounded-xl px-3 h-12 text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" value={form.chambre} onChange={(e) => setForm({ ...form, chambre: e.target.value })}>
                 <option value="">Zone...</option>
-                {ROOM_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                {ROOM_OPTIONS.map((r: string) => <option key={r} value={r}>{r}</option>)}
             </select>
         </div>
         <textarea rows={3} className="w-full border rounded-xl px-3 py-3 text-sm resize-none bg-slate-50" value={form.commentaire} onChange={(e) => setForm({ ...form, commentaire: e.target.value })} />
