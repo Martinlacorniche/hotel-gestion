@@ -13,7 +13,8 @@ import {
   ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
   NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
-  Wrench, Tv2, Wifi, Package, Star // Icônes maintenance + chromecast + wifi + objets + favoris
+  Wrench, Tv2, Wifi, Package, Star, // Icônes maintenance + chromecast + wifi + objets + favoris
+  MessageCircle, Send // Conversation consignes
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
@@ -295,6 +296,21 @@ export default function HotelDashboard() {
   const [showConsigneModal, setShowConsigneModal] = useState(false);
   const [showTaxiModal, setShowTaxiModal] = useState(false);
   const [editConsigneIndex, setEditConsigneIndex] = useState<number | null>(null);
+
+  // Chat consigne (style SMS)
+  const [chatConsigne, setChatConsigne] = useState<any | null>(null);
+  const [chatInput, setChatInput] = useState('');
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [editingReplyText, setEditingReplyText] = useState('');
+
+  useEffect(() => {
+    if (chatConsigne && chatScrollRef.current) {
+      requestAnimationFrame(() => {
+        if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      });
+    }
+  }, [chatConsigne?.id]);
   
   const [showUserModal, setShowUserModal] = useState(false);
   const [newUser, setNewUser] = useState<{
@@ -707,6 +723,64 @@ export default function HotelDashboard() {
     setConsignes(updated);
   };
 
+  const sendReply = async () => {
+    if (!chatConsigne || chatInput.trim() === '') return;
+    const reply = {
+      id: uuidv4(),
+      auteur: user?.name || 'Anonyme',
+      auteur_id: user?.id || null,
+      texte: chatInput.trim(),
+      created_at: new Date().toISOString(),
+    };
+    const newReplies = [...(chatConsigne.replies || []), reply];
+    const { error } = await supabase.from('consignes').update({ replies: newReplies }).eq('id', chatConsigne.id);
+    if (error) { alert('Erreur envoi : ' + error.message); return; }
+    setConsignes(prev => prev.map(c => c.id === chatConsigne.id ? { ...c, replies: newReplies } : c));
+    setChatConsigne((prev: any) => prev ? { ...prev, replies: newReplies } : null);
+    setChatInput('');
+    requestAnimationFrame(() => {
+      if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    });
+  };
+
+  const startEditReply = (r: any) => {
+    setEditingReplyId(r.id);
+    setEditingReplyText(r.texte);
+  };
+
+  const cancelEditReply = () => {
+    setEditingReplyId(null);
+    setEditingReplyText('');
+  };
+
+  const saveEditReply = async () => {
+    if (!chatConsigne || !editingReplyId) return;
+    const trimmed = editingReplyText.trim();
+    if (trimmed === '') return;
+    const current = Array.isArray(chatConsigne.replies) ? chatConsigne.replies : [];
+    const newReplies = current.map((r: any) =>
+      r.id === editingReplyId ? { ...r, texte: trimmed, edited_at: new Date().toISOString() } : r
+    );
+    const { error } = await supabase.from('consignes').update({ replies: newReplies }).eq('id', chatConsigne.id);
+    if (error) { alert('Erreur édition : ' + error.message); return; }
+    setConsignes(prev => prev.map(c => c.id === chatConsigne.id ? { ...c, replies: newReplies } : c));
+    setChatConsigne((prev: any) => prev ? { ...prev, replies: newReplies } : null);
+    setEditingReplyId(null);
+    setEditingReplyText('');
+  };
+
+  const deleteReply = async (replyId: string) => {
+    if (!chatConsigne) return;
+    if (!confirm('Supprimer ce message ?')) return;
+    const current = Array.isArray(chatConsigne.replies) ? chatConsigne.replies : [];
+    const newReplies = current.filter((r: any) => r.id !== replyId);
+    const { error } = await supabase.from('consignes').update({ replies: newReplies }).eq('id', chatConsigne.id);
+    if (error) { alert('Erreur suppression : ' + error.message); return; }
+    setConsignes(prev => prev.map(c => c.id === chatConsigne.id ? { ...c, replies: newReplies } : c));
+    setChatConsigne((prev: any) => prev ? { ...prev, replies: newReplies } : null);
+    if (editingReplyId === replyId) cancelEditReply();
+  };
+
   const modifierConsigne = (indexVisible: number) => {
     const consigne = consignesVisibles[indexVisible];
     const originalIndex = consignes.findIndex(c => c.id === consigne.id);
@@ -1107,8 +1181,14 @@ const birthdayMessage = useMemo(() => {
             </div>
 
             <div className="flex flex-col gap-3">
-                {consignesVisibles.map((c, idx) => (
-                    <div key={idx} className={`group relative p-5 rounded-2xl border transition-all duration-300 ${c.valide ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-100 shadow-sm hover:shadow-md hover:border-indigo-100'}`}>
+                {consignesVisibles.map((c, idx) => {
+                    const replyCount = Array.isArray(c.replies) ? c.replies.length : 0;
+                    return (
+                    <div
+                        key={idx}
+                        onClick={() => { setChatConsigne(c); setChatInput(''); }}
+                        className={`group relative p-5 rounded-2xl border transition-all duration-300 cursor-pointer ${c.valide ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-100 shadow-sm hover:shadow-md hover:border-indigo-200'}`}
+                    >
                         <div className="flex justify-between items-start mb-2">
                              <div className="flex items-center gap-2">
                                  {/* Avatar/Badge Auteur */}
@@ -1117,9 +1197,9 @@ const birthdayMessage = useMemo(() => {
                                 </div>
                                 <span className="text-xs text-slate-400">{formatSafeDate(c.created_at)}</span>
                              </div>
-                             
+
                              {/* Actions au survol */}
-                             <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
+                             <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200" onClick={(e) => e.stopPropagation()}>
                                 <button onClick={() => modifierConsigne(idx)} className="p-1.5 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition"><Edit2 className="w-3.5 h-3.5" /></button>
                                 {!c.valide && (
                                     <button onClick={() => validerConsigne(idx)} className="p-1.5 hover:bg-green-50 rounded text-slate-400 hover:text-green-600 transition" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
@@ -1130,8 +1210,18 @@ const birthdayMessage = useMemo(() => {
                         <div className={`text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed ${c.valide ? 'line-through text-slate-400' : ''}`}>
                             {c.texte}
                         </div>
+
+                        {/* Pied de carte : conversation */}
+                        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                            <span className="text-slate-400 italic">— {c.auteur || 'Anonyme'}</span>
+                            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full transition ${replyCount > 0 ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-slate-400 group-hover:bg-slate-100'}`}>
+                                <MessageCircle className="w-3 h-3" />
+                                {replyCount > 0 ? `${replyCount} réponse${replyCount > 1 ? 's' : ''}` : 'Répondre'}
+                            </span>
+                        </div>
                     </div>
-                ))}
+                    );
+                })}
                 {consignesVisibles.length === 0 && <div className="text-center py-10 text-slate-400 text-sm bg-white rounded-2xl border border-dashed border-slate-200">Rien à signaler 🎉</div>}
             </div>
         </div>
@@ -1792,6 +1882,166 @@ const birthdayMessage = useMemo(() => {
           </div>
         </div>
       )}
+
+      {/* Modal Chat Consigne (style SMS) */}
+      {chatConsigne && (() => {
+        const replies = Array.isArray(chatConsigne.replies) ? chatConsigne.replies : [];
+        const formatChatTime = (iso: string) => {
+          if (!iso || isNaN(Date.parse(iso))) return '';
+          const d = new Date(iso);
+          const today = new Date();
+          const sameDay = d.toDateString() === today.toDateString();
+          return sameDay
+            ? formatDate(d, 'HH:mm', { locale: frLocale })
+            : formatDate(d, 'dd MMM HH:mm', { locale: frLocale });
+        };
+        const initials = (n?: string) => (n ? n.substring(0, 2).toUpperCase() : 'AN');
+        const meId = user?.id;
+        return (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col h-[85vh] animate-in fade-in zoom-in duration-200 overflow-hidden">
+              {/* Header */}
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700">
+                    {initials(chatConsigne.auteur)}
+                  </div>
+                  <div className="leading-tight">
+                    <div className="text-sm font-semibold text-slate-800">{chatConsigne.auteur || 'Anonyme'}</div>
+                    <div className="text-[11px] text-slate-400">Consigne du {formatSafeDate(chatConsigne.created_at)}</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setChatConsigne(null); setChatInput(''); }}
+                  className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-700 transition"
+                  aria-label="Fermer"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Fil de discussion */}
+              <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-4 bg-slate-50 space-y-3">
+                {/* Bulle d'origine (toujours à gauche) */}
+                <div className="flex items-end gap-2">
+                  <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 shrink-0">
+                    {initials(chatConsigne.auteur)}
+                  </div>
+                  <div className="max-w-[75%]">
+                    <div className="text-[10px] text-slate-400 mb-0.5 ml-1">{chatConsigne.auteur || 'Anonyme'}</div>
+                    <div className="bg-white border border-slate-200 text-slate-800 px-3 py-2 rounded-2xl rounded-bl-sm text-sm whitespace-pre-wrap break-words shadow-sm">
+                      {chatConsigne.texte}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 ml-1">{formatChatTime(chatConsigne.created_at)}</div>
+                  </div>
+                </div>
+
+                {/* Réponses */}
+                {replies.map((r: any) => {
+                  const mine = meId && r.auteur_id === meId;
+                  const isEditing = editingReplyId === r.id;
+                  return (
+                    <div key={r.id} className={`group/msg flex items-end gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${mine ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>
+                        {initials(r.auteur)}
+                      </div>
+                      <div className="max-w-[75%]">
+                        <div className={`text-[10px] text-slate-400 mb-0.5 ${mine ? 'text-right mr-1' : 'ml-1'}`}>{r.auteur}</div>
+
+                        {isEditing ? (
+                          <div className={`p-2 rounded-2xl shadow-sm ${mine ? 'bg-indigo-600 rounded-br-sm' : 'bg-white border border-slate-200 rounded-bl-sm'}`}>
+                            <textarea
+                              value={editingReplyText}
+                              onChange={(e) => setEditingReplyText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditReply(); }
+                                if (e.key === 'Escape') { e.preventDefault(); cancelEditReply(); }
+                              }}
+                              autoFocus
+                              rows={2}
+                              className={`w-full resize-none outline-none text-sm rounded-lg px-2 py-1 ${mine ? 'bg-indigo-500 text-white placeholder-indigo-200' : 'bg-slate-50 text-slate-800'}`}
+                            />
+                            <div className="flex justify-end gap-2 mt-1">
+                              <button
+                                onClick={cancelEditReply}
+                                className={`text-[11px] px-2 py-0.5 rounded ${mine ? 'text-indigo-100 hover:bg-indigo-500' : 'text-slate-500 hover:bg-slate-100'}`}
+                              >
+                                Annuler
+                              </button>
+                              <button
+                                onClick={saveEditReply}
+                                disabled={editingReplyText.trim() === ''}
+                                className={`text-[11px] px-2 py-0.5 rounded font-medium ${mine ? 'bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50' : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'}`}
+                              >
+                                Enregistrer
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`relative px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words shadow-sm ${mine ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'}`}>
+                            {r.texte}
+                            {mine && (
+                              <div className={`absolute top-1/2 -translate-y-1/2 ${mine ? '-left-14' : '-right-14'} flex gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity`}>
+                                <button
+                                  onClick={() => startEditReply(r)}
+                                  className="p-1 rounded-full bg-white shadow text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition"
+                                  title="Modifier"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => deleteReply(r.id)}
+                                  className="p-1 rounded-full bg-white shadow text-slate-500 hover:text-red-600 hover:bg-slate-50 transition"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className={`text-[10px] text-slate-400 mt-0.5 ${mine ? 'text-right mr-1' : 'ml-1'}`}>
+                          {formatChatTime(r.created_at)}
+                          {r.edited_at ? <span className="italic"> · modifié</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Composer */}
+              <div className="border-t border-slate-100 p-3 bg-white">
+                <div className="flex items-end gap-2">
+                  <textarea
+                    placeholder="Votre réponse..."
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendReply();
+                      }
+                    }}
+                    rows={1}
+                    className="flex-1 resize-none bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none max-h-32"
+                  />
+                  <button
+                    onClick={sendReply}
+                    disabled={chatInput.trim() === ''}
+                    className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-full w-10 h-10 flex items-center justify-center shadow-md transition shrink-0"
+                    aria-label="Envoyer"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1 ml-2">Entrée pour envoyer · Shift+Entrée pour aller à la ligne</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal Consigne (Corrigé : Filtre Actifs + Tri Alpha) */}
       {showConsigneModal && (
