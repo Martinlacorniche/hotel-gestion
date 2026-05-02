@@ -14,7 +14,8 @@ import {
   NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
   Wrench, Tv2, Wifi, Package, Star, // Icônes maintenance + chromecast + wifi + objets + favoris
-  MessageCircle, Send // Conversation consignes
+  MessageCircle, Send, // Conversation consignes
+  Euro // Caisse
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
@@ -45,6 +46,7 @@ const TOOLS: ToolDef[] = [
   { id: "chromecast",  label: "Chromecasts",  href: "/chromecast",                         icon: Tv2,          bg: "bg-slate-100",  text: "text-slate-700",  condition: "corniche" },
   { id: "wifi-admin",  label: "Interface WiFi", href: (id: string) => `/wifi-admin?hotel_id=${id}`, icon: Wifi, bg: "bg-sky-50", text: "text-sky-700" },
   { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
+  { id: "caisse",      label: "Caisse",       href: (id) => `/caisse?hotel_id=${id}`,      icon: Euro,         bg: "bg-emerald-50", text: "text-emerald-700" },
 ];
 
 // --- TYPES & UTILITAIRES ---
@@ -1038,6 +1040,18 @@ const birthdayMessage = useMemo(() => {
               <ChevronRight className="w-4 h-4 text-slate-600" />
             </Button>
           </div>
+
+          {/* Bouton Caisse — taille de la date */}
+          <a
+            href={`/caisse?hotel_id=${hotelId || ''}`}
+            target="_blank"
+            title="Caisse du jour"
+            className="group relative inline-flex items-center gap-2 h-10 px-4 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold shadow-sm hover:shadow-md transition-all"
+          >
+            <span className="absolute inset-0 rounded-full ring-2 ring-emerald-300/60 animate-pulse pointer-events-none" />
+            <Euro className="w-4 h-4" />
+            Caisse
+          </a>
 
            {/* Sélecteur Hôtel */}
            {hotels.length > 1 && (
