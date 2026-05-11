@@ -45,7 +45,12 @@ export default function SerruresPage() {
   const [checkoutTime, setCheckoutTime] = useState('11:00');
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [encoding, setEncoding] = useState<{ sejours: Sejour[]; jobIds: string[] } | null>(null);
+  const [encoding, setEncoding] = useState<{
+    sejours: Sejour[];
+    jobIds: string[];
+    carteIndex: number;
+    totalCartes: number;
+  } | null>(null);
   const [jobsStatut, setJobsStatut] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
@@ -136,7 +141,12 @@ export default function SerruresPage() {
       await load();
       setSelectedIds(new Set());
       if (methode === 'carte') {
-        setEncoding({ sejours: newSejours, jobIds: newJobIds });
+        setEncoding({
+          sejours: newSejours,
+          jobIds: newJobIds,
+          carteIndex: 1,
+          totalCartes: json.total_cartes ?? 1,
+        });
       } else if (newSejours[0]) {
         setViewChambreId(newSejours[0].chambre_id);
       }
@@ -176,7 +186,31 @@ export default function SerruresPage() {
         .map((c) => c.sejour)
         .filter((s): s is Sejour => !!s && json.sejourIds.includes(s.id));
       setViewChambreId(null);
-      setEncoding({ sejours: sejoursLies, jobIds: [json.job.id] });
+      setEncoding({ sejours: sejoursLies, jobIds: [json.job.id], carteIndex: 1, totalCartes: 1 });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function encodeNextCard() {
+    if (!encoding) return;
+    const head = encoding.sejours[0];
+    if (!head) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/serrures/sejours/${head.id}/carte-supplementaire`, {
+        method: 'POST',
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      setEncoding({
+        ...encoding,
+        jobIds: [...encoding.jobIds, json.job.id],
+        carteIndex: encoding.carteIndex + 1,
+      });
+      setJobsStatut((prev) => ({ ...prev, [json.job.id]: 'queued' }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -289,6 +323,8 @@ export default function SerruresPage() {
               <EncodingPanel
                 encoding={encoding}
                 jobsStatut={jobsStatut}
+                busy={busy}
+                onNext={encodeNextCard}
                 onClose={() => {
                   setEncoding(null);
                   setJobsStatut({});
@@ -674,11 +710,16 @@ function ChambreDetail(props: {
 // ─── Encodage ───────────────────────────────────────────────────────────────
 
 function EncodingPanel(props: {
-  encoding: { sejours: Sejour[]; jobIds: string[] };
+  encoding: { sejours: Sejour[]; jobIds: string[]; carteIndex: number; totalCartes: number };
   jobsStatut: Record<string, string>;
+  busy: boolean;
+  onNext: () => void;
   onClose: () => void;
 }) {
-  const { encoding, jobsStatut, onClose } = props;
+  const { encoding, jobsStatut, busy, onNext, onClose } = props;
+  const allDone = encoding.jobIds.every((id) => jobsStatut[id] === 'done');
+  const anyError = encoding.jobIds.some((id) => jobsStatut[id] === 'error');
+  const hasMore = encoding.carteIndex < encoding.totalCartes;
 
   return (
     <div>
@@ -706,7 +747,7 @@ function EncodingPanel(props: {
               <div className="flex-1">
                 <div className="font-medium text-stone-800">
                   Carte {idx + 1}
-                  {encoding.jobIds.length > 1 ? ` / ${encoding.jobIds.length}` : ''}
+                  {encoding.totalCartes > 1 ? ` / ${encoding.totalCartes}` : ''}
                 </div>
                 <div className="text-xs text-stone-500 mt-0.5">
                   {statut === 'queued' && 'Posez la carte sur l’encodeur'}
@@ -720,12 +761,28 @@ function EncodingPanel(props: {
                   <Loader2 className="w-5 h-5 animate-spin text-stone-400" />
                 )}
                 {statut === 'done' && <Check className="w-5 h-5 text-emerald-600" />}
-                {statut === 'error' && <Loader2 className="w-5 h-5 text-red-600" />}
+                {statut === 'error' && <AlertCircle className="w-5 h-5 text-red-600" />}
               </div>
             </div>
           );
         })}
       </div>
+
+      {allDone && hasMore && !anyError && (
+        <button
+          onClick={onNext}
+          disabled={busy}
+          className="mt-6 w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 font-medium shadow-sm shadow-indigo-200 transition"
+        >
+          <CreditCard className="w-5 h-5" />
+          Carte suivante ({encoding.carteIndex + 1}/{encoding.totalCartes})
+        </button>
+      )}
+      {allDone && !hasMore && (
+        <div className="mt-6 text-center py-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">
+          Toutes les cartes sont encodées
+        </div>
+      )}
     </div>
   );
 }

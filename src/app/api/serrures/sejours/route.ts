@@ -211,28 +211,31 @@ export async function POST(req: Request) {
     );
   }
 
+  // Un seul job initial même si nb_cartes > 1 : l'opérateur doit pouvoir changer
+  // de carte sur l'encodeur entre chaque écriture. Les cartes 2..N sont créées à
+  // la demande par l'UI via /carte-supplementaire après que la précédente est done.
   const lockIds = locksMeta.map((l) => l.lockId);
   const sejourIds = sejours.map((s) => s.id);
-  const jobRows = Array.from({ length: nbCartes }).map((_, idx) => ({
-    hotel_id: hotelId,
-    sejour_id: headSejour.id,
-    action: 'write_card' as const,
-    statut: 'queued' as const,
-    payload: {
-      lockIds,
-      locks: locksMeta, // ← l'agent utilise ce tableau pour CE_WriteCard
-      sejourIds,
-      debut: debut.toISOString(),
-      fin: fin.toISOString(),
-      carte_index: idx + 1,
-      total_cartes: nbCartes,
-    },
-  }));
-  const { data: jobs, error: eJ } = await supabaseAdmin
+  const { data: firstJob, error: eJ } = await supabaseAdmin
     .from('jobs_encodeur')
-    .insert(jobRows)
-    .select();
+    .insert({
+      hotel_id: hotelId,
+      sejour_id: headSejour.id,
+      action: 'write_card',
+      statut: 'queued',
+      payload: {
+        lockIds,
+        locks: locksMeta,
+        sejourIds,
+        debut: debut.toISOString(),
+        fin: fin.toISOString(),
+        carte_index: 1,
+        total_cartes: nbCartes,
+      },
+    })
+    .select()
+    .single();
   if (eJ) return NextResponse.json({ ok: false, error: eJ.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, sejours, jobs });
+  return NextResponse.json({ ok: true, sejours, jobs: [firstJob], total_cartes: nbCartes });
 }
