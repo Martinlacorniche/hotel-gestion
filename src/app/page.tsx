@@ -1053,6 +1053,18 @@ const birthdayMessage = useMemo(() => {
             Caisse
           </a>
 
+          {/* Bouton Serrures — uniquement pour Les Voiles */}
+          {currentHotel?.nom?.toLowerCase().includes("voiles") && (
+            <a
+              href="/serrures"
+              target="_blank"
+              title="Serrures"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-sm hover:shadow-md transition-all"
+            >
+              <KeyRound className="w-4 h-4" />
+            </a>
+          )}
+
            {/* Sélecteur Hôtel */}
            {hotels.length > 1 && (
             <div className="flex bg-white rounded-full shadow-sm border border-slate-200 p-1">
