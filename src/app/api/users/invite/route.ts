@@ -50,7 +50,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'Seul un superadmin peut créer un admin' }, { status: 403 });
   }
 
-  const redirectTo = `${SITE_URL}/update-password?flow=invite`;
+  // Pas de query string ici : la whitelist Supabase peut être stricte.
+  // Le type=invite est de toute façon transmis par Supabase dans le fragment URL
+  // (#type=invite&access_token=...) que /update-password sait lire.
+  const redirectTo = `${SITE_URL}/update-password`;
 
   const { data: invData, error: invErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
     data: { name, role, hotel_id },

@@ -8,12 +8,22 @@ import { Eye, EyeOff } from 'lucide-react'
 
 export default function UpdatePasswordClientPage() {
   const searchParams = useSearchParams();
-  const flow = searchParams?.get('flow') === 'invite' ? 'invite' : 'recovery';
+  const [flow, setFlow] = useState<'invite' | 'recovery'>('recovery');
   const [newPassword, setNewPassword] = useState('');
   const [status, setStatus] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [showPwd, setShowPwd] = useState(false)
 
+
+  // 🏷️ Détecter si on est sur un flow "invite" — soit via query string (?flow=invite),
+  // soit via le fragment URL (#type=invite, format Supabase implicit flow).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (searchParams?.get('flow') === 'invite') { setFlow('invite'); return; }
+    const hash = window.location.hash.replace(/^#/, '');
+    const hashParams = new URLSearchParams(hash);
+    if (hashParams.get('type') === 'invite') setFlow('invite');
+  }, [searchParams]);
 
   // 🔐 Restaurer la session si access_token présent
   useEffect(() => {
