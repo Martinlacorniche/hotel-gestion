@@ -448,8 +448,8 @@ export default function UsersPage() {
       {inviteOpen && (
         <Modal onClose={() => !inviting && setInviteOpen(false)} icon={<Mail className="text-indigo-600" size={20} />} title="Inviter un utilisateur" subtitle="Un email lui sera envoyé pour définir son mot de passe.">
           <div className="space-y-3">
-            <Field label="Nom complet">
-              <Input value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Jean Dupont" />
+            <Field label="Prénom">
+              <Input value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Jean" />
             </Field>
             <Field label="Email">
               <Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="jean.dupont@exemple.com" />

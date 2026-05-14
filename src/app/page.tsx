@@ -1199,16 +1199,16 @@ const birthdayMessage = useMemo(() => {
                     >
                         {showValidatedConsignes ? 'Masquer validées' : 'Voir validées'}
                     </button>
-                    <Button 
-                        size="sm" 
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow shadow-indigo-200"
+                    <Button
+                        size="sm"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow shadow-indigo-200 w-8 h-8 p-0 flex items-center justify-center"
                         onClick={() => {
                             setNewConsigne({ texte: '', service: 'Tous les services', date: '', valide: false, utilisateurs_ids: [], date_fin: '', });
                             setEditConsigneIndex(null);
                             setShowConsigneModal(true);
                         }}
                     >
-                        <PlusCircle className="w-4 h-4 mr-1" />
+                        <PlusCircle className="w-5 h-5" />
                     </Button>
                 </div>
             </div>
