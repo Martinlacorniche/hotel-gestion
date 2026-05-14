@@ -76,7 +76,7 @@ const getEntry = (entries = [], userId, dateStr, preferDraft = false, isAdminFla
 
 export default function PlanningPage() {
   const { user, isLoading } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
   const [showMyCpModal, setShowMyCpModal] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const datepickerButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -613,6 +613,7 @@ export default function PlanningPage() {
     const usersWithOrder = usersData.map(u => ({ ...u, ordre: configData.find(c => c.user_id === u.id_auth)?.ordre ?? 9999 }));
     
     const usersVisible = usersWithOrder.filter(u => {
+       if (u.role === 'superadmin') return false;
        const end = u.employment_end_date ? new Date(u.employment_end_date) : null;
        if (end && end < atNoon(weekStart)) {
          // Check if entries this week

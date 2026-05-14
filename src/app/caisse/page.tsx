@@ -85,7 +85,7 @@ const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 function CaissePageInner() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
-  const isAdmin = (user as any)?.role === "admin";
+  const isAdmin = (user as any)?.role === "admin" || (user as any)?.role === "superadmin";
 
   const [hotelId, setHotelId] = useState<string>("");
   const [hotelName, setHotelName] = useState<string>("");

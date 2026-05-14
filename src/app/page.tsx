@@ -236,7 +236,7 @@ export default function HotelDashboard() {
   const mainMeteo = meteoAfternoon || meteoMorning;
   const hasMeteo = !!(meteoMorning || meteoAfternoon);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const userDropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -339,14 +339,18 @@ export default function HotelDashboard() {
   const doCloseUser = async () => {
     if (!closeModal.user || !closeModal.date) return;
     const u = closeModal.user;
-    const { error: upErr } = await supabase
-      .from('users')
-      .update({ active: false, employment_end_date: closeModal.date })
-      .eq('id_auth', u.id_auth);
-    if (upErr) { alert("Erreur clôture : " + upErr.message); return; }
 
-    const { error: banErr } = await supabase.rpc('ban_user', { p_user_id: u.id_auth });
-    if (banErr) { alert("Erreur ban : " + banErr.message); return; }
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { alert("Session expirée, reconnectez-vous."); return; }
+
+    const resp = await fetch('/api/users/deactivate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ user_id: u.id_auth, employment_end_date: closeModal.date }),
+    });
+    const result = await resp.json();
+    if (!resp.ok || !result.ok) { alert("Erreur clôture : " + (result.error || resp.statusText)); return; }
 
     setUsers(prev => prev.map(x =>
       x.id_auth === u.id_auth ? { ...x, active:false, employment_end_date: closeModal.date } : x
@@ -356,14 +360,17 @@ export default function HotelDashboard() {
   };
 
   const reactivateUser = async (u: any) => {
-    const { error: upErr } = await supabase
-      .from('users')
-      .update({ active: true, employment_end_date: null })
-      .eq('id_auth', u.id_auth);
-    if (upErr) { alert("Erreur réactivation : " + upErr.message); return; }
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { alert("Session expirée, reconnectez-vous."); return; }
 
-    const { error: unbanErr } = await supabase.rpc('unban_user', { p_user_id: u.id_auth });
-    if (unbanErr) { alert("Erreur unban : " + unbanErr.message); return; }
+    const resp = await fetch('/api/users/reactivate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ user_id: u.id_auth }),
+    });
+    const result = await resp.json();
+    if (!resp.ok || !result.ok) { alert("Erreur réactivation : " + (result.error || resp.statusText)); return; }
 
     setUsers(prev => prev.map(x =>
       x.id_auth === u.id_auth ? { ...x, active: true, employment_end_date: null } : x
@@ -1671,7 +1678,7 @@ const birthdayMessage = useMemo(() => {
          </div>
 
          {/* Admin Section */}
-         {user.role === 'admin' && (
+         {(user.role === 'admin' || user.role === 'superadmin') && (
             <div className="bg-slate-100 rounded-2xl p-6 border border-slate-200">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="font-bold text-slate-700">Administration</h2>

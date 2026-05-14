@@ -8,6 +8,7 @@ import { Eye, EyeOff } from 'lucide-react'
 
 export default function UpdatePasswordClientPage() {
   const searchParams = useSearchParams();
+  const flow = searchParams?.get('flow') === 'invite' ? 'invite' : 'recovery';
   const [newPassword, setNewPassword] = useState('');
   const [status, setStatus] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -16,14 +17,14 @@ export default function UpdatePasswordClientPage() {
 
   // 🔐 Restaurer la session si access_token présent
   useEffect(() => {
-    const accessToken = searchParams.get('access_token');
-    const type = searchParams.get('type');
+    const accessToken = searchParams?.get('access_token');
+    const type = searchParams?.get('type');
 
     console.log('🔎 URL:', window.location.href);
   console.log('🔐 access_token:', accessToken);
   console.log('🔐 type:', type);
 
-    if (accessToken && type === 'recovery') {
+    if (accessToken && (type === 'recovery' || type === 'invite')) {
       console.log('🔑 Tentative de récupération de session avec token :', accessToken);
       supabase.auth
         .exchangeCodeForSession(accessToken)
@@ -61,7 +62,7 @@ export default function UpdatePasswordClientPage() {
       console.error('Erreur updateUser:', error.message);
       setStatus('❌ Erreur : ' + error.message);
     } else {
-      setStatus('✅ Mot de passe mis à jour avec succès !');
+      setStatus(flow === 'invite' ? '✅ Compte activé ! Vous pouvez vous connecter.' : '✅ Mot de passe mis à jour avec succès !');
       setIsSubmitted(true);
     }
   };
@@ -69,13 +70,20 @@ export default function UpdatePasswordClientPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
       <div className="bg-white p-6 rounded shadow-md w-full max-w-md text-center">
-        <h1 className="text-xl font-bold mb-4">🔐 Réinitialisation du mot de passe</h1>
+        <h1 className="text-xl font-bold mb-4">
+          {flow === 'invite' ? '👋 Bienvenue !' : '🔐 Réinitialisation du mot de passe'}
+        </h1>
+        {flow === 'invite' && !isSubmitted && (
+          <p className="text-sm text-gray-600 mb-4">
+            Définissez le mot de passe de votre compte pour terminer la création.
+          </p>
+        )}
         {!isSubmitted ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="relative">
   <input
     type={showPwd ? 'text' : 'password'}
-    placeholder="Nouveau mot de passe"
+    placeholder={flow === 'invite' ? 'Choisissez votre mot de passe' : 'Nouveau mot de passe'}
     className="w-full p-2 pr-10 border border-gray-300 rounded"
     value={newPassword}
     onChange={(e) => setNewPassword(e.target.value)}
@@ -96,7 +104,7 @@ export default function UpdatePasswordClientPage() {
               type="submit"
               className="w-full bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700 transition"
             >
-              🔁 Mettre à jour
+              {flow === 'invite' ? '✅ Valider et accéder à l\'app' : '🔁 Mettre à jour'}
             </button>
           </form>
        ) : (
