@@ -181,7 +181,7 @@ export const THEMES: ThemeDef[] = [
 export const THEME_MAP: Record<ThemeId, ThemeDef> =
   Object.fromEntries(THEMES.map((t) => [t.id, t])) as Record<ThemeId, ThemeDef>;
 
-export type FontId = 'inter' | 'poppins' | 'dm_sans' | 'lora' | 'playfair' | 'caveat';
+export type FontId = 'inter' | 'poppins' | 'dm_sans' | 'lora' | 'playfair' | 'kalam';
 
 export const FONTS: { id: FontId; label: string; description: string; cssVar: string }[] = [
   { id: 'inter',    label: 'Inter',              description: 'Moderne, neutre',     cssVar: 'var(--font-inter)' },
@@ -189,7 +189,7 @@ export const FONTS: { id: FontId; label: string; description: string; cssVar: st
   { id: 'dm_sans',  label: 'DM Sans',            description: 'Tech, propre',        cssVar: 'var(--font-dm-sans)' },
   { id: 'lora',     label: 'Lora',               description: 'Serif lisible',       cssVar: 'var(--font-lora)' },
   { id: 'playfair', label: 'Playfair Display',   description: 'Serif élégant',       cssVar: 'var(--font-playfair)' },
-  { id: 'caveat',   label: 'Caveat',             description: 'Manuscrit, fun',      cssVar: 'var(--font-caveat)' },
+  { id: 'kalam',    label: 'Kalam',              description: 'Manuscrit lisible',   cssVar: 'var(--font-kalam)' },
 ];
 
 // Applique un thème sur :root (à appeler dans un useEffect côté client).
