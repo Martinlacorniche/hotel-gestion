@@ -50,6 +50,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'Seul un superadmin peut créer un admin' }, { status: 403 });
   }
 
+  // Check préventif : un user existe-t-il déjà avec cet email dans public.users ?
+  const { data: existing } = await supabaseAdmin
+    .from('users')
+    .select('id_auth, active')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (existing) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: existing.active === false
+          ? 'Un utilisateur désactivé existe déjà avec cet email — réactivez-le plutôt que de réinviter'
+          : 'Un utilisateur actif existe déjà avec cet email',
+      },
+      { status: 409 },
+    );
+  }
+
   // Pas de query string ici : la whitelist Supabase peut être stricte.
   // Le type=invite est de toute façon transmis par Supabase dans le fragment URL
   // (#type=invite&access_token=...) que /update-password sait lire.
@@ -77,7 +96,11 @@ export async function POST(req: Request) {
   });
 
   if (insErr) {
-    return NextResponse.json({ ok: false, error: insErr.message, partial: 'auth_created' }, { status: 500 });
+    // Rollback : on supprime le user auth qu'on vient de créer pour éviter
+    // l'orphelin. Exception à la règle no-delete : ce user n'a jamais existé
+    // côté planning/historique (créé il y a < 1s), donc pas de risque légal.
+    await supabaseAdmin.auth.admin.deleteUser(newAuthId);
+    return NextResponse.json({ ok: false, error: 'Insert public.users: ' + insErr.message }, { status: 500 });
   }
 
   const { data: configs } = await supabaseAdmin
