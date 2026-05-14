@@ -29,8 +29,12 @@ const AuthContext = createContext<AuthContextType>({
   refreshUser: async () => {},
 });
 
-function mergeUserData(authUser: User, userData: Record<string, unknown> | null): ExtendedUser | null {
-  if (!userData) return null;
+function mergeUserData(authUser: User, userData: Record<string, unknown> | null): ExtendedUser {
+  // Si le fetch de public.users échoue (erreur transitoire, RLS,
+  // CHECK contrainte sur une autre colonne, etc.), on garde quand même
+  // l'auth user pour ne pas casser toute l'app. Mieux vaut un user sans
+  // rôle qu'un user null qui force une déco.
+  if (!userData) return authUser as ExtendedUser;
   return {
     ...authUser,
     role: userData.role as string | undefined,
@@ -47,12 +51,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<ExtendedUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchUserData = async (authUser: User): Promise<ExtendedUser | null> => {
-    const { data: userData } = await supabase
+  const fetchUserData = async (authUser: User): Promise<ExtendedUser> => {
+    const { data: userData, error } = await supabase
       .from('users')
       .select('*')
       .eq('id_auth', authUser.id)
       .single();
+    if (error) {
+      // Log explicite pour debug si le fetch user échoue
+      console.warn('[AuthContext] fetch public.users a échoué :', error.message);
+    }
     return mergeUserData(authUser, userData);
   };
 
