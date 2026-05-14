@@ -48,6 +48,7 @@ type UserRow = {
   birth_date: string | null;
   active: boolean | null;
   employment_end_date: string | null;
+  emoji: string | null;
   created_at?: string | null;
 };
 
@@ -154,7 +155,7 @@ export default function UsersPage() {
     const [usersRes, hotelsRes] = await Promise.all([
       supabase
         .from("users")
-        .select("id_auth, email, name, role, hotel_id, birth_date, active, employment_end_date")
+        .select("id_auth, email, name, role, hotel_id, birth_date, active, employment_end_date, emoji")
         .order("name", { ascending: true }),
       supabase.from("hotels").select("id, nom").order("nom", { ascending: true }),
     ]);
@@ -372,7 +373,10 @@ export default function UsersPage() {
                               {av.initials}
                             </div>
                             <div className="min-w-0">
-                              <div className="font-medium text-slate-900 truncate">{u.name || "(sans nom)"}</div>
+                              <div className="font-medium text-slate-900 truncate">
+                                {u.emoji && <span className="mr-1">{u.emoji}</span>}
+                                {u.name || "(sans nom)"}
+                              </div>
                               <div className="text-xs text-slate-500 truncate flex items-center gap-1">
                                 <Mail size={10} className="shrink-0" />
                                 <span className="truncate">{u.email}</span>

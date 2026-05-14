@@ -27,6 +27,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 
 // --- OUTILS / MENU ---
@@ -267,8 +270,18 @@ export default function HotelDashboard() {
     }
   }, [selectedHotelId]);
 
+  // Si pas de choix manuel ni en localStorage, utiliser default_hotel_id du user
+  // (préférence sur /profil) puis fallback sur user.hotel_id.
+  useEffect(() => {
+    if (selectedHotelId) return;
+    if (typeof window !== 'undefined' && window.localStorage.getItem('selectedHotelId')) return;
+    const def = (user as any)?.default_hotel_id;
+    if (def) { setSelectedHotelId(def); return; }
+    if ((user as any)?.hotel_id) setSelectedHotelId((user as any).hotel_id);
+  }, [user, selectedHotelId]);
+
   const [currentHotel, setCurrentHotel] = useState(null);
-  const hotelId = selectedHotelId || user?.hotel_id;
+  const hotelId = selectedHotelId || (user as any)?.default_hotel_id || user?.hotel_id;
 
   const formatNumber = (n: number | null, suffix: string = "") => {
   if (n === null || n === undefined || isNaN(n)) return "-";
@@ -1159,17 +1172,40 @@ const birthdayMessage = useMemo(() => {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Mon profil */}
-          <Link href="/profil" title="Mon profil">
-            <Button variant="ghost" size="icon" className="text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full">
-              <Settings className="w-4 h-4" />
-            </Button>
-          </Link>
-
-          {/* Logout */}
-          <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full" onClick={logout}>
-            <LogOut className="w-4 h-4" />
-          </Button>
+          {/* Menu utilisateur (avatar cliquable) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                title="Menu"
+                className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
+                style={{ backgroundColor: 'var(--brand, #4f46e5)' }}
+              >
+                {(user as any)?.emoji
+                  ? <span className="text-base">{(user as any).emoji}</span>
+                  : <span>{(user?.name || user?.email || '?').slice(0, 2).toUpperCase()}</span>}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium text-slate-900">
+                    {(user as any)?.emoji ? `${(user as any).emoji} ` : ''}{user?.name || user?.email}
+                  </span>
+                  <span className="text-xs text-slate-500 truncate">{user?.email}</span>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <Link href="/profil">
+                <DropdownMenuItem className="cursor-pointer">
+                  <Settings size={14} /> Mon profil
+                </DropdownMenuItem>
+              </Link>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={logout} className="cursor-pointer text-rose-600 focus:text-rose-700 focus:bg-rose-50">
+                <LogOut size={14} /> Déconnexion
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -1257,7 +1293,7 @@ const birthdayMessage = useMemo(() => {
 
                         {/* Pied de carte : conversation */}
                         <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                            <span className="text-slate-400 italic">— {c.auteur || 'Anonyme'}</span>
+                            <span className="text-slate-400 italic">— {(() => { const u = users.find((x: any) => x.name === c.auteur); return (u as any)?.emoji ? `${(u as any).emoji} ` : ''; })()}{c.auteur || 'Anonyme'}</span>
                             <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full transition ${replyCount > 0 ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-slate-400 group-hover:bg-slate-100'}`}>
                                 <MessageCircle className="w-3 h-3" />
                                 {replyCount > 0 ? `${replyCount} réponse${replyCount > 1 ? 's' : ''}` : 'Répondre'}

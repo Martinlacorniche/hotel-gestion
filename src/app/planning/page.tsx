@@ -597,7 +597,7 @@ export default function PlanningPage() {
     const entriesQuery = supabase.from('planning_entries').select('*').eq('hotel_id', hotelId).in('status', isAdmin ? ['draft', 'published'] : ['published']).gte('date', fetchFrom).lte('date', fetchTo).order('date', { ascending: true });
     
     const [usersRes, configRes, entriesRes, cpRes, defRes] = await Promise.all([
-      supabase.from('users').select('id_auth, name, email, hotel_id, role, ordre, employment_start_date, employment_end_date').eq('hotel_id', hotelId),
+      supabase.from('users').select('id_auth, name, email, hotel_id, role, ordre, employment_start_date, employment_end_date, emoji').eq('hotel_id', hotelId),
       supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
       entriesQuery,
       supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
@@ -788,7 +788,7 @@ export default function PlanningPage() {
                     <td className={`px-6 py-4 whitespace-nowrap sticky left-0 z-10 border-r border-slate-100 ${rowBgClass}`}>
                       <div className="flex items-center justify-between">
                          <div className="flex flex-col">
-                            <span className={`font-bold text-sm ${row.id ? 'text-slate-900 uppercase tracking-wider' : 'text-slate-700'}`}>{row.name || row.email}</span>
+                            <span className={`font-bold text-sm ${row.id ? 'text-slate-900 uppercase tracking-wider' : 'text-slate-700'}`}>{(row as any).emoji ? `${(row as any).emoji} ` : ''}{row.name || row.email}</span>
                             {row.id_auth && (
                                <div className="flex items-center gap-2 mt-1">
                                   <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -940,7 +940,7 @@ export default function PlanningPage() {
   .map(u => (
     <label key={u.id_auth} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg cursor-pointer transition">
       <input type="checkbox" className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300" checked={publishSelectedUserIds.includes(u.id_auth)} onChange={e => setPublishSelectedUserIds(prev => e.target.checked ? [...prev, u.id_auth] : prev.filter(id => id !== u.id_auth))} />
-      <span className="text-sm text-slate-700 font-medium">{u.name || u.email}</span>
+      <span className="text-sm text-slate-700 font-medium">{(u as any).emoji ? `${(u as any).emoji} ` : ''}{u.name || u.email}</span>
     </label>
   ))
 }
@@ -1032,7 +1032,7 @@ export default function PlanningPage() {
                                 checked={duplicationTargetIds.includes(u.id_auth)} 
                                 onChange={e => e.target.checked ? setDuplicationTargetIds([...duplicationTargetIds, u.id_auth]) : setDuplicationTargetIds(duplicationTargetIds.filter(id => id !== u.id_auth))} 
                               />
-                              <span className="text-sm font-medium text-slate-700">{u.name}</span>
+                              <span className="text-sm font-medium text-slate-700">{(u as any).emoji ? `${(u as any).emoji} ` : ''}{u.name}</span>
                            </label>
                         ))}
                         {users.filter(u => u.active !== false && (!u.employment_end_date || new Date(u.employment_end_date) >= new Date())).length === 0 && (
