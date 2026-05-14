@@ -11,7 +11,7 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { 
   ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
-  NotebookText, ShoppingCart, KeyRound, UserPlus, Settings, LogOut,
+  NotebookText, ShoppingCart, KeyRound, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
   Wrench, Tv2, Wifi, Package, Star, // Icônes maintenance + chromecast + wifi + objets + favoris
   MessageCircle, Send, // Conversation consignes
@@ -327,69 +327,7 @@ export default function HotelDashboard() {
     }
   }, [chatConsigne?.id]);
   
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [newUser, setNewUser] = useState<{
-  name: string; email: string; role: string; password: string; hotel_id?: string; birth_date: string; // Ajout ici
-}>({
-  name: '', email: '', role: 'employe', password: '',
-  hotel_id: selectedHotelId || hotels[0]?.id || '',
-  birth_date: '', // Initialisation vide
-});
-  const [showUsersList, setShowUsersList] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
-
-  // Modal Clôturer
-  const [closeModal, setCloseModal] = useState<{
-    open: boolean; user: any | null; date: string;
-  }>({ open: false, user: null, date: new Date().toISOString().slice(0,10) });
-
-  const openCloseModal = (u: any) => {
-    setCloseModal({
-      open: true, user: u, date: new Date().toISOString().slice(0,10),
-    });
-  };
-
-  const doCloseUser = async () => {
-    if (!closeModal.user || !closeModal.date) return;
-    const u = closeModal.user;
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) { alert("Session expirée, reconnectez-vous."); return; }
-
-    const resp = await fetch('/api/users/deactivate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ user_id: u.id_auth, employment_end_date: closeModal.date }),
-    });
-    const result = await resp.json();
-    if (!resp.ok || !result.ok) { alert("Erreur clôture : " + (result.error || resp.statusText)); return; }
-
-    setUsers(prev => prev.map(x =>
-      x.id_auth === u.id_auth ? { ...x, active:false, employment_end_date: closeModal.date } : x
-    ));
-    setCloseModal({ open:false, user:null, date:new Date().toISOString().slice(0,10) });
-    alert("Salarié clôturé ✅");
-  };
-
-  const reactivateUser = async (u: any) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) { alert("Session expirée, reconnectez-vous."); return; }
-
-    const resp = await fetch('/api/users/reactivate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ user_id: u.id_auth }),
-    });
-    const result = await resp.json();
-    if (!resp.ok || !result.ok) { alert("Erreur réactivation : " + (result.error || resp.statusText)); return; }
-
-    setUsers(prev => prev.map(x =>
-      x.id_auth === u.id_auth ? { ...x, active: true, employment_end_date: null } : x
-    ));
-    alert("Utilisateur réactivé ✅");
-  };
 
   const [showCalendar, setShowCalendar] = useState(false);
   const [editObjetIndex, setEditObjetIndex] = useState<number | null>(null);
@@ -585,39 +523,6 @@ export default function HotelDashboard() {
       priorite: 'Moyenne', date_fin: ''
     });
     setShowTicketModal(false);
-  };
-
-  const handleCreateUser = async () => {
-  const { email, password, name, role, birth_date } = newUser; // Récupère birth_date
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email, password,
-    options: { data: { name, role, hotel_id: newUser.hotel_id } }
-  });
-  
-  if (authError || !authData.user) { alert("Erreur Auth : " + (authError?.message ?? '')); return; }
-  if (!newUser.hotel_id) { alert('Merci de sélectionner un hôtel.'); return; }
-
-  // On ajoute birth_date ici
-  const { error: insertError } = await supabase.from('users').insert([{
-    email, 
-    name, 
-    role, 
-    birth_date: birth_date || null, // On l'envoie ou null si vide
-    id_auth: authData.user.id, 
-    hotel_id: newUser.hotel_id,
-  }]);
-
-  if (insertError) { alert("Erreur table users : " + insertError.message); return; }
-
-    const { data: configs } = await supabase.from('planning_config').select('ordre');
-    const maxOrdre = configs && configs.length ? Math.max(...configs.map(cfg => cfg.ordre || 0)) : 0;
-    await supabase.from('planning_config').insert([{
-      user_id: authData.user.id, hotel_id: newUser.hotel_id, ordre: maxOrdre + 1,
-    }]);
-
-    setUsers((prev) => [...prev, { name, email, role, id_auth: authData.user.id, hotel_id: newUser.hotel_id }]);
-    setShowUserModal(false);
-    setNewUser({ name: '', email: '', password: '', role: 'employe', hotel_id: hotels[0]?.id || '', });
   };
 
   const createConsigne = async () => {
@@ -1735,96 +1640,6 @@ const birthdayMessage = useMemo(() => {
                          </Link>
                     </div>
                 </div>
-                {showUsersList && (
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-    {[...users].sort((a, b) => {
-      const isClosedA = a.active === false || (a.employment_end_date && new Date(a.employment_end_date) < new Date());
-      const isClosedB = b.active === false || (b.employment_end_date && new Date(b.employment_end_date) < new Date());
-      if (isClosedA !== isClosedB) return isClosedA ? 1 : -1;
-      return (a.name || '').localeCompare(b.name || '');
-    }).map((u, idx) => {
-      const isClosed = u.active === false || (u.employment_end_date && new Date(u.employment_end_date) < new Date());
-      
-      return (
-        <div key={u.id || idx} className={`p-3 rounded-lg border flex flex-col gap-2 shadow-sm transition-all ${isClosed ? 'bg-slate-200 border-slate-300 opacity-70' : 'bg-white border-slate-200'}`}>
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                {u.name}
-                {isClosed && <span className="text-[10px] bg-slate-300 text-slate-600 px-1.5 rounded">Clôturé</span>}
-              </div>
-              <div className="text-xs text-slate-500">{u.email}</div>
-            </div>
-            <div className="text-xs font-medium bg-slate-50 px-2 py-1 rounded text-slate-600 border border-slate-100">
-              {u.role}
-            </div>
-          </div>
-          
-          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100/50 mt-1">
-            {/* Date de naissance */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[9px] font-bold text-slate-400 uppercase ml-1">Naissance</label>
-              <input
-  type="date"
-  className="text-[11px] border border-slate-200 rounded px-2 py-1 bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none"
-  value={u.birth_date || ""}
-  onChange={(e) => {
-    const val = e.target.value;
-    // On met à jour l'état local UNIQUEMENT pour que les chiffres s'affichent pendant la frappe
-    setUsers(prev => prev.map((user) => 
-      user.id_auth === u.id_auth ? { ...user, birth_date: val } : user
-    ));
-  }}
-  onBlur={async (e) => {
-    const val = e.target.value;
-    // On ne sauvegarde en base que si la date est complète (10 caractères) ou si on l'efface
-    if (val.length === 10 || val === "") {
-      const { error } = await supabase
-        .from('users')
-        .update({ birth_date: val || null })
-        .eq('id_auth', u.id_auth);
-      
-      if (error) {
-        alert("Erreur sauvegarde BDD : " + error.message);
-      } else {
-        console.log("Date de naissance synchronisée ✅");
-      }
-    }
-  }}
-/>
-            </div>
-
-            {/* Sélecteur d'hôtel */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[9px] font-bold text-slate-400 uppercase ml-1">Hôtel</label>
-              <select
-                className="text-[11px] border border-slate-200 rounded px-2 py-1 bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none w-full max-w-[120px]"
-                value={u.hotel_id || ""}
-                onChange={async (e) => {
-                  const newHotelId = e.target.value;
-                  const { error } = await supabase.from('users').update({ hotel_id: newHotelId }).eq('id_auth', u.id_auth);
-                  if (error) { alert("Erreur update: " + error.message); return; }
-                  setUsers(prev => prev.map((user) => user.id_auth === u.id_auth ? { ...user, hotel_id: newHotelId } : user));
-                }}
-              >
-                {hotels.map((h: any) => (
-                  <option value={h.id} key={h.id}>{h.nom}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="self-end">
-              {!isClosed ? 
-                <Button size="sm" variant="destructive" className="h-7 text-[10px] px-2" onClick={() => openCloseModal(u)}>Clôturer</Button> :
-                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-green-600 border-green-200 hover:bg-green-50 bg-white" onClick={() => reactivateUser(u)}>Réactiver</Button>
-              }
-            </div>
-          </div>
-        </div>
-      );
-    })}
-  </div>
-)}
             </div>
          )}
 
@@ -2275,63 +2090,6 @@ const birthdayMessage = useMemo(() => {
         </div>
       )}
 
-      {/* Modal User Create */}
-      {showUserModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md space-y-4">
-                <h2 className="text-xl font-bold text-slate-800">Créer un utilisateur</h2>
-                <Input placeholder="Nom complet" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} />
-                <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Date de naissance</label>
-            <Input type="date" value={newUser.birth_date} onChange={(e) => setNewUser({ ...newUser, birth_date: e.target.value })} />
-          </div>
-                <Input type="email" placeholder="Email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} />
-                <Input type="password" placeholder="Mot de passe" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
-                <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className="w-full border rounded px-3 py-2">
-                    <option value="employe">Employé</option><option value="admin">Admin</option>
-                </select>
-                {isAdmin && hotels.length > 0 && (
-                    <select className="w-full border rounded px-3 py-2" value={newUser.hotel_id || ''} onChange={(e) => setNewUser({ ...newUser, hotel_id: e.target.value })}>
-                        <option value="">Hôtel...</option>{hotels.map((h:any) => <option key={h.id} value={h.id}>{h.nom}</option>)}
-                    </select>
-                )}
-                <div className="flex justify-end gap-2 mt-4">
-                    <Button variant="ghost" onClick={() => setShowUserModal(false)}>Annuler</Button>
-                    <Button onClick={handleCreateUser}>Créer</Button>
-                </div>
-            </div>
-        </div>
-      )}
-      {/* Modal Clôturer Salarié (Restauré) */}
-      {closeModal.open && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in zoom-in duration-200">
-            <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-md space-y-4">
-            <h2 className="text-lg font-bold text-slate-800">Clôturer un salarié</h2>
-            <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                Salarié : <span className="font-bold text-slate-900">{closeModal.user?.name || closeModal.user?.email}</span>
-            </div>
-
-            <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date de fin de contrat</label>
-                <input
-                    type="date"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
-                    value={closeModal.date}
-                    onChange={e => setCloseModal(m => ({ ...m, date: e.target.value }))}
-                />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-                <Button variant="ghost" onClick={() => setCloseModal({ open:false, user:null, date:new Date().toISOString().slice(0,10) })}>
-                Annuler
-                </Button>
-                <Button variant="destructive" onClick={doCloseUser}>
-                Confirmer la clôture
-                </Button>
-            </div>
-            </div>
-        </div>
-      )}
 
       {/* Modal Calendrier */}
       {showCalendar && (
