@@ -57,9 +57,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { error: banErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, {
-    ban_duration: '876600h',
-  });
+  const { error: banErr } = await supabaseAdmin.rpc('ban_user', { p_user_id: user_id });
   if (banErr) {
     return NextResponse.json({ ok: false, error: 'Ban auth: ' + banErr.message }, { status: 500 });
   }

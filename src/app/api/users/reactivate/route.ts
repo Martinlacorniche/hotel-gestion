@@ -47,9 +47,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { error: unbanErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, {
-    ban_duration: 'none',
-  });
+  const { error: unbanErr } = await supabaseAdmin.rpc('unban_user', { p_user_id: user_id });
   if (unbanErr) {
     return NextResponse.json({ ok: false, error: 'Unban auth: ' + unbanErr.message }, { status: 500 });
   }
