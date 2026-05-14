@@ -1,22 +1,31 @@
-
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Poppins, DM_Sans, Lora, Playfair_Display, Caveat } from 'next/font/google';
 import { AuthProvider } from '@/context/AuthContext';
 import { Toaster } from 'react-hot-toast';
+
+// Polices chargées en parallèle, chaque exposée via une variable CSS
+// (--font-inter, --font-poppins, ...) que `applyFont()` peut activer.
+const inter    = Inter({           subsets: ['latin'], variable: '--font-inter',    display: 'swap' });
+const poppins  = Poppins({         subsets: ['latin'], weight: ['400','500','600','700'], variable: '--font-poppins',  display: 'swap' });
+const dmSans   = DM_Sans({         subsets: ['latin'], variable: '--font-dm-sans',  display: 'swap' });
+const lora     = Lora({            subsets: ['latin'], variable: '--font-lora',     display: 'swap' });
+const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfair', display: 'swap' });
+const caveat   = Caveat({          subsets: ['latin'], variable: '--font-caveat',   display: 'swap' });
+
+const fontVars = [inter, poppins, dmSans, lora, playfair, caveat].map((f) => f.variable).join(' ');
 
 export const metadata: Metadata = {
   title: 'Consignes HTBM',
   description: 'Gestions des consignes',
   icons: {
-    icon: '/favicon.png',   // ton fichier placé dans /public
+    icon: '/favicon.png',
   },
 };
 
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr">
+    <html lang="fr" className={fontVars}>
       <body>
         <AuthProvider>
           {children}

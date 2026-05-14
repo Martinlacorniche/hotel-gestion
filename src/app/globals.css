@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Polices et Plugins */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+/* Polices chargées via next/font dans layout.tsx (variables CSS exposées).
+   La variable --font-current est définie par applyFont() au login. */
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -124,12 +124,12 @@
   }
 }
 
-/* Overrides Globaux */
+/* Overrides Globaux — utilise les variables CSS posées par applyTheme/applyFont */
 body, html, input, textarea, select, button {
-  font-family: 'Inter', Arial, sans-serif !important;
+  font-family: var(--font-current, var(--font-inter), 'Inter', Arial, sans-serif);
 }
 
 body {
-  background: #f9f9fb !important;
-  color: #23272f !important;
+  background: var(--bg-base, #f9f9fb);
+  color: #23272f;
 }

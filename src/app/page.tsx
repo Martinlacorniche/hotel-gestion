@@ -995,16 +995,20 @@ const birthdayMessage = useMemo(() => {
     <div className="min-h-screen relative text-slate-900 p-4 md:p-6 font-sans overflow-hidden">
       
       {/* --- EFFET AQUARELLE (ARRIÈRE-PLAN) --- */}
-      {/* Ce bloc est fixé au fond (-z-10) et ne bougera pas */}
-      <div className="fixed inset-0 -z-10 h-full w-full bg-slate-50">
-        {/* Tache 1 : Indigo doux en haut à gauche */}
-        <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-indigo-200/40 blur-[120px]" />
-        
-        {/* Tache 2 : Bleu cyan (rappel mer) en bas à droite */}
-        <div className="absolute bottom-[-10%] right-[-10%] h-[600px] w-[600px] rounded-full bg-sky-200/40 blur-[120px]" />
-        
-        {/* Tache 3 : Une touche de violet très léger au centre pour lier le tout */}
-        <div className="absolute top-[40%] left-[40%] h-[400px] w-[400px] rounded-full bg-purple-100/50 blur-[100px]" />
+      {/* Couleurs pilotées par le thème user (cf. applyTheme dans AuthContext). */}
+      <div className="fixed inset-0 -z-10 h-full w-full" style={{ background: 'var(--bg-base, #f8fafc)' }}>
+        <div
+          className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full blur-[120px]"
+          style={{ background: 'var(--bg-blob-1, rgba(199, 210, 254, 0.40))' }}
+        />
+        <div
+          className="absolute bottom-[-10%] right-[-10%] h-[600px] w-[600px] rounded-full blur-[120px]"
+          style={{ background: 'var(--bg-blob-2, rgba(186, 230, 253, 0.40))' }}
+        />
+        <div
+          className="absolute top-[40%] left-[40%] h-[400px] w-[400px] rounded-full blur-[100px]"
+          style={{ background: 'var(--bg-blob-3, rgba(243, 232, 255, 0.50))' }}
+        />
       </div>
       {/* -------------------------------------- */}
       
@@ -1027,7 +1031,7 @@ const birthdayMessage = useMemo(() => {
 )}
 
      <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-      Bonjour, {user.name}
+      Bonjour, {(user as any).emoji ? `${(user as any).emoji} ` : ''}{user.name}
      </h1>
      <p className="text-sm text-slate-500">
        Voici ce qui se passe aujourd'hui à l'hôtel.
@@ -1154,6 +1158,13 @@ const birthdayMessage = useMemo(() => {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Mon profil */}
+          <Link href="/profil" title="Mon profil">
+            <Button variant="ghost" size="icon" className="text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full">
+              <Settings className="w-4 h-4" />
+            </Button>
+          </Link>
 
           {/* Logout */}
           <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full" onClick={logout}>
