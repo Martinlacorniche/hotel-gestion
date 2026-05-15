@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { format as dfFormat, addDays, parseISO } from "date-fns";
 import { fr as frLocale } from "date-fns/locale";
+import { SignaturePadModal } from "@/components/SignaturePadModal";
 
 // --- TYPES ---
 
@@ -31,6 +32,10 @@ type CaisseShift = {
   commentaire: string | null;
   fond_compte_fin: number | null;
   valide: boolean;
+  signature_data: string | null;
+  signed_by_user_id: string | null;
+  signed_by_name: string | null;
+  signed_at: string | null;
 };
 
 type Comptage = {
@@ -67,6 +72,7 @@ const emptyShift = (hotel_id: string, date_jour: string, shift_type: ShiftType):
   pms_tpe: 0, pms_especes: 0, pms_ancv: 0, pms_virement: 0,
   reel_tpe: 0, reel_especes: 0, reel_ancv: 0, reel_virement: 0,
   commentaire: "", fond_compte_fin: null, valide: false,
+  signature_data: null, signed_by_user_id: null, signed_by_name: null, signed_at: null,
 });
 
 const emptyComptage = (hotel_id: string, date_jour: string): Comptage => ({
@@ -112,6 +118,7 @@ function CaissePageInner() {
   const [comptageStatus, setComptageStatus] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const comptageDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextAutosaveRef = useRef<boolean>(false);
+  const [signingShift, setSigningShift] = useState<ShiftType | null>(null);
 
   // --- Init hotel ---
   useEffect(() => {
@@ -294,7 +301,9 @@ function CaissePageInner() {
   }, [shifts]);
 
   // --- Save shift ---
-  const saveShift = async (s: ShiftType, valide: boolean) => {
+  // signature = dataURL PNG fourni par la modale au moment de la validation.
+  // null = pas de validation (enregistrement simple) ou réouverture admin (efface la signature).
+  const saveShift = async (s: ShiftType, valide: boolean, signature: string | null = null) => {
     if (!hotelId) return;
     setSavingShift(s);
     const sh = shifts[s];
@@ -313,6 +322,11 @@ function CaissePageInner() {
       // À la validation, on fige le fond compté = total comptage live
       fond_compte_fin: valide ? comptageTotals.totalCompte : sh.fond_compte_fin,
       valide,
+      // Signature : posée à la validation, effacée à la réouverture
+      signature_data: valide ? signature : null,
+      signed_by_user_id: valide ? meId : null,
+      signed_by_name: valide ? meName : null,
+      signed_at: valide ? new Date().toISOString() : null,
     };
 
     const { data, error } = await supabase
@@ -327,13 +341,19 @@ function CaissePageInner() {
       updateShift(s, {
         id: data.id, user_id: data.user_id, user_name: data.user_name, valide: data.valide,
         fond_compte_fin: data.fond_compte_fin,
+        signature_data: data.signature_data,
+        signed_by_user_id: data.signed_by_user_id,
+        signed_by_name: data.signed_by_name,
+        signed_at: data.signed_at,
       });
     }
   };
 
-  const reopenShift = async (s: ShiftType) => {
-    if (!isAdmin) return;
-    await saveShift(s, false);
+  const handleSignatureValidate = async (dataUrl: string) => {
+    if (!signingShift) return;
+    const s = signingShift;
+    setSigningShift(null);
+    await saveShift(s, true, dataUrl);
   };
 
   // --- Save comptage (auto-save debounced) ---
@@ -468,7 +488,10 @@ function CaissePageInner() {
           input, textarea { border-color: #cbd5e1 !important; background: white !important; }
 
           .signature-zone { display: block !important; padding-top: 2px !important; margin-top: 2px !important; }
-          .signature-zone > div:last-child { height: 18px !important; }
+          /* Ligne vide (signature absente) : conserve 18px ; image (signature présente) : 14mm max */
+          .signature-zone > div.h-10 { height: 18px !important; }
+          .signature-zone .signature-img-wrap { height: 14mm !important; display: flex !important; align-items: end !important; }
+          .signature-zone .signature-img { max-height: 14mm !important; max-width: 100% !important; }
         }
         .print-only { display: none; }
         .signature-zone { display: none; }
@@ -719,7 +742,8 @@ function CaissePageInner() {
             const t = totalsFor(sh);
             const Icon = SHIFT_ICONS[sType];
             const colors = SHIFT_COLORS[sType];
-            const locked = sh.valide && !isAdmin;
+            // Une fois validé/signé : figé pour tout le monde (y compris admin).
+            const locked = sh.valide;
             const num = (v: number) => isNaN(v) ? 0 : v;
             return (
               <div key={sType} className={`shift-card rounded-2xl border ${colors.border} bg-white shadow-sm overflow-hidden flex flex-col`}>
@@ -840,24 +864,38 @@ function CaissePageInner() {
                     );
                   })()}
 
-                  {/* Signature print zone */}
+                  {/* Signature print zone — affiche la vraie signature si présente, sinon ligne vide */}
                   <div className="signature-zone border-t border-slate-300 pt-2 mt-2">
-                    <div className="text-[10px] uppercase font-bold text-slate-500">Signature</div>
-                    <div className="h-10 border-b border-slate-400 mt-1" />
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="text-[10px] uppercase font-bold text-slate-500">Signature</div>
+                      {sh.signed_by_name && (
+                        <div className="text-[9px] text-slate-500">
+                          {sh.signed_by_name}
+                          {sh.signed_at && (
+                            <> — {dfFormat(new Date(sh.signed_at), "d/MM/yyyy HH:mm")}</>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {sh.signature_data ? (
+                      <div className="signature-img-wrap mt-1 border-b border-slate-400">
+                        <img
+                          src={sh.signature_data}
+                          alt="Signature"
+                          className="signature-img block max-h-12 object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="h-10 border-b border-slate-400 mt-1" />
+                    )}
                   </div>
                 </div>
 
                 <div className="no-print px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between gap-2">
                   {sh.valide ? (
-                    isAdmin ? (
-                      <Button onClick={() => reopenShift(sType)} variant="outline" size="sm" className="text-xs">
-                        <Unlock className="w-3 h-3 mr-1" /> Rouvrir
-                      </Button>
-                    ) : (
-                      <span className="text-[11px] text-slate-500 inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Validé
-                      </span>
-                    )
+                    <span className="text-[11px] text-slate-500 inline-flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Validé & signé — figé
+                    </span>
                   ) : (
                     <>
                       <Button
@@ -868,7 +906,7 @@ function CaissePageInner() {
                         <Save className="w-3 h-3 mr-1" /> {savingShift === sType ? "…" : "Enregistrer"}
                       </Button>
                       <Button
-                        onClick={() => saveShift(sType, true)}
+                        onClick={() => setSigningShift(sType)}
                         disabled={savingShift === sType || loading}
                         size="sm"
                         className={`text-xs text-white ${colors.btn}`}
@@ -889,6 +927,18 @@ function CaissePageInner() {
           </div>
         )}
       </div>
+
+      <SignaturePadModal
+        open={signingShift !== null}
+        onOpenChange={(o) => { if (!o) setSigningShift(null); }}
+        title={signingShift ? `Valider — ${SHIFT_LABELS[signingShift]}` : ""}
+        subtitle={
+          signingShift
+            ? `${hotelName ? hotelName + " · " : ""}${dateLabel}. En signant, vous validez les montants saisis pour ce shift.`
+            : undefined
+        }
+        onValidate={handleSignatureValidate}
+      />
     </div>
   );
 }
