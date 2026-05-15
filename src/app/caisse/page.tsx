@@ -12,7 +12,7 @@ import {
   ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, Calculator, Coins,
   Loader2,
 } from "lucide-react";
-import { format as dfFormat, addDays } from "date-fns";
+import { format as dfFormat, addDays, parseISO } from "date-fns";
 import { fr as frLocale } from "date-fns/locale";
 
 // --- TYPES ---
@@ -104,6 +104,8 @@ function CaissePageInner() {
 
   const [comptage, setComptage] = useState<Comptage>(emptyComptage("", ""));
   const [comptageId, setComptageId] = useState<string | null>(null);
+  // Date du comptage J-1 dont on a pré-rempli les billets/pièces (null = saisie vierge)
+  const [prefilledFromDate, setPrefilledFromDate] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [savingShift, setSavingShift] = useState<ShiftType | null>(null);
@@ -197,8 +199,20 @@ function CaissePageInner() {
         });
         setComptageId(cpt.id || null);
         setComptageStatus("saved");
+        setPrefilledFromDate(null);
       } else {
-        setComptage(emptyComptage(hotelId, dateJour));
+        // Aucun comptage pour ce jour → pré-remplir avec le dernier comptage connu (J-1)
+        // pour éviter de tout retaper si rien n'a bougé dans la caisse depuis hier.
+        // Status reste "idle" : l'employé doit modifier OU valider explicitement pour persister.
+        const base = emptyComptage(hotelId, dateJour);
+        if (prevCpt && prevCpt.date_jour) {
+          base.billets = { ...base.billets, ...(prevCpt.billets || {}) };
+          base.pieces = { ...base.pieces, ...(prevCpt.pieces || {}) };
+          setPrefilledFromDate(prevCpt.date_jour);
+        } else {
+          setPrefilledFromDate(null);
+        }
+        setComptage(base);
         setComptageId(null);
         setComptageStatus("idle");
       }
@@ -575,6 +589,11 @@ function CaissePageInner() {
               <div>
                 <div className="text-base font-bold text-emerald-800">Comptage caisse — {dateLabel}</div>
                 <div className="text-[11px] text-emerald-700/80">Comptage partagé — réécris dessus à chaque shift, sauvegarde auto</div>
+                {prefilledFromDate && comptageStatus === "idle" && (
+                  <div className="text-[11px] text-amber-700 font-medium mt-0.5">
+                    ⚠ Pré-rempli depuis le {dfFormat(parseISO(prefilledFromDate), "d MMMM", { locale: frLocale })} — modifie si besoin
+                  </div>
+                )}
               </div>
             </div>
             <div className="no-print flex items-center gap-2">
