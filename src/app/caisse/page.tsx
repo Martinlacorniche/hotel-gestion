@@ -893,9 +893,29 @@ function CaissePageInner() {
 
                 <div className="no-print px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between gap-2">
                   {sh.valide ? (
-                    <span className="text-[11px] text-slate-500 inline-flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Validé & signé — figé
-                    </span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {sh.signature_data && (
+                        <img
+                          src={sh.signature_data}
+                          alt="Signature"
+                          title="Signature électronique"
+                          className="h-8 w-16 object-contain bg-white border border-slate-200 rounded shrink-0"
+                        />
+                      )}
+                      <div className="text-[11px] text-slate-600 leading-tight min-w-0">
+                        <div className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                          <CheckCircle2 className="w-3 h-3" /> Validé & signé — figé
+                        </div>
+                        {sh.signed_by_name && (
+                          <div className="text-slate-500 truncate">
+                            par <span className="font-semibold text-slate-700">{sh.signed_by_name}</span>
+                            {sh.signed_at && (
+                              <> · {dfFormat(new Date(sh.signed_at), "d/MM/yyyy HH:mm")}</>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   ) : (
                     <>
                       <Button
