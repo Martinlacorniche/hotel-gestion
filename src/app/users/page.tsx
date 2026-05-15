@@ -55,7 +55,7 @@ type UserRow = {
 const ROLE_LABEL: Record<AppRole, string> = {
   superadmin: "Superadmin",
   admin: "Admin",
-  user: "User",
+  user: "Employé",
 };
 
 const ROLE_BADGE: Record<AppRole, string> = {
@@ -321,7 +321,7 @@ export default function UsersPage() {
               <option value="all">Tous rôles</option>
               <option value="superadmin">Superadmin</option>
               <option value="admin">Admin</option>
-              <option value="user">User</option>
+              <option value="user">Employé</option>
             </select>
 
             {/* Hotel filter */}
@@ -468,7 +468,7 @@ export default function UsersPage() {
                   onChange={(e) => setInviteRole(e.target.value as "admin" | "user")}
                   className="w-full h-9 px-3 text-sm bg-white border border-slate-200 rounded-md"
                 >
-                  <option value="user">User</option>
+                  <option value="user">Employé</option>
                   {isSuperadmin && <option value="admin">Admin</option>}
                 </select>
               </Field>
@@ -516,7 +516,7 @@ export default function UsersPage() {
               onChange={(e) => setNewRoleVal(e.target.value as "admin" | "user")}
               className="w-full h-9 px-3 text-sm bg-white border border-slate-200 rounded-md"
             >
-              <option value="user">User</option>
+              <option value="user">Employé</option>
               <option value="admin">Admin</option>
             </select>
           </Field>
