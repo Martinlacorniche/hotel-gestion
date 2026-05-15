@@ -49,7 +49,6 @@ const TOOLS: ToolDef[] = [
   { id: "chromecast",  label: "Chromecasts",  href: "/chromecast",                         icon: Tv2,          bg: "bg-slate-100",  text: "text-slate-700",  condition: "corniche" },
   { id: "wifi-admin",  label: "Interface WiFi", href: (id: string) => `/wifi-admin?hotel_id=${id}`, icon: Wifi, bg: "bg-sky-50", text: "text-sky-700" },
   { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
-  { id: "caisse",      label: "Caisse",       href: (id) => `/caisse?hotel_id=${id}`,      icon: Euro,         bg: "bg-emerald-50", text: "text-emerald-700" },
 ];
 
 // --- TYPES & UTILITAIRES ---
@@ -930,55 +929,62 @@ const birthdayMessage = useMemo(() => {
       </div>
       {/* -------------------------------------- */}
       
-      {/* --- HEADER --- */}
-<div className="flex flex-col md:flex-row items-start md:items-center justify-between w-full mb-8 gap-4">
-  
-  <div className="flex flex-col gap-1">
-     {/* BANDEAU ANNIVERSAIRE */}
-     {birthdayMessage && (
-  <div className={`mb-4 px-5 py-3 rounded-2xl text-sm font-bold flex items-center gap-3 shadow-lg transition-all border-l-4 ${
-    birthdayMessage.type === 'me' 
-    ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 text-white border-white animate-pulse" 
-    : "bg-white text-slate-700 border-amber-400 shadow-amber-100/50"
-  }`}>
-    <span className="text-xl">
-      {birthdayMessage.type === 'me' ? '👑' : '🎈'}
-    </span>
-    {birthdayMessage.text}
-  </div>
-)}
+      {/* BANDEAU ANNIVERSAIRE — pleine largeur au-dessus du header */}
+      {birthdayMessage && (
+        <div className={`mb-6 px-5 py-3 rounded-2xl text-sm font-bold flex items-center gap-3 shadow-lg transition-all border-l-4 ${
+          birthdayMessage.type === 'me'
+          ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 text-white border-white animate-pulse"
+          : "bg-white text-slate-700 border-amber-400 shadow-amber-100/50"
+        }`}>
+          <span className="text-xl">
+            {birthdayMessage.type === 'me' ? '👑' : '🎈'}
+          </span>
+          {birthdayMessage.text}
+        </div>
+      )}
 
-     <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-      Bonjour, {(user as any).emoji ? `${(user as any).emoji} ` : ''}{user.name}
-     </h1>
-     <p className="text-sm text-slate-500">
-       Voici ce qui se passe aujourd'hui à l'hôtel.
-     </p>
-  </div>
+      {/* --- HEADER : 3 zones (gauche / centre date / droite actions) --- */}
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center w-full mb-8 gap-4">
 
-        <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-          {/* Navigation Date */}
+        {/* Zone gauche : Bonjour */}
+        <div className="flex flex-col gap-1 min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 truncate">
+            Bonjour, {(user as any).emoji ? `${(user as any).emoji} ` : ''}{user.name}
+          </h1>
+          <p className="text-sm text-slate-500">
+            Voici ce qui se passe aujourd'hui à l'hôtel.
+          </p>
+        </div>
+
+        {/* Zone centre : Date — largeur fixe, label centré, ne saute pas selon le jour */}
+        <div className="justify-self-center">
           <div className="flex items-center bg-white rounded-full shadow-sm border border-slate-200 px-1 py-1">
             <Button variant="ghost" size="icon" onClick={() => changeDay(-1)} className="h-8 w-8 rounded-full hover:bg-slate-100">
               <ChevronLeft className="w-4 h-4 text-slate-600" />
             </Button>
-            <button onClick={() => setShowCalendar(true)} className="px-4 text-sm font-semibold text-slate-700 hover:text-indigo-600 transition-colors">
-              {format(selectedDate, 'eeee d MMMM', { locale: fr })}
+            <button
+              onClick={() => setShowCalendar(true)}
+              className="h-8 w-[220px] text-center text-sm font-semibold text-slate-700 hover:text-indigo-600 transition-colors first-letter:uppercase"
+            >
+              {format(selectedDate, 'eeee d MMMM yyyy', { locale: fr })}
             </button>
             <Button variant="ghost" size="icon" onClick={() => changeDay(1)} className="h-8 w-8 rounded-full hover:bg-slate-100">
               <ChevronRight className="w-4 h-4 text-slate-600" />
             </Button>
           </div>
+        </div>
 
-          {/* Bouton Caisse — taille de la date */}
+        {/* Zone droite : Actions */}
+        <div className="flex items-center gap-3 justify-end md:w-auto overflow-x-auto pb-2 md:pb-0">
+
+          {/* Bouton Caisse — sobre, même esthétique que la pill date */}
           <a
             href={`/caisse?hotel_id=${hotelId || ''}`}
             target="_blank"
             title="Caisse du jour"
-            className="group relative inline-flex items-center gap-2 h-10 px-4 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold shadow-sm hover:shadow-md transition-all"
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-white border border-slate-200 shadow-sm hover:border-slate-300 hover:bg-slate-50 transition text-sm font-semibold text-slate-700 shrink-0"
           >
-            <span className="absolute inset-0 rounded-full ring-2 ring-emerald-300/60 animate-pulse pointer-events-none" />
-            <Euro className="w-4 h-4" />
+            <Euro className="w-4 h-4 text-slate-500" />
             Caisse
           </a>
 

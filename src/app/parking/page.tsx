@@ -108,28 +108,54 @@ export default function ParkingPage() {
   function handleCellClick(parkingId: string, date: Date) {
     if (isDragging.current) return;
     setSelectedParking(parkingId);
+    // Pré-remplissage sémantique [) : clic sur le 17 = résa 1 nuit (17 → 18).
+    // L'équipe peut bien sûr étendre ensuite. Évite les résa "0 nuit"
+    // qui sont rejetées par la contrainte DB parking_reservations_no_overlap.
     setStartDate(format(date, 'yyyy-MM-dd'));
-    setEndDate(format(date, 'yyyy-MM-dd'));
+    setEndDate(format(addDays(date, 1), 'yyyy-MM-dd'));
     setClientName("");
     setEditingId(null);
     setIsCreateModalOpen(true);
+  }
+
+  // Cherche une résa qui chevauche [startDate, endDate) sur la même place.
+  // Sémantique [) : end_date est le jour de départ libre → résa 10→12 occupe
+  // les jours 10 et 11, une nouvelle résa peut commencer le 12.
+  // excludeId : ID à ignorer (cas d'un update sur soi-même).
+  function findOverlap(parkingId: string, startDate: string, endDate: string, excludeId: string | null = null) {
+    return reservations.find(r =>
+      r.parking_id === parkingId &&
+      r.id !== excludeId &&
+      r.start_date < endDate &&
+      startDate < r.end_date
+    );
+  }
+
+  function formatOverlapMessage(conflict: any) {
+    try {
+      const s = format(parseISO(conflict.start_date), 'd MMM', { locale: fr });
+      const e = format(parseISO(conflict.end_date), 'd MMM', { locale: fr });
+      return `Conflit avec la réservation de ${conflict.client_name} (${s} → ${e}) sur cette place.`;
+    } catch {
+      return `Conflit avec une autre réservation sur cette place (${conflict.client_name}).`;
+    }
   }
 
   async function handleInteractUpdate(event: any) {
     const target = event.target;
     const resId = target.getAttribute('data-id');
     const originalRes = reservations.find(r => r.id === resId);
-    
+
     if (!originalRes || !originalRes.start_date) return;
 
     const containerWidth = target.parentElement?.offsetWidth || 0;
-    if (containerWidth === 0) return; 
+    if (containerWidth === 0) return;
 
     const dayWidth = containerWidth / monthDays.length;
     const deltaX = parseFloat(target.getAttribute('data-x')) || 0;
     const deltaDaysStart = Math.round(deltaX / dayWidth);
     const newWidthDays = Math.round(target.offsetWidth / dayWidth);
-    
+
     const baseDate = parseISO(originalRes.start_date);
     if (!isValid(baseDate)) return;
 
@@ -143,18 +169,40 @@ export default function ParkingPage() {
     }
 
     const deltaY = parseFloat(target.getAttribute('data-y')) || 0;
-    const rowIndexDelta = Math.round(deltaY / 64); 
+    const rowIndexDelta = Math.round(deltaY / 64);
     const currentIdx = parkings.findIndex(p => p.id === originalRes.parking_id);
     const newIdx = Math.max(0, Math.min(parkings.length - 1, currentIdx + rowIndexDelta));
     const newParkingId = parkings[newIdx].id;
 
+    const newStartStr = format(newStart, 'yyyy-MM-dd');
+    const newEndStr = format(newEnd, 'yyyy-MM-dd');
+
+    // Pré-check côté client (UX) — si on glisse sur une autre résa : on annule et on prévient.
+    const conflict = findOverlap(newParkingId, newStartStr, newEndStr, resId);
+    if (conflict) {
+      alert(formatOverlapMessage(conflict));
+      target.setAttribute('data-x', 0);
+      target.setAttribute('data-y', 0);
+      target.style.transform = 'none';
+      fetchReservations();
+      return;
+    }
+
     const { error } = await supabase.from("parking_reservations").update({
-      start_date: format(newStart, 'yyyy-MM-dd'),
-      end_date: format(newEnd, 'yyyy-MM-dd'),
+      start_date: newStartStr,
+      end_date: newEndStr,
       parking_id: newParkingId
     }).eq("id", resId);
 
-    if (error) console.error("Erreur Update:", error);
+    // Race condition : un autre user a peut-être créé une résa entre notre check et l'update.
+    // La contrainte DB EXCLUDE renvoie le code Postgres '23P01' (exclusion_violation).
+    if (error) {
+      if ((error as any).code === '23P01') {
+        alert("Conflit détecté : une autre réservation occupe déjà cette place sur ces dates. Modification annulée.");
+      } else {
+        console.error("Erreur Update:", error);
+      }
+    }
 
     target.setAttribute('data-x', 0);
     target.setAttribute('data-y', 0);
@@ -164,16 +212,40 @@ export default function ParkingPage() {
 
   async function handleSave() {
     if (!selectedParking || !clientName || !startDate || !endDate) return;
+
+    // Validation sémantique : end_date est le jour de départ libre.
+    // Une résa doit donc avoir end > start (au minimum start + 1 = 1 nuit).
+    // Sinon la contrainte DB EXCLUDE rejette avec une erreur Postgres peu lisible.
+    if (endDate <= startDate) {
+      alert("La date de départ doit être au moins le lendemain de la date d'arrivée.");
+      return;
+    }
+
+    // Pré-check côté client (UX) — message clair avant submit.
+    const conflict = findOverlap(selectedParking, startDate, endDate, editingId);
+    if (conflict) {
+      alert(formatOverlapMessage(conflict));
+      return;
+    }
+
     const payload = { parking_id: selectedParking, client_name: clientName, start_date: startDate, end_date: endDate };
-    const { error } = editingId 
+    const { error } = editingId
       ? await supabase.from("parking_reservations").update(payload).eq("id", editingId)
       : await supabase.from("parking_reservations").insert(payload);
 
-    if (!error) {
-      setIsCreateModalOpen(false);
-      resetForm();
-      fetchReservations();
+    if (error) {
+      // Filet de sécurité : si la contrainte DB EXCLUDE déclenche (race condition), message clair.
+      if ((error as any).code === '23P01') {
+        alert("Conflit détecté : une autre réservation occupe déjà cette place sur ces dates. Enregistrement annulé.");
+      } else {
+        alert("Erreur enregistrement : " + (error.message || error));
+      }
+      return;
     }
+
+    setIsCreateModalOpen(false);
+    resetForm();
+    fetchReservations();
   }
 
   function handleEditFromPopup(r: any) {

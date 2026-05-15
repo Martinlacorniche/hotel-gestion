@@ -4,12 +4,11 @@ export const dynamic = "force-dynamic";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { Button } from "@/components/ui/button";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import {
-  Euro, Printer, Lock, Unlock, Save, Sun, Moon, Sunset,
-  ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, Calculator, Coins,
+  Euro, Printer, Lock, Save, Sun, Moon, Sunset,
+  ChevronLeft, ChevronRight, AlertCircle, Coins,
   Loader2,
 } from "lucide-react";
 import { format as dfFormat, addDays, parseISO } from "date-fns";
@@ -60,10 +59,10 @@ const SHIFT_ICONS: Record<ShiftType, React.ComponentType<any>> = {
   cloture: Moon,
 };
 
-const SHIFT_COLORS: Record<ShiftType, { bg: string; text: string; border: string; btn: string }> = {
-  matin:   { bg: "bg-amber-50",   text: "text-amber-700",   border: "border-amber-200",   btn: "bg-amber-600 hover:bg-amber-700" },
-  soir:    { bg: "bg-orange-50",  text: "text-orange-700",  border: "border-orange-200",  btn: "bg-orange-600 hover:bg-orange-700" },
-  cloture: { bg: "bg-indigo-50",  text: "text-indigo-700",  border: "border-indigo-200",  btn: "bg-indigo-600 hover:bg-indigo-700" },
+const SHIFT_COLORS: Record<ShiftType, { bg: string; text: string; border: string; btn: string; accent: string }> = {
+  matin:   { bg: "bg-amber-50/40",   text: "text-amber-700",   border: "border-amber-200/70",   btn: "bg-amber-600 hover:bg-amber-700",   accent: "bg-amber-500" },
+  soir:    { bg: "bg-orange-50/40",  text: "text-orange-700",  border: "border-orange-200/70",  btn: "bg-orange-600 hover:bg-orange-700", accent: "bg-orange-500" },
+  cloture: { bg: "bg-indigo-50/40",  text: "text-indigo-700",  border: "border-indigo-200/70",  btn: "bg-indigo-600 hover:bg-indigo-700", accent: "bg-indigo-500" },
 };
 
 const emptyShift = (hotel_id: string, date_jour: string, shift_type: ShiftType): CaisseShift => ({
@@ -413,11 +412,11 @@ function CaissePageInner() {
   }, [dateJour]);
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="min-h-screen font-sans text-slate-900 relative" style={{ background: "linear-gradient(180deg, #ffffff 0%, #fafafa 200px, #f7f7f8 100%)" }}>
       {/* Print styles — 1 page A4 paysage, ultra compact */}
       <style jsx global>{`
         /* Grille encaissements (header + lignes + total alignés sur les mêmes colonnes) */
-        .enc-grid { display: grid; grid-template-columns: 78px 1fr 1fr 56px; gap: 6px; }
+        .enc-grid { display: grid; grid-template-columns: 72px 90px 90px 60px; gap: 8px; }
 
         @media print {
           @page { size: A4 landscape; margin: 6mm; }
@@ -460,13 +459,22 @@ function CaissePageInner() {
           .denom-input { height: 14px !important; padding: 0 3px !important; font-size: 9px !important; max-width: 38px !important; min-width: 28px !important; border-radius: 3px !important; }
           .denom-row > .denom-sub { font-size: 9px !important; min-width: 38px !important; }
 
-          /* Total card : compact */
-          .total-print { padding: 4px 6px !important; }
+          /* Total card : compact + désactiver accents décoratifs */
+          .total-print {
+            padding: 4px 6px !important;
+            background: white !important;
+            border: 1px solid #94a3b8 !important;
+            box-shadow: none !important;
+            border-radius: 4px !important;
+            overflow: hidden !important;
+          }
+          .total-print > div.absolute { display: none !important; }
+          .total-print .pl-2 { padding-left: 0 !important; }
           .total-print .total-big { font-size: 16px !important; line-height: 1.1 !important; }
           .total-print .total-label { font-size: 8px !important; }
-          .total-print .total-meta { font-size: 7.5px !important; }
+          .total-print .total-meta { font-size: 7.5px !important; gap: 4px !important; }
 
-          .ecart-print { padding: 3px 6px !important; border-width: 1px !important; }
+          .ecart-print { padding: 3px 6px !important; border-width: 1px !important; border-radius: 4px !important; }
           .ecart-print .ecart-label { font-size: 7.5px !important; }
           .ecart-print .ecart-val { font-size: 11px !important; }
 
@@ -497,48 +505,51 @@ function CaissePageInner() {
         .signature-zone { display: none; }
       `}</style>
 
-      {/* Header */}
-      <div className="no-print h-20 flex items-center justify-between px-4 md:px-8 gap-4 sticky top-0 bg-slate-50/90 backdrop-blur z-30 border-b border-slate-200">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 bg-white rounded-2xl shadow-sm flex items-center justify-center shrink-0">
-            <Euro className="w-5 h-5 text-emerald-600" />
+      {/* Header — sobre, sans pill, sticky */}
+      <div className="no-print h-16 flex items-center justify-between px-6 md:px-10 gap-6 sticky top-0 bg-white/75 backdrop-blur-xl z-30 border-b border-slate-200/60">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="flex items-center gap-2.5">
+            <Euro className="w-[18px] h-[18px] text-emerald-600" strokeWidth={2.5} />
+            <h1 className="text-[15px] font-semibold text-slate-900 tracking-tight">Caisse</h1>
           </div>
-          <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">Caisse</h1>
           {hotels.length > 1 && (
-            <select
-              value={hotelId}
-              onChange={(e) => switchHotel(e.target.value)}
-              className="ml-3 bg-white border border-slate-200 rounded-xl px-3 h-10 text-sm font-bold text-slate-700 shadow-sm hover:border-emerald-300 focus:ring-2 focus:ring-emerald-500 outline-none transition"
-            >
-              {hotels.map((h) => (
-                <option key={h.id} value={h.id}>{h.nom}</option>
-              ))}
-            </select>
+            <>
+              <span className="text-slate-300">·</span>
+              <select
+                value={hotelId}
+                onChange={(e) => switchHotel(e.target.value)}
+                className="bg-transparent border-0 px-1 h-8 text-[13px] font-medium text-slate-600 hover:text-slate-900 outline-none cursor-pointer"
+              >
+                {hotels.map((h) => (
+                  <option key={h.id} value={h.id}>{h.nom}</option>
+                ))}
+              </select>
+            </>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-white rounded-full shadow-sm border border-slate-200 px-1 py-1">
-            <Button variant="ghost" size="icon" onClick={() => changeDate(-1)} className="h-8 w-8 rounded-full hover:bg-slate-100">
-              <ChevronLeft className="w-4 h-4 text-slate-600" />
-            </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <button onClick={() => changeDate(-1)} className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-200/60 transition">
+              <ChevronLeft className="w-4 h-4 text-slate-500" />
+            </button>
             <input
               type="date"
               value={dateJour}
               onChange={(e) => setDateJour(e.target.value)}
-              className="px-3 text-sm font-semibold text-slate-700 bg-transparent outline-none cursor-pointer"
+              className="px-2 h-8 text-[13px] font-medium text-slate-700 bg-transparent outline-none cursor-pointer rounded-md hover:bg-slate-200/60 transition"
             />
-            <Button variant="ghost" size="icon" onClick={() => changeDate(1)} className="h-8 w-8 rounded-full hover:bg-slate-100">
-              <ChevronRight className="w-4 h-4 text-slate-600" />
-            </Button>
+            <button onClick={() => changeDate(1)} className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-200/60 transition">
+              <ChevronRight className="w-4 h-4 text-slate-500" />
+            </button>
           </div>
-          <Button onClick={() => window.print()} className="bg-slate-800 hover:bg-slate-900 text-white shadow-md rounded-2xl px-5 h-10 text-sm font-bold">
-            <Printer className="w-4 h-4 mr-2" /> Imprimer
-          </Button>
+          <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium text-slate-700 bg-white border border-slate-200 rounded-md shadow-[0_1px_0_rgba(0,0,0,0.02)] hover:border-slate-300 hover:bg-slate-50 transition">
+            <Printer className="w-3.5 h-3.5" /> Imprimer
+          </button>
         </div>
       </div>
 
-      <div className="caisse-content px-4 md:px-8 py-6 space-y-5">
+      <div className="caisse-content max-w-[1400px] mx-auto px-4 md:px-8 py-6 space-y-5">
         {/* Print header */}
         <div className="print-only">
           <div className="flex justify-between items-end border-b border-slate-300 pb-2 mb-3">
@@ -552,185 +563,215 @@ function CaissePageInner() {
           </div>
         </div>
 
-        {/* Bandeau récap journée */}
-        <div className="no-print rounded-2xl border border-slate-200 bg-white shadow-sm p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <div className="text-xs uppercase tracking-wider text-slate-400 font-bold">Journée</div>
-            <div className="text-lg font-bold text-slate-800 capitalize">{dateLabel}</div>
-            <div className="text-xs text-slate-500">{hotelName || "—"}</div>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <div className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="text-[10px] uppercase font-bold text-slate-400">Total PMS jour</div>
-              <div className="text-lg font-bold text-slate-700">{fmtEur(dayTotals.totalPms)}</div>
-            </div>
-            <div className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="text-[10px] uppercase font-bold text-slate-400">Total réel jour</div>
-              <div className="text-lg font-bold text-slate-700">{fmtEur(dayTotals.totalReel)}</div>
-            </div>
-            <div className={`px-4 py-2 rounded-xl border ${
-              Math.abs(dayTotals.ecart) < 0.01
-                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                : "bg-rose-50 border-rose-200 text-rose-700"
-            }`}>
-              <div className="text-[10px] uppercase font-bold opacity-80">Écart jour</div>
-              <div className="text-lg font-bold">{fmtEur(dayTotals.ecart)}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200">
-            <Calculator className="w-5 h-5 text-emerald-600" />
-            <div>
-              <div className="text-[10px] uppercase font-bold text-emerald-700">Fond cible</div>
-              {isAdmin ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number" step="0.01"
-                    value={fondCibleDraft}
-                    onChange={(e) => setFondCibleDraft(Number(e.target.value))}
-                    className="w-24 text-sm font-bold text-emerald-800 bg-white border border-emerald-300 rounded px-2 py-0.5 outline-none focus:ring-2 focus:ring-emerald-400"
-                  />
-                  <Button onClick={saveFondCible} size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-xs">
-                    <Save className="w-3 h-3 mr-1" />OK
-                  </Button>
+        {/* Hero — date + chiffre principal + KPIs secondaires */}
+        {(() => {
+          const ecartOk = Math.abs(dayTotals.ecart) < 0.01;
+          return (
+            <div className="no-print relative rounded-3xl bg-white border border-slate-200/60 shadow-[0_1px_3px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(15,23,42,0.08)] overflow-hidden">
+              {/* Décor subtil — halo emerald derrière le chiffre */}
+              <div className="absolute -top-32 -left-20 w-96 h-96 rounded-full bg-emerald-500/[0.04] blur-3xl pointer-events-none" />
+              <div className="relative px-8 py-7 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-7 items-end">
+                {/* Bloc gauche : date + chiffre principal */}
+                <div className="min-w-0">
+                  <div className="text-[12px] text-slate-500 capitalize font-medium">{dateLabel}</div>
+                  <div className="mt-0.5 text-[13px] font-semibold text-slate-800">{hotelName || "—"}</div>
+                  <div className="mt-5 flex items-baseline gap-3 flex-wrap">
+                    <div className="text-[44px] leading-none font-semibold tracking-tight text-slate-900 tabular-nums">
+                      {fmtEur(dayTotals.totalReel)}
+                    </div>
+                    <div className="text-[13px] text-slate-500 font-medium">encaissé aujourd'hui</div>
+                  </div>
+                  <div className="mt-3.5 inline-flex items-center gap-2.5">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 h-6 rounded-full text-[12px] font-semibold ring-1 ${
+                      ecartOk
+                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200/60"
+                        : dayTotals.ecart > 0
+                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200/60"
+                          : "bg-rose-50 text-rose-700 ring-rose-200/60"
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${ecartOk ? "bg-emerald-500" : dayTotals.ecart > 0 ? "bg-emerald-500" : "bg-rose-500"}`} />
+                      {ecartOk ? "Aucun écart" : `Écart ${fmtEur(dayTotals.ecart)}`}
+                    </span>
+                    <span className="text-[12px] text-slate-400 tabular-nums">PMS {fmtEur(dayTotals.totalPms)}</span>
+                  </div>
                 </div>
-              ) : (
-                <div className="text-lg font-bold text-emerald-800">{fmtEur(fondCible)}</div>
-              )}
+
+                {/* Bloc droit : Fond cible + Caisse début + Total PMS pour étoffer */}
+                <div className="flex items-stretch gap-0 divide-x divide-slate-200/70 border border-slate-200/70 rounded-2xl bg-gradient-to-b from-white to-slate-50/40 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
+                  <div className="px-5 py-3.5 min-w-[140px]">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Fond cible</div>
+                    {isAdmin ? (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <input
+                          type="number" step="0.01"
+                          value={fondCibleDraft}
+                          onChange={(e) => setFondCibleDraft(Number(e.target.value))}
+                          className="w-20 text-[15px] font-semibold text-slate-900 bg-white border border-slate-200 rounded-md px-2 py-0.5 outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 tabular-nums"
+                        />
+                        <button onClick={saveFondCible} className="inline-flex items-center justify-center h-6 w-6 rounded-md text-emerald-700 hover:bg-emerald-50 transition">
+                          <Save className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[18px] font-semibold text-slate-900 tabular-nums tracking-tight">{fmtEur(fondCible)}</div>
+                    )}
+                  </div>
+                  <div className="px-5 py-3.5 min-w-[140px]">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Caisse début</div>
+                    <div className="mt-1 text-[18px] font-semibold text-slate-900 tabular-nums tracking-tight">{fmtEur(fondDebutJour)}</div>
+                  </div>
+                  <div className="px-5 py-3.5 min-w-[140px]">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Total PMS</div>
+                    <div className="mt-1 text-[18px] font-semibold text-slate-900 tabular-nums tracking-tight">{fmtEur(dayTotals.totalPms)}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* COMPTAGE PARTAGÉ — un seul bloc pour la journée (en haut, le + utilisé) */}
-        <div className="comptage-card rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="card-header px-5 py-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-200 flex items-center justify-between gap-3">
+        <div className="comptage-card rounded-3xl border border-slate-200/60 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(15,23,42,0.06)] overflow-hidden">
+          <div className="card-header px-7 py-4 border-b border-slate-200/70 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center text-emerald-600">
-                <Coins className="w-5 h-5" />
-              </div>
+              <Coins className="w-4 h-4 text-slate-400" strokeWidth={2.25} />
               <div>
-                <div className="text-base font-bold text-emerald-800">Comptage caisse — {dateLabel}</div>
-                <div className="text-[11px] text-emerald-700/80">Comptage partagé — réécris dessus à chaque shift, sauvegarde auto</div>
-                {prefilledFromDate && comptageStatus === "idle" && (
-                  <div className="text-[11px] text-amber-700 font-medium mt-0.5">
-                    ⚠ Pré-rempli depuis le {dfFormat(parseISO(prefilledFromDate), "d MMMM", { locale: frLocale })} — modifie si besoin
+                <div className="text-[14px] font-semibold text-slate-900">Comptage caisse</div>
+                {prefilledFromDate && comptageStatus === "idle" ? (
+                  <div className="text-[11px] text-amber-700 font-medium">
+                    Pré-rempli depuis le {dfFormat(parseISO(prefilledFromDate), "d MMMM", { locale: frLocale })} — modifie si besoin
                   </div>
+                ) : (
+                  <div className="text-[11px] text-slate-500">Saisie partagée, sauvegarde automatique</div>
                 )}
               </div>
             </div>
             <div className="no-print flex items-center gap-2">
               {comptageStatus === "saving" && (
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Enregistrement…
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Enregistrement
                 </span>
               )}
               {comptageStatus === "saved" && (
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-                  <CheckCircle2 className="w-3 h-3" /> Enregistré
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Enregistré
                 </span>
               )}
               {comptageStatus === "dirty" && (
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-full">
-                  <Save className="w-3 h-3" /> En cours…
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Modifié
                 </span>
               )}
             </div>
           </div>
 
-          <div className="card-body p-5 grid grid-cols-1 lg:grid-cols-[1fr_1fr_minmax(240px,_300px)] gap-6">
-            {/* Billets — tuile par denom */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs uppercase font-bold text-slate-500 tracking-wider pg-h2">Billets</div>
-                <div className="text-xs font-bold text-slate-700 tabular-nums">{fmtEur(comptageTotals.totalBillets)}</div>
-              </div>
-              <div className="denom-list grid grid-cols-1 gap-1.5">
-                {BILLET_DENOMS.map((d) => {
-                  const qty = Number(comptage.billets[String(d)] || 0);
-                  const sub = round2(d * qty);
-                  const active = qty > 0;
-                  return (
-                    <div key={d} className={`denom-row flex items-center gap-3 px-3 py-2 rounded-xl border transition ${active ? "bg-emerald-50/40 border-emerald-200" : "bg-white border-slate-100 hover:border-slate-200"}`}>
-                      <span className="denom-chip inline-flex items-center justify-center min-w-[56px] h-7 px-2 rounded-lg bg-slate-900 text-white text-xs font-extrabold">{d} €</span>
-                      <span className="denom-mult text-slate-300 select-none">×</span>
-                      <input
-                        type="number" inputMode="numeric" min={0} step={1}
-                        value={qty || ""}
-                        onChange={(e) => updateBillet(d, Number(e.target.value) || 0)}
-                        placeholder="0"
-                        className="denom-input w-full max-w-[110px] h-9 text-right text-base font-bold tabular-nums px-2 rounded-lg bg-white border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-400"
-                      />
-                      <span className={`denom-sub ml-auto text-sm font-bold tabular-nums ${active ? "text-emerald-700" : "text-slate-300"}`}>{active ? fmtEur(sub) : "—"}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Pièces — tuile par denom */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs uppercase font-bold text-slate-500 tracking-wider pg-h2">Pièces</div>
-                <div className="text-xs font-bold text-slate-700 tabular-nums">{fmtEur(comptageTotals.totalPieces)}</div>
-              </div>
-              <div className="denom-list grid grid-cols-1 gap-1.5">
-                {PIECE_DENOMS.map((d) => {
-                  const qty = Number(comptage.pieces[String(d)] || 0);
-                  const sub = round2(d * qty);
-                  const active = qty > 0;
-                  const label = d < 1 ? `${Math.round(d * 100)} c` : `${d} €`;
-                  return (
-                    <div key={d} className={`denom-row flex items-center gap-3 px-3 py-2 rounded-xl border transition ${active ? "bg-emerald-50/40 border-emerald-200" : "bg-white border-slate-100 hover:border-slate-200"}`}>
-                      <span className="denom-chip inline-flex items-center justify-center min-w-[56px] h-7 px-2 rounded-lg bg-slate-200 text-slate-800 text-xs font-extrabold">{label}</span>
-                      <span className="denom-mult text-slate-300 select-none">×</span>
-                      <input
-                        type="number" inputMode="numeric" min={0} step={1}
-                        value={qty || ""}
-                        onChange={(e) => updatePiece(d, Number(e.target.value) || 0)}
-                        placeholder="0"
-                        className="denom-input w-full max-w-[110px] h-9 text-right text-base font-bold tabular-nums px-2 rounded-lg bg-white border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-400"
-                      />
-                      <span className={`denom-sub ml-auto text-sm font-bold tabular-nums ${active ? "text-emerald-700" : "text-slate-300"}`}>{active ? fmtEur(sub) : "—"}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Totaux + écarts (sticky-feel) */}
-            <div className="space-y-3 self-start lg:sticky lg:top-24">
-              <div className="total-print rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white px-5 py-4 shadow-lg">
-                <div className="total-label text-[10px] uppercase font-bold text-slate-300 tracking-widest">Total compté</div>
-                <div className="total-big text-3xl font-extrabold tabular-nums leading-tight">{fmtEur(comptageTotals.totalCompte)}</div>
-                <div className="total-meta mt-1 text-[10px] text-slate-300">cible : {fmtEur(fondCible)} · début : {fmtEur(fondDebutJour)}</div>
-              </div>
-
-              <div className={`ecart-print px-4 py-3 rounded-2xl border-2 ${
-                Math.abs(comptageTotals.ecartCible) < 0.01
-                  ? "bg-emerald-50 border-emerald-300 text-emerald-700"
-                  : "bg-rose-50 border-rose-300 text-rose-700"
-              }`}>
-                <div className="flex items-center justify-between">
-                  <span className="ecart-label text-[10px] font-bold uppercase tracking-wider opacity-80">Écart / fond cible</span>
-                  {Math.abs(comptageTotals.ecartCible) < 0.01 && <CheckCircle2 className="w-4 h-4" />}
+          <div className="card-body p-6 grid grid-cols-1 lg:grid-cols-[230px_230px_minmax(0,1fr)] gap-x-10 gap-y-6 lg:items-start">
+              {/* Billets */}
+              <div>
+                <div className="flex items-baseline justify-between mb-2.5 px-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 pg-h2">Billets</div>
+                  <div className="text-[12px] font-semibold text-slate-700 tabular-nums">{fmtEur(comptageTotals.totalBillets)}</div>
                 </div>
-                <div className="ecart-val text-xl font-extrabold tabular-nums">{Math.abs(comptageTotals.ecartCible) < 0.01 ? "✓ OK" : fmtEur(comptageTotals.ecartCible)}</div>
+                <div className="denom-list flex flex-col gap-px">
+                  {BILLET_DENOMS.map((d) => {
+                    const qty = Number(comptage.billets[String(d)] || 0);
+                    const sub = round2(d * qty);
+                    const active = qty > 0;
+                    return (
+                      <div key={d} className={`denom-row group flex items-center gap-2.5 px-1.5 py-[5px] rounded-md transition ${active ? "bg-emerald-50/40" : "hover:bg-slate-50"}`}>
+                        <span className="denom-chip inline-flex items-center justify-center w-11 h-6 rounded-md bg-slate-900 text-white text-[11px] font-semibold tabular-nums shrink-0">{d}€</span>
+                        <span className="denom-mult text-slate-300 select-none text-[11px]">×</span>
+                        <input
+                          type="number" inputMode="numeric" min={0} step={1}
+                          value={qty || ""}
+                          onChange={(e) => updateBillet(d, Number(e.target.value) || 0)}
+                          placeholder="0"
+                          className={`denom-input w-[60px] h-7 text-right text-[13px] font-medium tabular-nums px-2 rounded-md outline-none transition border ${active ? "bg-white border-slate-200" : "bg-slate-100/70 border-transparent group-hover:bg-white group-hover:border-slate-200"} focus:bg-white focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 shrink-0`}
+                        />
+                        <span className={`denom-sub ml-auto text-right text-[12.5px] font-semibold tabular-nums ${active ? "text-slate-900" : "text-slate-300"}`}>{active ? fmtEur(sub) : "—"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className={`ecart-print px-4 py-3 rounded-2xl border-2 ${
-                fondDebutJour === 0
-                  ? "bg-slate-50 border-slate-200 text-slate-500"
-                  : Math.abs(comptageTotals.ecartDebut) < 0.01
-                    ? "bg-emerald-50 border-emerald-300 text-emerald-700"
-                    : "bg-rose-50 border-rose-300 text-rose-700"
-              }`}>
-                <div className="flex items-center justify-between">
-                  <span className="ecart-label text-[10px] font-bold uppercase tracking-wider opacity-80">Écart / début de journée</span>
-                  {fondDebutJour > 0 && Math.abs(comptageTotals.ecartDebut) < 0.01 && <CheckCircle2 className="w-4 h-4" />}
+              {/* Pièces */}
+              <div>
+                <div className="flex items-baseline justify-between mb-2.5 px-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 pg-h2">Pièces</div>
+                  <div className="text-[12px] font-semibold text-slate-700 tabular-nums">{fmtEur(comptageTotals.totalPieces)}</div>
                 </div>
-                <div className="ecart-val text-xl font-extrabold tabular-nums">{fondDebutJour === 0 ? "—" : Math.abs(comptageTotals.ecartDebut) < 0.01 ? "✓ OK" : fmtEur(comptageTotals.ecartDebut)}</div>
+                <div className="denom-list flex flex-col gap-px">
+                  {PIECE_DENOMS.map((d) => {
+                    const qty = Number(comptage.pieces[String(d)] || 0);
+                    const sub = round2(d * qty);
+                    const active = qty > 0;
+                    const label = d < 1 ? `${Math.round(d * 100)}c` : `${d}€`;
+                    return (
+                      <div key={d} className={`denom-row group flex items-center gap-2.5 px-1.5 py-[5px] rounded-md transition ${active ? "bg-emerald-50/40" : "hover:bg-slate-50"}`}>
+                        <span className="denom-chip inline-flex items-center justify-center w-11 h-6 rounded-md bg-slate-100 text-slate-700 text-[11px] font-semibold tabular-nums shrink-0">{label}</span>
+                        <span className="denom-mult text-slate-300 select-none text-[11px]">×</span>
+                        <input
+                          type="number" inputMode="numeric" min={0} step={1}
+                          value={qty || ""}
+                          onChange={(e) => updatePiece(d, Number(e.target.value) || 0)}
+                          placeholder="0"
+                          className={`denom-input w-[60px] h-7 text-right text-[13px] font-medium tabular-nums px-2 rounded-md outline-none transition border ${active ? "bg-white border-slate-200" : "bg-slate-100/70 border-transparent group-hover:bg-white group-hover:border-slate-200"} focus:bg-white focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 shrink-0`}
+                        />
+                        <span className={`denom-sub ml-auto text-right text-[12.5px] font-semibold tabular-nums ${active ? "text-slate-900" : "text-slate-300"}`}>{active ? fmtEur(sub) : "—"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
+
+            {/* Totaux + écarts (sticky à droite) */}
+            <div className="w-full lg:max-w-[340px] lg:ml-auto space-y-2.5 self-start lg:sticky lg:top-20">
+              <div className="total-print relative rounded-2xl bg-white border border-slate-200/70 px-5 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                <div className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r-full bg-emerald-500" />
+                <div className="pl-2">
+                  <div className="total-label text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total compté</div>
+                  <div className="total-big text-[26px] font-semibold tabular-nums leading-none mt-1.5 tracking-tight text-slate-900">{fmtEur(comptageTotals.totalCompte)}</div>
+                  <div className="total-meta mt-2 flex items-center gap-2 text-[11px] text-slate-400 tabular-nums">
+                    <span>cible <span className="text-slate-700 font-medium">{fmtEur(fondCible)}</span></span>
+                    <span className="text-slate-300">·</span>
+                    <span>début <span className="text-slate-700 font-medium">{fmtEur(fondDebutJour)}</span></span>
+                  </div>
+                </div>
+              </div>
+
+              {(() => {
+                const ok = Math.abs(comptageTotals.ecartCible) < 0.01;
+                return (
+                  <div className={`ecart-print flex items-center justify-between px-4 py-2.5 rounded-xl border ${
+                    ok ? "border-emerald-200/70 bg-emerald-50/50" : "border-rose-200/70 bg-rose-50/50"
+                  }`}>
+                    <span className={`ecart-label inline-flex items-center gap-2 text-[12px] font-medium ${ok ? "text-emerald-700" : "text-rose-700"}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-rose-500"}`} />
+                      Écart / cible
+                    </span>
+                    <span className={`ecart-val text-[15px] font-semibold tabular-nums ${ok ? "text-emerald-800" : "text-rose-800"}`}>{ok ? "0,00 €" : fmtEur(comptageTotals.ecartCible)}</span>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const empty = fondDebutJour === 0;
+                const ok = !empty && Math.abs(comptageTotals.ecartDebut) < 0.01;
+                return (
+                  <div className={`ecart-print flex items-center justify-between px-4 py-2.5 rounded-xl border ${
+                    empty ? "border-slate-200/70 bg-white"
+                      : ok ? "border-emerald-200/70 bg-emerald-50/50"
+                      : "border-rose-200/70 bg-rose-50/50"
+                  }`}>
+                    <span className={`ecart-label inline-flex items-center gap-2 text-[12px] font-medium ${empty ? "text-slate-500" : ok ? "text-emerald-700" : "text-rose-700"}`}>
+                      {!empty && <span className={`w-1.5 h-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-rose-500"}`} />}
+                      Écart / début
+                    </span>
+                    <span className={`ecart-val text-[15px] font-semibold tabular-nums ${empty ? "text-slate-400" : ok ? "text-emerald-800" : "text-rose-800"}`}>{empty ? "—" : ok ? "0,00 €" : fmtEur(comptageTotals.ecartDebut)}</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -746,75 +787,76 @@ function CaissePageInner() {
             const locked = sh.valide;
             const num = (v: number) => isNaN(v) ? 0 : v;
             return (
-              <div key={sType} className={`shift-card rounded-2xl border ${colors.border} bg-white shadow-sm overflow-hidden flex flex-col`}>
-                <div className={`card-header px-5 py-3 ${colors.bg} ${colors.border} border-b flex items-center justify-between`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 bg-white rounded-xl flex items-center justify-center ${colors.text}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
+              <div key={sType} className="shift-card rounded-3xl border border-slate-200/60 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(15,23,42,0.06)] overflow-hidden flex flex-col">
+                <div className="card-header px-6 py-4 border-b border-slate-200/70 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className={`w-1.5 h-6 rounded-full ${colors.accent}`} />
+                    <Icon className={`w-4 h-4 ${colors.text}`} strokeWidth={2.25} />
                     <div>
-                      <div className={`text-base font-bold ${colors.text}`}>{SHIFT_LABELS[sType]}</div>
+                      <div className="text-[14px] font-semibold text-slate-900 leading-tight">{SHIFT_LABELS[sType]}</div>
                       {sh.user_name && (
-                        <div className="text-[10px] text-slate-500">par {sh.user_name}</div>
+                        <div className="text-[11px] text-slate-500 leading-tight mt-0.5">par {sh.user_name}</div>
                       )}
                     </div>
                   </div>
                   {sh.valide ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">
-                      <Lock className="w-3 h-3" /> Validé
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Validé
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-white px-2 py-1 rounded-full border border-slate-200">
-                      <Unlock className="w-3 h-3" /> En cours
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300" /> En cours
                     </span>
                   )}
                 </div>
 
-                <div className="card-body p-4 space-y-3 flex-1">
-                  <div>
-                    <div className="text-xs uppercase font-bold text-slate-500 tracking-wider pg-h2 mb-1.5">Encaissements</div>
-                    <div className="space-y-1">
-                      {/* Header row — colonnes alignées avec les inputs */}
-                      <div className="enc-row enc-grid items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                        <span></span>
-                        <span className="text-center">PMS</span>
-                        <span className="text-center">Réel</span>
-                        <span className="text-right">Écart</span>
+                <div className="card-body p-5 space-y-4 flex-1">
+                  <div className="flex justify-center">
+                    <div className="space-y-0 inline-block">
+                      {/* Header row */}
+                      <div className="enc-row enc-grid items-center text-[10px] text-slate-400 font-medium pb-2 mb-1 border-b border-slate-100">
+                        <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px] pg-h2">Type</span>
+                        <span className="text-center text-slate-400 font-medium tabular-nums uppercase tracking-wider text-[10px]">PMS</span>
+                        <span className="text-center text-slate-400 font-medium tabular-nums uppercase tracking-wider text-[10px]">Réel</span>
+                        <span className="text-right text-slate-400 font-medium tabular-nums uppercase tracking-wider text-[10px]">Écart</span>
                       </div>
 
                       {[
-                        { key: "tpe",      label: "TPE",      chip: "bg-sky-100 text-sky-700",       pmsK: "pms_tpe",      reelK: "reel_tpe",      e: t.ecartTpe },
-                        { key: "especes",  label: "Espèces",  chip: "bg-emerald-100 text-emerald-700", pmsK: "pms_especes",  reelK: "reel_especes",  e: t.ecartEsp },
-                        { key: "ancv",     label: "ANCV",     chip: "bg-violet-100 text-violet-700", pmsK: "pms_ancv",     reelK: "reel_ancv",     e: t.ecartAncv },
-                        { key: "virement", label: "Virement", chip: "bg-amber-100 text-amber-700",   pmsK: "pms_virement", reelK: "reel_virement", e: t.ecartVir },
+                        { key: "tpe",      label: "TPE",      dot: "bg-sky-500",      pmsK: "pms_tpe",      reelK: "reel_tpe",      e: t.ecartTpe },
+                        { key: "especes",  label: "Espèces",  dot: "bg-emerald-500",  pmsK: "pms_especes",  reelK: "reel_especes",  e: t.ecartEsp },
+                        { key: "ancv",     label: "ANCV",     dot: "bg-violet-500",   pmsK: "pms_ancv",     reelK: "reel_ancv",     e: t.ecartAncv },
+                        { key: "virement", label: "Virement", dot: "bg-amber-500",    pmsK: "pms_virement", reelK: "reel_virement", e: t.ecartVir },
                       ].map((row) => {
                         const ok = Math.abs(row.e) < 0.01;
                         return (
-                          <div key={row.key} className="enc-row enc-grid items-center">
-                            <span className={`inline-flex items-center justify-center px-2 h-7 rounded-lg text-[11px] font-extrabold tracking-wide ${row.chip} w-full`}>{row.label}</span>
+                          <div key={row.key} className="enc-row enc-grid items-center py-1 group">
+                            <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700">
+                              <span className={`w-1.5 h-1.5 rounded-full ${row.dot}`} />
+                              {row.label}
+                            </span>
                             <input
                               type="number" step="0.01" inputMode="decimal" disabled={locked}
                               value={(sh as any)[row.pmsK] ?? 0}
                               onChange={(e) => updateShift(sType, { [row.pmsK]: num(Number(e.target.value)) } as any)}
-                              className="enc-input h-8 w-full text-right text-sm font-semibold tabular-nums px-2 rounded-lg bg-white border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-400 disabled:bg-slate-50 disabled:text-slate-500"
+                              className="enc-input h-7 w-full text-right text-[13px] font-medium tabular-nums px-2 rounded-md outline-none transition border bg-slate-50 border-transparent group-hover:bg-white group-hover:border-slate-200 focus:bg-white focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 disabled:bg-transparent disabled:text-slate-500 disabled:border-transparent"
                             />
                             <input
                               type="number" step="0.01" inputMode="decimal" disabled={locked}
                               value={(sh as any)[row.reelK] ?? 0}
                               onChange={(e) => updateShift(sType, { [row.reelK]: num(Number(e.target.value)) } as any)}
-                              className="enc-input h-8 w-full text-right text-sm font-semibold tabular-nums px-2 rounded-lg bg-white border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-400 disabled:bg-slate-50 disabled:text-slate-500"
+                              className="enc-input h-7 w-full text-right text-[13px] font-medium tabular-nums px-2 rounded-md outline-none transition border bg-slate-50 border-transparent group-hover:bg-white group-hover:border-slate-200 focus:bg-white focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 disabled:bg-transparent disabled:text-slate-500 disabled:border-transparent"
                             />
-                            <span className={`ec-text text-xs font-bold tabular-nums text-right ${
+                            <span className={`ec-text text-[12px] font-medium tabular-nums text-right ${
                               ok ? "text-slate-300" : row.e > 0 ? "text-emerald-700" : "text-rose-700"
                             }`}>{ok ? "—" : fmtEur(row.e)}</span>
                           </div>
                         );
                       })}
                       {/* Total row */}
-                      <div className="enc-row enc-grid items-center pt-1.5 mt-0.5 border-t border-slate-100 text-xs font-extrabold text-slate-700">
-                        <span className="px-2">Total</span>
-                        <span className="text-center tabular-nums">{fmtEur(t.totalPmsBrut)}</span>
-                        <span className="text-center tabular-nums">{fmtEur(t.totalReelBrut)}</span>
+                      <div className="enc-row enc-grid items-center pt-2 mt-1 border-t border-slate-100 text-[12px] font-semibold">
+                        <span className="text-slate-900">Total</span>
+                        <span className="text-right tabular-nums text-slate-900 pr-2">{fmtEur(t.totalPmsBrut)}</span>
+                        <span className="text-right tabular-nums text-slate-900 pr-2">{fmtEur(t.totalReelBrut)}</span>
                         <span className={`ec-text text-right tabular-nums ${
                           Math.abs(t.ecartTotal) < 0.01 ? "text-slate-400" : t.ecartTotal > 0 ? "text-emerald-700" : "text-rose-700"
                         }`}>{fmtEur(t.ecartTotal)}</span>
@@ -823,14 +865,13 @@ function CaissePageInner() {
                   </div>
 
                   <div>
-                    <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Commentaire</div>
                     <textarea
                       disabled={locked}
                       value={sh.commentaire || ""}
                       onChange={(e) => updateShift(sType, { commentaire: e.target.value })}
                       rows={2}
-                      placeholder="Anomalie, remarque…"
-                      className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 outline-none focus:ring-1 focus:ring-emerald-400 disabled:bg-slate-50"
+                      placeholder="Commentaire, anomalie…"
+                      className="w-full text-[12px] px-3 py-2 rounded-lg border border-transparent bg-slate-50 outline-none transition hover:border-slate-200 hover:bg-white focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-400/20 disabled:opacity-70 placeholder:text-slate-400 resize-none"
                     />
                   </div>
 
@@ -842,22 +883,26 @@ function CaissePageInner() {
                     const ecart = round2(displayed - fondCible);
                     const ok = Math.abs(ecart) < 0.01;
                     return (
-                      <div className={`rounded-xl border ${colors.border} ${colors.bg} px-3 py-2`}>
+                      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-white border border-slate-200/70 px-4 py-3">
+                        <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${colors.accent}`} />
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
-                            <div className={`text-[10px] uppercase font-bold ${colors.text} flex items-center gap-1`}>
+                            <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                               Fond en caisse
                               {sh.valide ? (
-                                <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded-full"><Lock className="w-2.5 h-2.5" /> figé</span>
+                                <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 normal-case tracking-normal"><Lock className="w-2.5 h-2.5" /> figé</span>
                               ) : (
-                                <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded-full">live</span>
+                                <span className="text-[9px] text-slate-400 normal-case tracking-normal">live</span>
                               )}
                             </div>
-                            <div className="text-xl font-extrabold text-slate-800 tabular-nums leading-tight pg-big">{fmtEur(displayed)}</div>
+                            <div className="text-[22px] font-semibold text-slate-900 tabular-nums leading-tight pg-big mt-0.5 tracking-tight">{fmtEur(displayed)}</div>
                           </div>
-                          <div className={`text-right shrink-0 ${ok ? "text-emerald-700" : "text-rose-700"}`}>
-                            <div className="text-[9px] uppercase font-bold opacity-70">Écart cible</div>
-                            <div className={`text-sm font-bold tabular-nums ec-text ${ok ? "" : ""}`}>{ok ? "✓ OK" : fmtEur(ecart)}</div>
+                          <div className="text-right shrink-0">
+                            <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Écart</div>
+                            <div className={`inline-flex items-center gap-1.5 text-[12px] font-semibold tabular-nums ec-text mt-1 ${ok ? "text-emerald-700" : "text-rose-700"}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-rose-500"}`} />
+                              {ok ? "0,00 €" : fmtEur(ecart)}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -891,24 +936,24 @@ function CaissePageInner() {
                   </div>
                 </div>
 
-                <div className="no-print px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between gap-2">
+                <div className="no-print px-6 py-3 border-t border-slate-200/70 flex items-center justify-between gap-2">
                   {sh.valide ? (
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0">
                       {sh.signature_data && (
                         <img
                           src={sh.signature_data}
                           alt="Signature"
                           title="Signature électronique"
-                          className="h-8 w-16 object-contain bg-white border border-slate-200 rounded shrink-0"
+                          className="h-9 w-[68px] object-contain bg-white border border-slate-200 rounded-md shrink-0"
                         />
                       )}
-                      <div className="text-[11px] text-slate-600 leading-tight min-w-0">
-                        <div className="inline-flex items-center gap-1 font-semibold text-emerald-700">
-                          <CheckCircle2 className="w-3 h-3" /> Validé & signé — figé
+                      <div className="text-[11px] leading-tight min-w-0">
+                        <div className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Validé & signé
                         </div>
                         {sh.signed_by_name && (
-                          <div className="text-slate-500 truncate">
-                            par <span className="font-semibold text-slate-700">{sh.signed_by_name}</span>
+                          <div className="text-slate-500 truncate mt-0.5">
+                            par <span className="font-medium text-slate-700">{sh.signed_by_name}</span>
                             {sh.signed_at && (
                               <> · {dfFormat(new Date(sh.signed_at), "d/MM/yyyy HH:mm")}</>
                             )}
@@ -918,21 +963,20 @@ function CaissePageInner() {
                     </div>
                   ) : (
                     <>
-                      <Button
+                      <button
                         onClick={() => saveShift(sType, false)}
                         disabled={savingShift === sType || loading}
-                        variant="outline" size="sm" className="text-xs"
+                        className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:border-slate-300 hover:bg-slate-50 transition disabled:opacity-50"
                       >
-                        <Save className="w-3 h-3 mr-1" /> {savingShift === sType ? "…" : "Enregistrer"}
-                      </Button>
-                      <Button
+                        <Save className="w-3.5 h-3.5" /> {savingShift === sType ? "…" : "Enregistrer"}
+                      </button>
+                      <button
                         onClick={() => setSigningShift(sType)}
                         disabled={savingShift === sType || loading}
-                        size="sm"
-                        className={`text-xs text-white ${colors.btn}`}
+                        className="inline-flex items-center gap-1.5 h-8 px-3.5 text-[12px] font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-md transition disabled:opacity-50"
                       >
-                        <Lock className="w-3 h-3 mr-1" /> Valider
-                      </Button>
+                        <Lock className="w-3.5 h-3.5" /> Valider & signer
+                      </button>
                     </>
                   )}
                 </div>
@@ -942,8 +986,8 @@ function CaissePageInner() {
         </div>
 
         {!hotelId && (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-center gap-3 text-amber-800">
-            <AlertCircle className="w-5 h-5" /> Sélectionne un hôtel pour commencer.
+          <div className="rounded-2xl border border-amber-200/70 bg-amber-50/40 px-5 py-3.5 flex items-center gap-2.5 text-[13px] font-medium text-amber-800">
+            <AlertCircle className="w-4 h-4" /> Sélectionne un hôtel pour commencer.
           </div>
         )}
       </div>
