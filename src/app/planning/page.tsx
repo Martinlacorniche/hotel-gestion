@@ -74,9 +74,21 @@ const getEntry = (entries = [], userId, dateStr, preferDraft = false, isAdminFla
          entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'draft') || null;
 };
 
+const RETRO_LOCK_DAYS = 7;
+const isLockedDate = (dateStr: string): boolean => {
+  if (!dateStr) return false;
+  const d = new Date(dateStr + 'T00:00:00');
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - RETRO_LOCK_DAYS);
+  return d < cutoff;
+};
+
 export default function PlanningPage() {
   const { user, isLoading } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+  const isSuperadmin = user?.role === 'superadmin';
+  const isWriteBlocked = (dateStr: string) => isLockedDate(dateStr) && !isSuperadmin;
   const [showMyCpModal, setShowMyCpModal] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const datepickerButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -476,7 +488,17 @@ export default function PlanningPage() {
 
   const handleShiftDrop = async (targetUserId, targetDate) => {
     if (!isAdmin || !draggedShift || !hotelId) return;
+    if (isWriteBlocked(targetDate)) {
+      toast.error("Date verrouillée (>" + RETRO_LOCK_DAYS + "j) — conservation légale");
+      setDraggedShift(null);
+      return;
+    }
     const { userId: sourceUserId, date: sourceDate } = draggedShift;
+    if (cutMode && isWriteBlocked(sourceDate)) {
+      toast.error("Source verrouillée — impossible de déplacer un shift figé");
+      setDraggedShift(null);
+      return;
+    }
     const existingTarget = planningEntries.find(e => e.user_id === targetUserId && e.date === targetDate && e.status === 'draft');
     if (existingTarget && !confirm("Écraser le shift existant ?")) { setDraggedShift(null); return; }
 
@@ -642,12 +664,22 @@ export default function PlanningPage() {
 
   const handleDeleteShift = async (entryId) => {
     if (!hotelId) return;
-    await supabase.from('planning_entries').delete().eq('id', entryId);
+    const entry = planningEntries.find(e => e.id === entryId);
+    if (entry && isWriteBlocked(entry.date)) {
+      toast.error("Date verrouillée (>" + RETRO_LOCK_DAYS + "j) — conservation légale");
+      return;
+    }
+    const { error } = await supabase.from('planning_entries').delete().eq('id', entryId);
+    if (error) { toast.error(error.message); return; }
     await reloadEntries();
   };
 
   const handleCellClick = (userId, date, currentEntry) => {
     if (!isAdmin) return;
+    if (isWriteBlocked(date)) {
+      toast.error("Date verrouillée (>" + RETRO_LOCK_DAYS + "j) — conservation légale");
+      return;
+    }
     setEditingCell({ userId, date, entryId: currentEntry?.id ?? null, status: currentEntry?.status ?? 'draft' });
     if (currentEntry) {
       prefillFromEntryRef.current = true;
@@ -659,11 +691,17 @@ export default function PlanningPage() {
   const saveShift = async () => {
     if (!editingCell || !hotelId) return;
     const { userId, date, entryId } = editingCell;
+    if (isWriteBlocked(date)) {
+      toast.error("Date verrouillée (>" + RETRO_LOCK_DAYS + "j) — conservation légale");
+      return;
+    }
     const start = toHHmmss(startTime); const end = toHHmmss(endTime);
     if (entryId) {
-      await supabase.from('planning_entries').update({ shift: shiftInput || null, start_time: start, end_time: end, do_not_touch: doNotTouch }).eq('id', entryId);
+      const { error } = await supabase.from('planning_entries').update({ shift: shiftInput || null, start_time: start, end_time: end, do_not_touch: doNotTouch }).eq('id', entryId);
+      if (error) { toast.error(error.message); return; }
     } else {
-      await supabase.from('planning_entries').upsert({ user_id: userId, date, shift: shiftInput || null, start_time: start, end_time: end, hotel_id: hotelId, status: 'draft', do_not_touch: doNotTouch }, { onConflict: ['hotel_id', 'user_id', 'date', 'status'] });
+      const { error } = await supabase.from('planning_entries').upsert({ user_id: userId, date, shift: shiftInput || null, start_time: start, end_time: end, hotel_id: hotelId, status: 'draft', do_not_touch: doNotTouch }, { onConflict: ['hotel_id', 'user_id', 'date', 'status'] });
+      if (error) { toast.error(error.message); return; }
     }
     if (useAsDefault && shiftInput) await supabase.from('default_shift_hours').upsert({ shift_name: shiftInput, start_time: start, end_time: end }, { onConflict: ['shift_name'] });
     await reloadEntries(); setEditingCell(null); setShiftInput(''); setShowShiftModal(false); setUseAsDefault(false); setDoNotTouch(false);
@@ -815,18 +853,21 @@ export default function PlanningPage() {
                     {/* CELLULES JOURS */}
                     {weekDates.map(date => {
                        const formatted = format(date, 'yyyy-MM-dd');
-                       
+                       const cellLocked = isWriteBlocked(formatted);
+
                        const renderBubble = (entry, icon, isDraft = false) => (
-                          <div 
-                             draggable={isAdmin}
-                             onDragStart={() => isAdmin && setDraggedShift({ userId: row.id_auth, date: formatted })}
+                          <div
+                             draggable={isAdmin && !cellLocked}
+                             onDragStart={() => isAdmin && !cellLocked && setDraggedShift({ userId: row.id_auth, date: formatted })}
                              onClick={() => isAdmin && handleCellClick(row.id_auth, formatted, entry)}
+                             title={cellLocked ? `Verrouillé (>${RETRO_LOCK_DAYS}j) — conservation légale` : undefined}
                              // STYLE COMBO : Fond coloré + Barre latérale + Centré
                              className={`
-                                relative group/shift cursor-pointer select-none rounded-r-md rounded-l-sm mb-1.5 
-                                transition-all duration-200 hover:scale-[1.02] hover:shadow-md hover:z-10
+                                relative group/shift select-none rounded-r-md rounded-l-sm mb-1.5
+                                transition-all duration-200 hover:shadow-md hover:z-10
                                 flex flex-col items-center justify-center text-center min-h-[52px] px-1
                                 ${getShiftColor(entry?.shift || '')}
+                                ${cellLocked ? 'opacity-60 cursor-not-allowed grayscale-[40%]' : 'cursor-pointer hover:scale-[1.02]'}
                              `}
                           >
                              {/* Titre du shift */}
@@ -845,13 +886,18 @@ export default function PlanningPage() {
                              {entry?.do_not_touch && <span className="absolute top-0.5 right-1 text-[8px] opacity-60">🔒</span>}
 
                              {/* Bouton Suppression */}
-                             {isAdmin && entry?.id && (
-                                <button 
-                                   onClick={(e) => { e.stopPropagation(); handleDeleteShift(entry.id); }} 
+                             {isAdmin && entry?.id && !cellLocked && (
+                                <button
+                                   onClick={(e) => { e.stopPropagation(); handleDeleteShift(entry.id); }}
                                    className="absolute -top-1.5 -right-1.5 bg-white text-red-500 rounded-full p-0.5 opacity-0 group-hover/shift:opacity-100 shadow-sm border border-red-100 transition-all hover:bg-red-50 hover:scale-110 z-20"
                                 >
                                    <Trash2 className="w-3 h-3"/>
                                 </button>
+                             )}
+
+                             {/* Cadenas pour date verrouillée */}
+                             {cellLocked && (
+                                <Lock className="absolute top-0.5 right-1 w-2.5 h-2.5 opacity-70" />
                              )}
 
                         {isAdmin && isDraft && (
@@ -866,7 +912,9 @@ export default function PlanningPage() {
                           if (isAdmin) {
                              const { draft, published } = getCellEntries(planningEntries, row.id_auth, formatted);
                              if (!draft && !published) {
-                                content = <div onClick={() => handleCellClick(row.id_auth, formatted, null)} onDrop={() => handleShiftDrop(row.id_auth, formatted)} onDragOver={(e) => e.preventDefault()} className="h-full w-full min-h-[40px] rounded-lg border border-dashed border-slate-200 hover:bg-white/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer"><Plus className="w-4 h-4 text-slate-300"/></div>;
+                                content = cellLocked
+                                  ? <div title={`Verrouillé (>${RETRO_LOCK_DAYS}j) — conservation légale`} className="h-full w-full min-h-[40px] rounded-lg flex items-center justify-center opacity-30"><Lock className="w-3 h-3 text-slate-400"/></div>
+                                  : <div onClick={() => handleCellClick(row.id_auth, formatted, null)} onDrop={() => handleShiftDrop(row.id_auth, formatted)} onDragOver={(e) => e.preventDefault()} className="h-full w-full min-h-[40px] rounded-lg border border-dashed border-slate-200 hover:bg-white/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer"><Plus className="w-4 h-4 text-slate-300"/></div>;
                              } else {
                                 content = (
     <div className="flex flex-col gap-1">

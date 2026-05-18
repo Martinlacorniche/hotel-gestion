@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   Cake,
   Calendar,
+  Pencil,
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -144,6 +145,12 @@ export default function UsersPage() {
   const [newRoleVal, setNewRoleVal] = useState<"admin" | "user">("user");
   const [updatingRole, setUpdatingRole] = useState(false);
 
+  // Modal Edit Profile
+  const [editTarget, setEditTarget] = useState<UserRow | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editBirth, setEditBirth] = useState("");
+  const [editingProfile, setEditingProfile] = useState(false);
+
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.push("/login"); return; }
@@ -229,6 +236,28 @@ export default function UsersPage() {
     const res = await apiCall("/api/users/reactivate", { user_id: u.id_auth });
     if (!res.ok) { toast.error(res.error || "Erreur"); return; }
     toast.success("Utilisateur réactivé");
+    await loadAll();
+  };
+
+  const openEdit = (u: UserRow) => {
+    setEditTarget(u);
+    setEditName(u.name || "");
+    setEditBirth(u.birth_date || "");
+  };
+
+  const doEditProfile = async () => {
+    if (!editTarget) return;
+    if (!editName.trim()) { toast.error("Le nom est requis"); return; }
+    setEditingProfile(true);
+    const res = await apiCall("/api/users/update-profile", {
+      user_id: editTarget.id_auth,
+      name: editName.trim(),
+      birth_date: editBirth || null,
+    });
+    setEditingProfile(false);
+    if (!res.ok) { toast.error(res.error || "Erreur"); return; }
+    toast.success("Profil mis à jour");
+    setEditTarget(null);
     await loadAll();
   };
 
@@ -419,6 +448,11 @@ export default function UsersPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48">
                                 <DropdownMenuLabel className="text-xs text-slate-400">Actions</DropdownMenuLabel>
+                                {!isClosed && (
+                                  <DropdownMenuItem onClick={() => openEdit(u)}>
+                                    <Pencil size={14} /> Modifier le profil
+                                  </DropdownMenuItem>
+                                )}
                                 {isSuperadmin && !isClosed && (
                                   <DropdownMenuItem onClick={() => { setRoleTarget(u); setNewRoleVal(u.role === "admin" ? "user" : "admin"); }}>
                                     <ShieldCheck size={14} /> Changer le rôle
@@ -502,6 +536,26 @@ export default function UsersPage() {
             <Button variant="ghost" onClick={() => setCloseTarget(null)} disabled={closing}>Annuler</Button>
             <Button onClick={doClose} disabled={closing} className="bg-rose-600 hover:bg-rose-700 text-white">
               {closing ? <><Loader2 size={14} className="animate-spin mr-2" /> Désactivation…</> : <><PowerOff size={14} className="mr-2" /> Désactiver</>}
+            </Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal Edit Profile */}
+      {editTarget && (
+        <Modal onClose={() => !editingProfile && setEditTarget(null)} icon={<Pencil className="text-indigo-600" size={20} />} title={`Modifier ${editTarget.name || editTarget.email}`} subtitle={editTarget.email}>
+          <div className="space-y-3">
+            <Field label="Prénom">
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Jean" />
+            </Field>
+            <Field label="Date de naissance">
+              <Input type="date" value={editBirth} onChange={(e) => setEditBirth(e.target.value)} />
+            </Field>
+          </div>
+          <div className="flex justify-end gap-2 mt-6">
+            <Button variant="ghost" onClick={() => setEditTarget(null)} disabled={editingProfile}>Annuler</Button>
+            <Button onClick={doEditProfile} disabled={editingProfile} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+              {editingProfile ? <><Loader2 size={14} className="animate-spin mr-2" /> Enregistrement…</> : "Enregistrer"}
             </Button>
           </div>
         </Modal>
