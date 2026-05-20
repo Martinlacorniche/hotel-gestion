@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getHotelLocksMap } from '@/lib/tthotel';
+import { requireRole } from '@/lib/apiAuth';
 
 // POST /api/serrures/sejours/:id/carte-supplementaire
 // Crée 1 nouveau job d'encodage avec les mêmes droits que le séjour existant
@@ -9,7 +10,10 @@ import { getHotelLocksMap } from '@/lib/tthotel';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function POST(_req: Request, ctx: Ctx) {
+export async function POST(req: Request, ctx: Ctx) {
+  const auth = await requireRole(req, ['superadmin', 'admin', 'user']);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   const { id } = await ctx.params;
 
   const { data: sejour, error: eS } = await supabaseAdmin

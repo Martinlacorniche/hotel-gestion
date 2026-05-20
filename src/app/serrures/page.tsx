@@ -91,14 +91,14 @@ export default function SerruresPage() {
   const [jobsStatut, setJobsStatut] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const res = await fetch('/api/serrures/chambres', { cache: 'no-store' });
+    const res = await fetch('/api/serrures/chambres', { cache: 'no-store', headers: await authHeaders() });
     const json = await res.json();
     if (json.ok) setChambres(json.chambres);
     setLoading(false);
   }, []);
 
   const loadPasses = useCallback(async () => {
-    const res = await fetch('/api/serrures/passes', { cache: 'no-store' });
+    const res = await fetch('/api/serrures/passes', { cache: 'no-store', headers: await authHeaders() });
     const json = await res.json();
     if (json.ok) setPasses(json.passes);
   }, []);
@@ -133,7 +133,7 @@ export default function SerruresPage() {
       const next: Record<string, string> = {};
       await Promise.all(
         encoding.jobIds.map(async (id) => {
-          const r = await fetch(`/api/serrures/jobs/${id}`, { cache: 'no-store' });
+          const r = await fetch(`/api/serrures/jobs/${id}`, { cache: 'no-store', headers: await authHeaders() });
           const j = await r.json();
           if (j.ok) next[id] = j.job.statut;
         }),
@@ -227,7 +227,7 @@ export default function SerruresPage() {
     try {
       const res = await fetch('/api/serrures/sejours', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           chambre_ids: Array.from(selectedIds),
           methode,
@@ -268,7 +268,7 @@ export default function SerruresPage() {
     try {
       const res = await fetch('/api/serrures/passes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({ label }),
       });
       const json = await res.json();
@@ -288,7 +288,10 @@ export default function SerruresPage() {
     setEncoding(null);
     setJobsStatut({});
     try {
-      const res = await fetch(`/api/serrures/passes/${passId}/replace`, { method: 'POST' });
+      const res = await fetch(`/api/serrures/passes/${passId}/replace`, {
+        method: 'POST',
+        headers: await authHeaders(),
+      });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error);
       await loadPasses();
@@ -303,7 +306,10 @@ export default function SerruresPage() {
   async function deletePass(passId: string) {
     setBusy(true);
     try {
-      const res = await fetch(`/api/serrures/passes/${passId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/serrures/passes/${passId}`, {
+        method: 'DELETE',
+        headers: await authHeaders(),
+      });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error);
       await loadPasses();
@@ -326,7 +332,7 @@ export default function SerruresPage() {
     try {
       const res = await fetch('/api/serrures/sejours/reencode', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           chambre_id: chambre.id,
           mode,
@@ -362,6 +368,7 @@ export default function SerruresPage() {
     try {
       const res = await fetch(`/api/serrures/sejours/${head.id}/carte-supplementaire`, {
         method: 'POST',
+        headers: await authHeaders(),
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error);

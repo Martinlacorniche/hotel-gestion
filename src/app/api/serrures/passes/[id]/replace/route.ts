@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { buildAllLocksMeta, dateInMonths } from '@/lib/serruresLocks';
+import { requireRole } from '@/lib/apiAuth';
 
 // POST /api/serrures/passes/:id/replace
 // Ré-encode une nouvelle carte pour ce pass (carte perdue / renouvellement) :
@@ -9,7 +10,10 @@ import { buildAllLocksMeta, dateInMonths } from '@/lib/serruresLocks';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function POST(_req: Request, ctx: Ctx) {
+export async function POST(req: Request, ctx: Ctx) {
+  const auth = await requireRole(req, ['superadmin', 'admin', 'user']);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   const { id } = await ctx.params;
 
   const { data: pass, error: eGet } = await supabaseAdmin

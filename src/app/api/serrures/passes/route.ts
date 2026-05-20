@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { buildAllLocksMeta, dateInMonths } from '@/lib/serruresLocks';
+import { requireRole } from '@/lib/apiAuth';
 
 // GET  /api/serrures/passes   → liste des pass + statut d'encodage de leur dernière carte
 // POST /api/serrures/passes   → crée un pass (carte 1 an, toutes les chambres) + job d'encodage
 //   body { label?: string, mois?: number (1..24, défaut 12) }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const auth = await requireRole(req, ['superadmin', 'admin', 'user']);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   const { data: passes, error } = await supabaseAdmin
     .from('passes')
     .select('*')
@@ -33,6 +37,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireRole(req, ['superadmin', 'admin', 'user']);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   let body: { label?: string; mois?: number } = {};
   try {
     body = await req.json();

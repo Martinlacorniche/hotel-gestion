@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { changePasscodePeriod, deletePasscode } from '@/lib/tthotel';
+import { requireRole } from '@/lib/apiAuth';
 
 // PATCH /api/serrures/sejours/:id   body { fin: ISO } → prolonge
 // DELETE /api/serrures/sejours/:id                    → révoque
 
 type Ctx = { params: Promise<{ id: string }> };
+
+const OPS_ROLES = ['superadmin', 'admin', 'user'] as const;
 
 async function loadSejour(id: string) {
   const { data, error } = await supabaseAdmin
@@ -18,6 +21,9 @@ async function loadSejour(id: string) {
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
+  const auth = await requireRole(req, [...OPS_ROLES]);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   const { id } = await ctx.params;
   const body = (await req.json()) as { fin?: string };
   if (!body.fin) {
@@ -63,7 +69,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
   return NextResponse.json({ ok: true, sejour: updated });
 }
 
-export async function DELETE(_req: Request, ctx: Ctx) {
+export async function DELETE(req: Request, ctx: Ctx) {
+  const auth = await requireRole(req, [...OPS_ROLES]);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   const { id } = await ctx.params;
   let sejour;
   try {

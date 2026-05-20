@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { requireRole } from '@/lib/apiAuth';
 
 // Liste les chambres avec leur séjour actif (si présent), pour la grille UI.
 
-export async function GET() {
+export async function GET(req: Request) {
+  const auth = await requireRole(req, ['superadmin', 'admin', 'user']);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   const { data: chambres, error: errC } = await supabaseAdmin
     .from('chambres')
     .select('id, hotel_id, numero, tthotel_lock_id, tthotel_lock_alias, ordre')

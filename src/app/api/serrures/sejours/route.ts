@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { addRandomPasscode, getHotelLocksMap } from '@/lib/tthotel';
 import { parseTime, tomorrowAtLocalTime } from '@/lib/checkout';
+import { requireRole } from '@/lib/apiAuth';
 
 // POST /api/serrures/sejours
 // Body: {
@@ -19,6 +20,9 @@ import { parseTime, tomorrowAtLocalTime } from '@/lib/checkout';
 //  - 3 chambres + 'code' → refusé (un code TTHotel n'est lié qu'à 1 serrure)
 
 export async function POST(req: Request) {
+  const auth = await requireRole(req, ['superadmin', 'admin', 'user']);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
