@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import {
@@ -50,6 +50,7 @@ export default function SerruresPage() {
   const [chambres, setChambres] = useState<Chambre[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [anchorId, setAnchorId] = useState<string | null>(null);
   const [nuits, setNuits] = useState(1);
   const [nbCartes, setNbCartes] = useState(1);
   const [checkoutTime, setCheckoutTime] = useState('11:00');
@@ -125,18 +126,37 @@ export default function SerruresPage() {
     setJobsStatut({});
   }
 
-  function handleChambreClick(c: Chambre) {
+  function handleChambreClick(c: Chambre, e: ReactMouseEvent<HTMLButtonElement>) {
     setShowPass(false);
     if (encoding) {
       setEncoding(null);
       setJobsStatut({});
     }
-    // Sélection unifiée : toute chambre (libre ou occupée) se sélectionne / se
-    // désélectionne au clic. Sélection multiple possible.
-    const next = new Set(selectedIds);
-    if (next.has(c.id)) next.delete(c.id);
-    else next.add(c.id);
-    setSelectedIds(next);
+
+    // Maj+clic : sélectionne la plage entre l'ancre (dernier clic) et ici.
+    if (e.shiftKey && anchorId) {
+      const ia = chambres.findIndex((x) => x.id === anchorId);
+      const ib = chambres.findIndex((x) => x.id === c.id);
+      if (ia !== -1 && ib !== -1) {
+        const [lo, hi] = ia < ib ? [ia, ib] : [ib, ia];
+        setSelectedIds(new Set(chambres.slice(lo, hi + 1).map((x) => x.id)));
+        return;
+      }
+    }
+
+    // Ctrl/Cmd+clic : ajoute ou retire cette chambre, garde le reste.
+    if (e.ctrlKey || e.metaKey) {
+      const next = new Set(selectedIds);
+      if (next.has(c.id)) next.delete(c.id);
+      else next.add(c.id);
+      setSelectedIds(next);
+      setAnchorId(c.id);
+      return;
+    }
+
+    // Clic simple : sélection unique.
+    setSelectedIds(new Set([c.id]));
+    setAnchorId(c.id);
   }
 
   async function createSejour(methode: 'code' | 'carte') {
@@ -365,7 +385,7 @@ export default function SerruresPage() {
               return (
                 <li key={c.id}>
                   <button
-                    onClick={() => handleChambreClick(c)}
+                    onClick={(e) => handleChambreClick(c, e)}
                     className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-left transition ring-1 ${
                       isSel
                         ? occ
@@ -763,8 +783,11 @@ function ParamsPanel(props: {
             </button>
           </div>
         ) : (
-          <div className="text-stone-400 text-base font-light italic">
-            Choisis une ou plusieurs chambres
+          <div>
+            <div className="text-stone-400 text-base font-light italic">Choisis une chambre</div>
+            <div className="text-[11px] text-stone-400 mt-1.5">
+              Ctrl+clic = en ajouter · Maj+clic = une plage
+            </div>
           </div>
         )}
       </div>
