@@ -14,6 +14,7 @@ from __future__ import annotations
 import ctypes
 import os
 import platform
+import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -55,6 +56,7 @@ ERROR_CODES = {
     202: "Échec config clé carte",
     203: "Échec config hotelInfo",
     1004: "Encodeur tenu par une autre application (TTHotel desktop ?)",
+    1005: "Ouverture USB échouée (souvent USB gelé après reboot → ré-énumération PnP)",
 }
 
 
@@ -64,6 +66,44 @@ def is_available() -> bool:
 
 def err_str(code: int) -> str:
     return ERROR_CODES.get(code, f"Code {code}")
+
+
+def reenumerate_usb() -> bool:
+    """Cycle disable/enable du périphérique encodeur Sciener via PnP (Windows) =
+    équivalent logiciel d'un débranchement/rebranchement.
+
+    Débloque le cas où, après extinction/redémarrage du PC, l'USB reste gelé et
+    CE_ConnectComm_Default échoue (code 1005) alors que le device est bien présent,
+    jusqu'à un rebranchement physique.
+
+    NÉCESSITE que l'agent tourne en ADMINISTRATEUR (Disable/Enable-PnpDevice).
+    Le VID&PID ciblé est configurable via AGENT_ENCODER_USB_VIDPID
+    (défaut "VID_1A86&PID_FE07" = encodeur Sciener).
+    Renvoie True si la commande PnP s'est exécutée sans erreur.
+    """
+    if platform.system() != "Windows":
+        return False
+    vid_pid = os.environ.get("AGENT_ENCODER_USB_VIDPID", "VID_1A86&PID_FE07")
+    ps = (
+        "$ErrorActionPreference='SilentlyContinue';"
+        f"$d = Get-PnpDevice -PresentOnly | Where-Object {{ $_.InstanceId -like 'USB\\{vid_pid}\\*' }};"
+        "if (-not $d) { exit 2 };"
+        "$d | Disable-PnpDevice -Confirm:$false;"
+        "Start-Sleep -Milliseconds 1500;"
+        "$d | Enable-PnpDevice -Confirm:$false;"
+        "Start-Sleep -Milliseconds 2500;"
+        "exit 0"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
 
 
 class CardEncoder:
@@ -259,17 +299,25 @@ class CardEncoder:
 
         Retry sur connect : si l'encodeur est tenu par une autre app au moment
         où on essaie, attend `connect_retry_delay` s et retente jusqu'à
-        `connect_retries` fois.
+        `connect_retries` fois. À la 1re vraie galère de connexion (typiquement
+        code 1005 après extinction/redémarrage du PC : USB gelé), on tente une
+        ré-énumération PnP de l'encodeur (= rebranchement logiciel) avant de
+        retenter — évite le débranchement/rebranchement manuel.
         """
+        reenum_tried = False
         for attempt in range(1, connect_retries + 1):
             try:
                 self.connect(port)
                 break
             except EncoderError:
-                if attempt < connect_retries:
-                    time.sleep(connect_retry_delay)
-                else:
+                if attempt >= connect_retries:
                     raise
+                if not reenum_tried:
+                    reenum_tried = True
+                    if reenumerate_usb():
+                        time.sleep(1.0)  # laisse l'USB réapparaître après le cycle PnP
+                        continue
+                time.sleep(connect_retry_delay)
         try:
             self.init_encoder(hotel_info)
             self.set_sectors(sectors)
