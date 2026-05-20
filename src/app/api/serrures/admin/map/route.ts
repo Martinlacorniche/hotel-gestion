@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { requireRole } from '@/lib/apiAuth';
 
 // Crée le mapping lockId TTHotel ↔ chambre (table public.chambres).
+// Réservé aux admins (réglages serrures).
 // POST { hotel_id, numero, tthotel_lock_id, tthotel_lock_alias? }
 
 export async function POST(req: Request) {
+  const auth = await requireRole(req, ['admin', 'superadmin']);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -44,6 +49,9 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const auth = await requireRole(req, ['admin', 'superadmin']);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   const url = new URL(req.url);
   const id = url.searchParams.get('id');
   if (!id) return NextResponse.json({ ok: false, error: 'id requis' }, { status: 400 });

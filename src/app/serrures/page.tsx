@@ -15,7 +15,27 @@ import {
   Users,
   RefreshCw,
   Trash2,
+  Bug,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabaseClient';
+
+type DebugJob = {
+  id: string;
+  statut: string;
+  action: string;
+  created_at: string;
+  updated_at: string;
+  error: string | null;
+  nb_locks: number;
+};
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return { Authorization: `Bearer ${session?.access_token ?? ''}` };
+}
 
 type Sejour = {
   id: string;
@@ -47,6 +67,9 @@ type Pass = {
 };
 
 export default function SerruresPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+
   const [chambres, setChambres] = useState<Chambre[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -56,6 +79,8 @@ export default function SerruresPage() {
   const [checkoutTime, setCheckoutTime] = useState('11:00');
   const [passes, setPasses] = useState<Pass[]>([]);
   const [showPass, setShowPass] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [debug, setDebug] = useState<{ jobs: DebugJob[]; agent: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [encoding, setEncoding] = useState<{
     sejours: Sejour[];
@@ -76,6 +101,19 @@ export default function SerruresPage() {
     const res = await fetch('/api/serrures/passes', { cache: 'no-store' });
     const json = await res.json();
     if (json.ok) setPasses(json.passes);
+  }, []);
+
+  const loadDebug = useCallback(async () => {
+    try {
+      const res = await fetch('/api/serrures/jobs?limit=25', {
+        cache: 'no-store',
+        headers: await authHeaders(),
+      });
+      const json = await res.json();
+      if (json.ok) setDebug({ jobs: json.jobs, agent: json.agent });
+    } catch {
+      /* silencieux : le debug n'est pas critique */
+    }
   }, []);
 
   useEffect(() => {
@@ -115,12 +153,29 @@ export default function SerruresPage() {
     };
   }, [encoding, load, loadPasses]);
 
+  // Rafraîchit le panneau debug tant qu'il est ouvert.
+  useEffect(() => {
+    if (!showDebug) return;
+    loadDebug();
+    const t = setInterval(loadDebug, 4000);
+    return () => clearInterval(t);
+  }, [showDebug, loadDebug]);
+
   function isOccupied(c: Chambre) {
     return !!c.sejour && (c.sejour.statut === 'actif' || c.sejour.statut === 'pending');
   }
 
   function openPasses() {
     setShowPass(true);
+    setShowDebug(false);
+    setSelectedIds(new Set());
+    setEncoding(null);
+    setJobsStatut({});
+  }
+
+  function openDebug() {
+    setShowDebug(true);
+    setShowPass(false);
     setSelectedIds(new Set());
     setEncoding(null);
     setJobsStatut({});
@@ -128,6 +183,7 @@ export default function SerruresPage() {
 
   function handleChambreClick(c: Chambre, e: ReactMouseEvent<HTMLButtonElement>) {
     setShowPass(false);
+    setShowDebug(false);
     if (encoding) {
       setEncoding(null);
       setJobsStatut({});
@@ -353,13 +409,26 @@ export default function SerruresPage() {
     <main className="min-h-screen bg-stone-50">
       <header className="sticky top-0 z-10 bg-stone-50/80 backdrop-blur border-b border-stone-200/60 px-8 py-4 flex items-center justify-between">
         <h1 className="text-sm font-medium tracking-wide uppercase text-stone-500">Serrures</h1>
-        <Link
-          href="/serrures/config"
-          className="text-stone-400 hover:text-stone-800 transition"
-          title="Configuration"
-        >
-          <Settings className="w-5 h-5" />
-        </Link>
+        {isAdmin && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => (showDebug ? setShowDebug(false) : openDebug())}
+              className={`p-1.5 rounded-lg transition ${
+                showDebug ? 'bg-stone-200 text-stone-800' : 'text-stone-400 hover:text-stone-800'
+              }`}
+              title="Debug / journal d'encodage"
+            >
+              <Bug className="w-5 h-5" />
+            </button>
+            <Link
+              href="/serrures/config"
+              className="p-1.5 rounded-lg text-stone-400 hover:text-stone-800 transition"
+              title="Configuration"
+            >
+              <Settings className="w-5 h-5" />
+            </Link>
+          </div>
+        )}
       </header>
 
       <div className="flex min-h-[calc(100vh-57px)]">
@@ -451,6 +520,8 @@ export default function SerruresPage() {
                   setJobsStatut({});
                 }}
               />
+            ) : showDebug ? (
+              <DebugPanel debug={debug} onRefresh={loadDebug} />
             ) : showPass ? (
               <PassPanel
                 passes={passes}
@@ -893,6 +964,105 @@ function ParamsPanel(props: {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Debug / journal d'encodage (admin, via le bouton coccinelle) ────────────
+
+function DebugPanel({
+  debug,
+  onRefresh,
+}: {
+  debug: { jobs: DebugJob[]; agent: string } | null;
+  onRefresh: () => void;
+}) {
+  const agent = debug?.agent ?? 'idle';
+  const jobs = debug?.jobs ?? [];
+  const statutColor = (s: string) =>
+    s === 'done'
+      ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+      : s === 'error'
+      ? 'text-red-700 bg-red-50 border-red-200'
+      : s === 'running'
+      ? 'text-blue-700 bg-blue-50 border-blue-200'
+      : 'text-amber-700 bg-amber-50 border-amber-200';
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <Label>Debug · encodage</Label>
+        <button
+          onClick={onRefresh}
+          className="text-stone-400 hover:text-stone-700 text-xs inline-flex items-center gap-1"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Rafraîchir
+        </button>
+      </div>
+
+      <div
+        className={`rounded-2xl border p-4 mb-5 flex items-center gap-3 ${
+          agent === 'stuck'
+            ? 'bg-red-50 border-red-200'
+            : agent === 'ok'
+            ? 'bg-emerald-50 border-emerald-200'
+            : 'bg-stone-50 border-stone-200'
+        }`}
+      >
+        {agent === 'stuck' ? (
+          <WifiOff className="w-5 h-5 text-red-600 shrink-0" />
+        ) : (
+          <Wifi className={`w-5 h-5 shrink-0 ${agent === 'ok' ? 'text-emerald-600' : 'text-stone-400'}`} />
+        )}
+        <div className="text-sm">
+          {agent === 'stuck' && (
+            <span className="font-medium text-red-700">
+              Agent ne répond pas — des jobs restent en attente. Vérifie l’agent sur le PC réception.
+            </span>
+          )}
+          {agent === 'ok' && (
+            <span className="font-medium text-emerald-700">Agent actif (jobs traités récemment).</span>
+          )}
+          {agent === 'idle' && <span className="text-stone-500">Aucun job récent.</span>}
+        </div>
+      </div>
+
+      {jobs.length === 0 ? (
+        <p className="text-center text-xs text-stone-400 mt-8">Aucun job d’encodage.</p>
+      ) : (
+        <ul className="space-y-2">
+          {jobs.map((j) => {
+            const t = new Date(j.created_at).toLocaleString('fr-FR', {
+              day: '2-digit',
+              month: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            });
+            return (
+              <li key={j.id} className="rounded-xl bg-white border border-stone-200/60 px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-stone-500 tabular-nums">{t}</span>
+                  <span
+                    className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${statutColor(j.statut)}`}
+                  >
+                    {j.statut}
+                  </span>
+                </div>
+                <div className="text-xs text-stone-500 mt-0.5">
+                  {j.action} · {j.nb_locks} serrure{j.nb_locks > 1 ? 's' : ''}
+                </div>
+                {j.error && <div className="text-xs text-red-600 mt-1 break-words">{j.error}</div>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <p className="mt-5 text-[11px] text-stone-400 leading-relaxed">
+        Heures locales. Les erreurs (ex. « Code 1005 ») viennent de l’agent encodeur sur le PC réception.
+      </p>
     </div>
   );
 }

@@ -1,7 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Lock, Battery, Radio, RefreshCw, Link2, Unlink, Check, X } from 'lucide-react';
+import Link from 'next/link';
+import { Lock, Battery, Radio, RefreshCw, Link2, Unlink, Check, X, ShieldAlert } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabaseClient';
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return { Authorization: `Bearer ${session?.access_token ?? ''}` };
+}
 
 type LockSummary = {
   lockId: number;
@@ -24,6 +32,9 @@ type Bootstrap =
   | { ok: false; error: string };
 
 export default function SerruresPage() {
+  const { user, isLoading: authLoading } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+
   const [data, setData] = useState<Bootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [mappingFor, setMappingFor] = useState<LockSummary | null>(null);
@@ -34,7 +45,10 @@ export default function SerruresPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch('/api/serrures/bootstrap', { cache: 'no-store' });
+      const res = await fetch('/api/serrures/bootstrap', {
+        cache: 'no-store',
+        headers: await authHeaders(),
+      });
       const json: Bootstrap = await res.json();
       setData(json);
       if (json.ok && json.hotels.length === 1) setSelectedHotel(json.hotels[0].id);
@@ -45,8 +59,8 @@ export default function SerruresPage() {
     }
   }
   useEffect(() => {
-    load();
-  }, []);
+    if (isAdmin) load();
+  }, [isAdmin]);
 
   async function mapChambre() {
     if (!mappingFor || !selectedHotel || !numero) return;
@@ -54,7 +68,7 @@ export default function SerruresPage() {
     try {
       const res = await fetch('/api/serrures/admin/map', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           hotel_id: selectedHotel,
           numero: numero.trim(),
@@ -78,7 +92,10 @@ export default function SerruresPage() {
     if (!confirm('Démapper cette chambre ?')) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/serrures/admin/map?id=${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/serrures/admin/map?id=${id}`, {
+        method: 'DELETE',
+        headers: await authHeaders(),
+      });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error);
       await load();
@@ -89,6 +106,32 @@ export default function SerruresPage() {
     }
   }
 
+  if (authLoading) {
+    return (
+      <main className="min-h-screen bg-neutral-50 px-6 py-10 max-w-5xl mx-auto">
+        <p className="text-neutral-500">Chargement…</p>
+      </main>
+    );
+  }
+  if (!isAdmin) {
+    return (
+      <main className="min-h-screen bg-neutral-50 flex items-center justify-center px-6">
+        <div className="text-center max-w-sm">
+          <ShieldAlert className="w-10 h-10 mx-auto mb-4 text-neutral-300" />
+          <h1 className="text-lg font-semibold text-neutral-800 mb-1">Réglages réservés aux admins</h1>
+          <p className="text-sm text-neutral-500 mb-6">
+            La configuration des serrures n’est accessible qu’aux administrateurs.
+          </p>
+          <Link
+            href="/serrures"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm"
+          >
+            Retour aux serrures
+          </Link>
+        </div>
+      </main>
+    );
+  }
   if (loading && !data) {
     return (
       <main className="min-h-screen bg-neutral-50 px-6 py-10 max-w-5xl mx-auto">

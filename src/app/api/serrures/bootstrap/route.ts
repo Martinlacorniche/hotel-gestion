@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
 import { listLocks } from '@/lib/tthotel';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { requireRole } from '@/lib/apiAuth';
 
 // Endpoint qui agrège : serrures TTHotel + hôtels en DB + chambres déjà mappées.
 // Sert de "page d'admin" pour faire le mapping initial lockId ↔ chambre.
+// Réservé aux admins (réglages serrures).
 
-export async function GET() {
+export async function GET(req: Request) {
+  const auth = await requireRole(req, ['admin', 'superadmin']);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+
   try {
     const [locksRes, hotelsRes, chambresRes] = await Promise.all([
       listLocks(1, 100),
