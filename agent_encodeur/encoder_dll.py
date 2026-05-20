@@ -15,8 +15,9 @@ import ctypes
 import os
 import platform
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 DLL_DIR = Path(__file__).parent / "lib"
 DLL_PATH = DLL_DIR / "CardEncoder.dll"
@@ -40,7 +41,9 @@ ERROR_CODES = {
     16: "Encodeur déconnecté",
     21: "Pas une carte IC",
     26: "Échec déconnexion",
+    27: "Port COM invalide pour ConnectComm (utiliser CE_ConnectComm_Default pour E5+)",
     28: "Échec config comm",
+    38: "Aucun device trouvé sur le port (utiliser CE_ConnectComm_Default pour E5+)",
     33: "Carte CPU non supportée",
     34: "Échec parse secteur",
     35: "Secteur hors limites",
@@ -51,6 +54,7 @@ ERROR_CODES = {
     201: "Échec config clé",
     202: "Échec config clé carte",
     203: "Échec config hotelInfo",
+    1004: "Encodeur tenu par une autre application (TTHotel desktop ?)",
 }
 
 
@@ -78,9 +82,13 @@ class CardEncoder:
         self._connected = False
 
     def _setup_signatures(self) -> None:
-        # CE_ConnectComm(const wchar_t *portName) → int
+        # CE_ConnectComm(const wchar_t *portName) → int  (E3/E4 : port explicite)
         self.dll.CE_ConnectComm.argtypes = [ctypes.c_wchar_p]
         self.dll.CE_ConnectComm.restype = ctypes.c_int
+
+        # CE_ConnectComm_Default() → int  (E5+ : auto-détecte le device USB Sciener)
+        self.dll.CE_ConnectComm_Default.argtypes = []
+        self.dll.CE_ConnectComm_Default.restype = ctypes.c_int
 
         # CE_DisconnectComm() → int
         self.dll.CE_DisconnectComm.argtypes = []
@@ -117,16 +125,47 @@ class CardEncoder:
         self.dll.CE_GetCardNo.argtypes = [ctypes.POINTER(ctypes.c_char_p)]
         self.dll.CE_GetCardNo.restype = ctypes.c_int
 
+        # CE_GetVersion(char **version) → int  (utile pour logger le modèle d'encodeur)
+        self.dll.CE_GetVersion.argtypes = [ctypes.POINTER(ctypes.c_char_p)]
+        self.dll.CE_GetVersion.restype = ctypes.c_int
+
+        # CE_Beep(on_ms, off_ms, repeats) → int  (feedback sonore : succès court, erreur double bref)
+        self.dll.CE_Beep.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        self.dll.CE_Beep.restype = ctypes.c_int
+
     # ─── méthodes haut niveau ───────────────────────────────────────────────
 
-    def connect(self, port: str) -> None:
-        # Windows accepte "COM4" pour COM≤9, mais demande "\\.\COM10" pour > 9.
-        # Le format "\\.\COMx" marche pour tous les ports — on s'aligne dessus.
-        # Si l'utilisateur a déjà mis "\\.\COMx", on ne préfixe pas une 2e fois.
-        target = port if port.startswith("\\\\.\\") else rf"\\.\{port}"
-        rc = self.dll.CE_ConnectComm(target)
-        if rc != 0:
-            raise EncoderError(f"CE_ConnectComm({target}): {err_str(rc)}", rc)
+    def connect(self, port: str = "") -> None:
+        """Se connecte à l'encodeur.
+
+        - port vide ou "auto" → CE_ConnectComm_Default() (auto-détection USB,
+          requis pour E5/SN941-M1). C'est le mode par défaut depuis la DLL 1.7.x.
+        - port = "COMx" → CE_ConnectComm explicite (E3/E4, DLL ≤ 1.6.x).
+        """
+        # Défensif : si une session précédente a planté avant son disconnect, ou si
+        # Windows n'a pas encore relâché le handle USB, l'encodeur reste "tenu"
+        # (codes 16/1004) et CE_Connect* échoue jusqu'au débranchement physique.
+        # On force un disconnect + court délai avant toute connexion pour balayer
+        # ce handle fantôme et éviter le débranchement/rebranchement manuel.
+        try:
+            self.dll.CE_DisconnectComm()
+            time.sleep(0.3)
+        except Exception:
+            pass
+        self._connected = False
+
+        p = (port or "").strip()
+        if not p or p.lower() == "auto":
+            rc = self.dll.CE_ConnectComm_Default()
+            if rc != 0:
+                raise EncoderError(f"CE_ConnectComm_Default(): {err_str(rc)}", rc)
+        else:
+            # Windows accepte "COM4" pour COM≤9, mais demande "\\.\COM10" pour > 9.
+            # Le format "\\.\COMx" marche pour tous les ports.
+            target = p if p.startswith("\\\\.\\") else rf"\\.\{p}"
+            rc = self.dll.CE_ConnectComm(target)
+            if rc != 0:
+                raise EncoderError(f"CE_ConnectComm({target}): {err_str(rc)}", rc)
         self._connected = True
 
     def disconnect(self) -> None:
@@ -188,6 +227,58 @@ class CardEncoder:
         if rc != 0:
             return None
         return out.value.decode("ascii") if out.value else None
+
+    def beep(self, on_ms: int = 150, off_ms: int = 50, repeats: int = 1) -> None:
+        """Feedback sonore. TTHotel desktop utilise (150,50,1) pour succès, (50,50,2) pour erreur."""
+        try:
+            self.dll.CE_Beep(int(on_ms), int(off_ms), int(repeats))
+        except Exception:
+            pass  # Le beep est un nice-to-have, jamais bloquant.
+
+    def get_version(self) -> Optional[str]:
+        """Renvoie le JSON renvoyé par CE_GetVersion (model, dll, firmware).
+        Appelable uniquement après connect(). Sinon retourne None."""
+        out = ctypes.c_char_p()
+        rc = self.dll.CE_GetVersion(ctypes.byref(out))
+        if rc != 0:
+            return None
+        return out.value.decode("ascii") if out.value else None
+
+    @contextmanager
+    def session(
+        self,
+        hotel_info: str,
+        port: str = "",
+        sectors: str = "0000000000011111",
+        connect_retries: int = 4,
+        connect_retry_delay: float = 1.5,
+    ) -> "Iterator[CardEncoder]":
+        """Ouvre une session DLL le temps d'un bloc d'encodage, puis libère
+        l'encodeur. Permet à TTHotel desktop (ou autre) d'utiliser l'encodeur
+        entre les jobs.
+
+        Retry sur connect : si l'encodeur est tenu par une autre app au moment
+        où on essaie, attend `connect_retry_delay` s et retente jusqu'à
+        `connect_retries` fois.
+        """
+        for attempt in range(1, connect_retries + 1):
+            try:
+                self.connect(port)
+                break
+            except EncoderError:
+                if attempt < connect_retries:
+                    time.sleep(connect_retry_delay)
+                else:
+                    raise
+        try:
+            self.init_encoder(hotel_info)
+            self.set_sectors(sectors)
+            yield self
+        finally:
+            try:
+                self.disconnect()
+            except Exception:
+                pass
 
 
 class EncoderError(Exception):

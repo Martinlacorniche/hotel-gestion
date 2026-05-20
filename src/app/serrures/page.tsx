@@ -7,12 +7,14 @@ import {
   KeyRound,
   CreditCard,
   Settings,
-  RotateCcw,
   Loader2,
   Check,
   Clock,
   AlertCircle,
   Plus,
+  Users,
+  RefreshCw,
+  Trash2,
 } from 'lucide-react';
 
 type Sejour = {
@@ -34,16 +36,25 @@ type Chambre = {
   ordre: number;
   sejour: Sejour | null;
 };
+type Pass = {
+  id: string;
+  label: string | null;
+  debut: string;
+  fin: string;
+  statut: string;
+  last_job_id: string | null;
+  job_statut: string | null;
+};
 
 export default function SerruresPage() {
   const [chambres, setChambres] = useState<Chambre[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [viewChambreId, setViewChambreId] = useState<string | null>(null);
   const [nuits, setNuits] = useState(1);
   const [nbCartes, setNbCartes] = useState(1);
   const [checkoutTime, setCheckoutTime] = useState('11:00');
-  const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const [passes, setPasses] = useState<Pass[]>([]);
+  const [showPass, setShowPass] = useState(false);
   const [busy, setBusy] = useState(false);
   const [encoding, setEncoding] = useState<{
     sejours: Sejour[];
@@ -60,11 +71,21 @@ export default function SerruresPage() {
     setLoading(false);
   }, []);
 
+  const loadPasses = useCallback(async () => {
+    const res = await fetch('/api/serrures/passes', { cache: 'no-store' });
+    const json = await res.json();
+    if (json.ok) setPasses(json.passes);
+  }, []);
+
   useEffect(() => {
     load();
-    const t = setInterval(load, 10_000);
+    loadPasses();
+    const t = setInterval(() => {
+      load();
+      loadPasses();
+    }, 10_000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, loadPasses]);
 
   useEffect(() => {
     if (!encoding || encoding.jobIds.length === 0) return;
@@ -80,7 +101,10 @@ export default function SerruresPage() {
       );
       if (!stopped) setJobsStatut(next);
       const allDone = encoding.jobIds.every((id) => ['done', 'error'].includes(next[id]));
-      if (allDone) await load();
+      if (allDone) {
+        await load();
+        await loadPasses();
+      }
     };
     poll();
     const t = setInterval(poll, 1500);
@@ -88,24 +112,27 @@ export default function SerruresPage() {
       stopped = true;
       clearInterval(t);
     };
-  }, [encoding, load]);
+  }, [encoding, load, loadPasses]);
 
   function isOccupied(c: Chambre) {
     return !!c.sejour && (c.sejour.statut === 'actif' || c.sejour.statut === 'pending');
   }
 
+  function openPasses() {
+    setShowPass(true);
+    setSelectedIds(new Set());
+    setEncoding(null);
+    setJobsStatut({});
+  }
+
   function handleChambreClick(c: Chambre) {
-    setConfirmRevoke(null);
+    setShowPass(false);
     if (encoding) {
       setEncoding(null);
       setJobsStatut({});
     }
-    if (isOccupied(c)) {
-      setSelectedIds(new Set());
-      setViewChambreId(c.id === viewChambreId ? null : c.id);
-      return;
-    }
-    setViewChambreId(null);
+    // Sélection unifiée : toute chambre (libre ou occupée) se sélectionne / se
+    // désélectionne au clic. Sélection multiple possible.
     const next = new Set(selectedIds);
     if (next.has(c.id)) next.delete(c.id);
     else next.add(c.id);
@@ -139,8 +166,8 @@ export default function SerruresPage() {
       const newSejours: Sejour[] = json.sejours ?? [];
       const newJobIds: string[] = (json.jobs ?? []).map((j: { id: string }) => j.id);
       await load();
-      setSelectedIds(new Set());
       if (methode === 'carte') {
+        setSelectedIds(new Set());
         setEncoding({
           sejours: newSejours,
           jobIds: newJobIds,
@@ -148,7 +175,8 @@ export default function SerruresPage() {
           totalCartes: json.total_cartes ?? 1,
         });
       } else if (newSejours[0]) {
-        setViewChambreId(newSejours[0].chambre_id);
+        // Code créé : on garde la chambre sélectionnée pour afficher son code/validité.
+        setSelectedIds(new Set([newSejours[0].chambre_id]));
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
@@ -157,16 +185,21 @@ export default function SerruresPage() {
     }
   }
 
-  async function revoke(sejourId: string) {
+  async function createPass(label: string) {
     setBusy(true);
+    setEncoding(null);
+    setJobsStatut({});
     try {
-      const res = await fetch(`/api/serrures/sejours/${sejourId}`, { method: 'DELETE' });
+      const res = await fetch('/api/serrures/passes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error);
-      await load();
-      setViewChambreId(null);
-      setConfirmRevoke(null);
-      toast.success('Séjour révoqué');
+      await loadPasses();
+      setSelectedIds(new Set());
+      setEncoding({ sejours: [], jobIds: [json.job.id], carteIndex: 1, totalCartes: 1 });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -174,19 +207,70 @@ export default function SerruresPage() {
     }
   }
 
-  async function addCarteSupplementaire(sejourId: string) {
+  async function replacePass(passId: string) {
+    setBusy(true);
+    setEncoding(null);
+    setJobsStatut({});
+    try {
+      const res = await fetch(`/api/serrures/passes/${passId}/replace`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      await loadPasses();
+      setEncoding({ sejours: [], jobIds: [json.job.id], carteIndex: 1, totalCartes: 1 });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deletePass(passId: string) {
     setBusy(true);
     try {
-      const res = await fetch(`/api/serrures/sejours/${sejourId}/carte-supplementaire`, {
+      const res = await fetch(`/api/serrures/passes/${passId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      await loadPasses();
+      toast.success('Pass supprimé');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reencode(mode: 'replace' | 'add') {
+    const occ = chambres.filter((c) => selectedIds.has(c.id) && isOccupied(c));
+    if (occ.length !== 1) return;
+    const chambre = occ[0];
+    const [hStr, mStr] = checkoutTime.split(':');
+    setBusy(true);
+    setEncoding(null);
+    setJobsStatut({});
+    try {
+      const res = await fetch('/api/serrures/sejours/reencode', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chambre_id: chambre.id,
+          mode,
+          nuits,
+          nb_cartes: nbCartes,
+          checkout_hour: parseInt(hStr, 10),
+          checkout_min: parseInt(mStr ?? '0', 10),
+        }),
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error);
-      const sejoursLies = chambres
-        .map((c) => c.sejour)
-        .filter((s): s is Sejour => !!s && json.sejourIds.includes(s.id));
-      setViewChambreId(null);
-      setEncoding({ sejours: sejoursLies, jobIds: [json.job.id], carteIndex: 1, totalCartes: 1 });
+      const newJobIds: string[] = (json.jobs ?? []).map((j: { id: string }) => j.id);
+      await load();
+      setSelectedIds(new Set());
+      setEncoding({
+        sejours: json.sejour ? [json.sejour] : [],
+        jobIds: newJobIds,
+        carteIndex: 1,
+        totalCartes: json.total_cartes ?? 1,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -240,8 +324,10 @@ export default function SerruresPage() {
     );
   }
 
-  const viewChambre = viewChambreId ? chambres.find((c) => c.id === viewChambreId) : null;
   const selectedChambres = chambres.filter((c) => selectedIds.has(c.id));
+  // Détail (col droite) affiché quand une seule chambre occupée est sélectionnée.
+  const detailChambre =
+    selectedChambres.length === 1 && isOccupied(selectedChambres[0]) ? selectedChambres[0] : null;
 
   return (
     <main className="min-h-screen bg-stone-50">
@@ -259,35 +345,47 @@ export default function SerruresPage() {
       <div className="flex min-h-[calc(100vh-57px)]">
         {/* 1) Sidebar chambres */}
         <aside className="w-64 border-r border-stone-200/60 bg-white/40 overflow-y-auto py-4 shrink-0">
+          <div className="px-3 pb-3 mb-2 border-b border-stone-200/60">
+            <button
+              onClick={openPasses}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition ${
+                showPass
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
+                  : 'bg-white hover:bg-stone-100 text-stone-700 border border-stone-200'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Pass équipes
+            </button>
+          </div>
           <ul className="px-3 space-y-1">
             {chambres.map((c) => {
               const occ = isOccupied(c);
               const isSel = selectedIds.has(c.id);
-              const isViewing = viewChambreId === c.id;
               return (
                 <li key={c.id}>
                   <button
                     onClick={() => handleChambreClick(c)}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-left transition ${
-                      isViewing
-                        ? 'bg-emerald-100 ring-1 ring-emerald-300 text-emerald-900'
-                        : isSel
-                        ? 'bg-indigo-50 ring-1 ring-indigo-200 text-indigo-900'
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-left transition ring-1 ${
+                      isSel
+                        ? occ
+                          ? 'bg-emerald-100 ring-emerald-300 text-emerald-900'
+                          : 'bg-indigo-50 ring-indigo-200 text-indigo-900'
                         : occ
-                        ? 'bg-emerald-50/60 hover:bg-emerald-50 text-emerald-900'
-                        : 'hover:bg-white text-stone-700'
+                        ? 'bg-emerald-50/60 ring-transparent hover:bg-emerald-50 text-emerald-900'
+                        : 'ring-transparent hover:bg-white text-stone-700'
                     }`}
                   >
                     <span className="font-medium tabular-nums text-lg">{c.numero}</span>
                     <span>
-                      {occ && c.sejour ? (
+                      {isSel ? (
+                        <Check className={`w-4 h-4 ${occ ? 'text-emerald-600' : 'text-indigo-600'}`} />
+                      ) : occ && c.sejour ? (
                         c.sejour.methode === 'code' ? (
                           <KeyRound className="w-4 h-4" />
                         ) : (
                           <CreditCard className="w-4 h-4" />
                         )
-                      ) : isSel ? (
-                        <Check className="w-4 h-4 text-indigo-600" />
                       ) : (
                         <span className="text-xs text-stone-400">libre</span>
                       )}
@@ -303,6 +401,7 @@ export default function SerruresPage() {
         <section className="w-[420px] border-r border-stone-200/60 px-8 py-10 shrink-0">
           <ParamsPanel
             selectedChambres={selectedChambres}
+            occupiedCount={selectedChambres.filter(isOccupied).length}
             nuits={nuits}
             setNuits={setNuits}
             nbCartes={nbCartes}
@@ -312,6 +411,8 @@ export default function SerruresPage() {
             busy={busy}
             onCarte={() => createSejour('carte')}
             onCode={() => createSejour('code')}
+            onReplace={() => reencode('replace')}
+            onAdd={() => reencode('add')}
             onClear={() => setSelectedIds(new Set())}
           />
         </section>
@@ -330,16 +431,16 @@ export default function SerruresPage() {
                   setJobsStatut({});
                 }}
               />
-            ) : viewChambre && viewChambre.sejour ? (
-              <ChambreDetail
-                chambre={viewChambre}
+            ) : showPass ? (
+              <PassPanel
+                passes={passes}
                 busy={busy}
-                confirmRevoke={confirmRevoke === viewChambre.sejour.id}
-                onAskRevoke={() => setConfirmRevoke(viewChambre.sejour!.id)}
-                onCancelRevoke={() => setConfirmRevoke(null)}
-                onConfirmRevoke={() => revoke(viewChambre.sejour!.id)}
-                onAddCarte={() => addCarteSupplementaire(viewChambre.sejour!.id)}
+                onCreate={createPass}
+                onReplace={replacePass}
+                onDelete={deletePass}
               />
+            ) : detailChambre && detailChambre.sejour ? (
+              <ChambreDetail chambre={detailChambre} />
             ) : (
               <EmptyInfo />
             )}
@@ -362,6 +463,159 @@ function EmptyInfo() {
         ou une occupée pour voir le code et la validité.
       </p>
     </div>
+  );
+}
+
+// ─── Pass équipes (ouvert via le bouton "Pass équipes" de la sidebar) ────────
+
+function PassPanel(props: {
+  passes: Pass[];
+  busy: boolean;
+  onCreate: (label: string) => void;
+  onReplace: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const { passes, busy, onCreate, onReplace, onDelete } = props;
+  const [label, setLabel] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <Label>Pass équipes</Label>
+        <span className="text-xs text-stone-400">{passes.length} pass</span>
+      </div>
+
+      <div className="rounded-2xl bg-white border border-stone-200/60 p-4 mb-6">
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="Nom du pass (ex. Ménage, Maintenance)"
+          className="w-full h-11 rounded-xl px-4 text-sm bg-stone-50 border border-stone-200 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 text-stone-800 mb-3"
+        />
+        <button
+          onClick={() => {
+            onCreate(label);
+            setLabel('');
+          }}
+          disabled={busy}
+          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 font-medium shadow-sm shadow-indigo-200 transition"
+        >
+          <Users className="w-5 h-5" />
+          Nouveau pass
+        </button>
+        <p className="mt-2 text-[11px] text-stone-400">
+          Carte valable 1 an, ouvre toutes les chambres.
+        </p>
+      </div>
+
+      {passes.length === 0 ? (
+        <p className="text-center text-xs text-stone-400 mt-10">Aucun pass créé pour l’instant.</p>
+      ) : (
+        <ul className="space-y-3">
+          {passes.map((p) => (
+            <PassRow
+              key={p.id}
+              pass={p}
+              busy={busy}
+              confirmDelete={confirmDelete === p.id}
+              onAskDelete={() => setConfirmDelete(p.id)}
+              onCancelDelete={() => setConfirmDelete(null)}
+              onConfirmDelete={() => {
+                onDelete(p.id);
+                setConfirmDelete(null);
+              }}
+              onReplace={() => onReplace(p.id)}
+            />
+          ))}
+        </ul>
+      )}
+
+      <p className="mt-6 text-[11px] text-stone-400 leading-relaxed">
+        Les pass n’apparaissent pas dans la liste des chambres. « Remplacer » ré-encode une
+        nouvelle carte ; sans gateway, l’ancienne reste valide jusqu’à sa date.
+      </p>
+    </div>
+  );
+}
+
+function PassRow(props: {
+  pass: Pass;
+  busy: boolean;
+  confirmDelete: boolean;
+  onAskDelete: () => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: () => void;
+  onReplace: () => void;
+}) {
+  const { pass, busy, confirmDelete, onAskDelete, onCancelDelete, onConfirmDelete, onReplace } = props;
+  const fin = new Date(pass.fin);
+  const finStr = fin.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+  const encoding = !!pass.job_statut && !['done', 'error'].includes(pass.job_statut);
+  const failed = pass.job_statut === 'error';
+
+  return (
+    <li className="rounded-2xl bg-white border border-stone-200/60 p-4">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-9 h-9 rounded-full bg-stone-100 flex items-center justify-center shrink-0">
+          <CreditCard className="w-4 h-4 text-stone-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-stone-800 truncate">{pass.label || 'Pass'}</div>
+          <div className="text-xs text-stone-500">Valide jusqu’au {finStr}</div>
+        </div>
+        {encoding && (
+          <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Encodage
+          </span>
+        )}
+        {failed && (
+          <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+            <AlertCircle className="w-3 h-3" />
+            Échec
+          </span>
+        )}
+      </div>
+
+      {!confirmDelete ? (
+        <div className="flex gap-2">
+          <button
+            onClick={onReplace}
+            disabled={busy}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 disabled:opacity-50 transition text-sm font-medium"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Remplacer
+          </button>
+          <button
+            onClick={onAskDelete}
+            disabled={busy}
+            className="px-3 py-2.5 rounded-xl bg-white hover:bg-stone-100 text-stone-500 border border-stone-200 disabled:opacity-50 transition"
+            title="Supprimer de la liste"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <button
+            onClick={onCancelDelete}
+            disabled={busy}
+            className="flex-1 py-2.5 rounded-xl bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 disabled:opacity-50 transition text-sm"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={onConfirmDelete}
+            disabled={busy}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition text-sm font-medium"
+          >
+            Supprimer
+          </button>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -452,6 +706,7 @@ function NumberPills({
 
 function ParamsPanel(props: {
   selectedChambres: Chambre[];
+  occupiedCount: number;
   nuits: number;
   setNuits: (n: number) => void;
   nbCartes: number;
@@ -461,10 +716,13 @@ function ParamsPanel(props: {
   busy: boolean;
   onCarte: () => void;
   onCode: () => void;
+  onReplace: () => void;
+  onAdd: () => void;
   onClear: () => void;
 }) {
   const {
     selectedChambres,
+    occupiedCount,
     nuits,
     setNuits,
     nbCartes,
@@ -474,11 +732,17 @@ function ParamsPanel(props: {
     busy,
     onCarte,
     onCode,
+    onReplace,
+    onAdd,
     onClear,
   } = props;
 
   const hasSelection = selectedChambres.length > 0;
   const multi = selectedChambres.length > 1;
+  // Composition de la sélection → quelles actions proposer.
+  const allLibre = hasSelection && occupiedCount === 0;
+  const singleOccupied = selectedChambres.length === 1 && occupiedCount === 1;
+  const mixedOrMultiOccupied = occupiedCount > 0 && !singleOccupied;
   const [hStr, mStr] = checkoutTime.split(':');
   const checkout = new Date(Date.now() + nuits * 86_400_000);
   checkout.setHours(parseInt(hStr, 10) || 11, parseInt(mStr || '0', 10), 0, 0);
@@ -548,25 +812,63 @@ function ParamsPanel(props: {
           </div>
         </div>
 
-        <div className="space-y-3">
-          <button
-            onClick={onCarte}
-            disabled={busy}
-            className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-indigo-200 transition"
-          >
-            <CreditCard className="w-6 h-6" />
-            {nbCartes > 1 ? `${nbCartes} cartes` : 'Carte'}
-          </button>
-          <button
-            onClick={onCode}
-            disabled={busy || multi}
-            title={multi ? 'Le code n’est possible que pour une seule chambre' : undefined}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition"
-          >
-            <KeyRound className="w-4 h-4" />
-            Code
-          </button>
-        </div>
+        {/* Chambres libres → créer ; chambre occupée seule → ré-encoder. */}
+        {allLibre && (
+          <div className="space-y-3">
+            <button
+              onClick={onCarte}
+              disabled={busy}
+              className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-indigo-200 transition"
+            >
+              <CreditCard className="w-6 h-6" />
+              {nbCartes > 1 ? `${nbCartes} cartes` : 'Carte'}
+            </button>
+            <button
+              onClick={onCode}
+              disabled={busy || multi}
+              title={multi ? 'Le code n’est possible que pour une seule chambre' : undefined}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition"
+            >
+              <KeyRound className="w-4 h-4" />
+              Code
+            </button>
+          </div>
+        )}
+
+        {singleOccupied && (
+          <div className="space-y-3">
+            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              Chambre déjà occupée — ré-encodage.
+            </div>
+            <button
+              onClick={onReplace}
+              disabled={busy}
+              className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-indigo-200 transition"
+            >
+              <RefreshCw className="w-6 h-6" />
+              Remplacer ({nbCartes > 1 ? `${nbCartes} cartes` : '1 carte'}, {nuits} nuit{nuits > 1 ? 's' : ''})
+            </button>
+            <button
+              onClick={onAdd}
+              disabled={busy}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 disabled:opacity-50 text-sm font-medium transition"
+            >
+              <Plus className="w-4 h-4" />
+              Ajouter {nbCartes > 1 ? `${nbCartes} cartes` : 'une carte'} (mêmes dates)
+            </button>
+            <p className="text-[11px] text-stone-400 leading-relaxed">
+              « Remplacer » : nouvelle validité (nuits/checkout ci-dessus). « Ajouter » : garde les
+              dates actuelles, encode juste des cartes en plus.
+            </p>
+          </div>
+        )}
+
+        {mixedOrMultiOccupied && (
+          <div className="text-sm text-stone-500 bg-stone-100 rounded-xl px-4 py-3">
+            Pour ré-encoder une chambre occupée, sélectionne-la <strong>seule</strong>. (Sélection
+            multiple réservée aux chambres libres.)
+          </div>
+        )}
       </div>
     </div>
   );
@@ -574,16 +876,8 @@ function ParamsPanel(props: {
 
 // ─── Détail chambre (col droite) ────────────────────────────────────────────
 
-function ChambreDetail(props: {
-  chambre: Chambre;
-  busy: boolean;
-  confirmRevoke: boolean;
-  onAskRevoke: () => void;
-  onCancelRevoke: () => void;
-  onConfirmRevoke: () => void;
-  onAddCarte: () => void;
-}) {
-  const { chambre, busy, confirmRevoke, onAskRevoke, onCancelRevoke, onConfirmRevoke, onAddCarte } = props;
+function ChambreDetail(props: { chambre: Chambre }) {
+  const { chambre } = props;
   const sejour = chambre.sejour!;
   const fin = new Date(sejour.fin);
   const debut = new Date(sejour.debut);
@@ -665,44 +959,10 @@ function ChambreDetail(props: {
         </div>
       </div>
 
-      {sejour.methode === 'carte' && sejour.statut === 'actif' && !confirmRevoke && (
-        <button
-          onClick={onAddCarte}
-          disabled={busy}
-          className="w-full flex items-center justify-center gap-2 py-3 mb-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 disabled:opacity-50 transition"
-        >
-          <Plus className="w-4 h-4" />
-          Carte supplémentaire
-        </button>
-      )}
-
-      {!confirmRevoke ? (
-        <button
-          onClick={onAskRevoke}
-          disabled={busy}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 disabled:opacity-50 transition"
-        >
-          <RotateCcw className="w-4 h-4" />
-          Révoquer
-        </button>
-      ) : (
-        <div className="flex gap-2">
-          <button
-            onClick={onCancelRevoke}
-            disabled={busy}
-            className="flex-1 py-3 rounded-xl bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 disabled:opacity-50 transition text-sm"
-          >
-            Annuler
-          </button>
-          <button
-            onClick={onConfirmRevoke}
-            disabled={busy}
-            className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition text-sm font-medium"
-          >
-            Confirmer la révocation
-          </button>
-        </div>
-      )}
+      <p className="text-[11px] text-stone-400 leading-relaxed">
+        Pour prolonger, remplacer ou ajouter une carte : la chambre est déjà sélectionnée — utilise
+        les boutons de la colonne de gauche.
+      </p>
     </div>
   );
 }

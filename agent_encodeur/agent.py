@@ -17,10 +17,12 @@ Variables d'environnement (fichier `.env` chargé au lancement) :
     TTHOTEL_API_BASE            ex. https://euapi.ttlock.com
     TTHOTEL_CLIENT_ID
     TTHOTEL_CLIENT_SECRET
-    AGENT_ENCODER_PORT          ex. COM3  (si vide → mode stub)
+    AGENT_ENCODER_PORT          vide ou "auto" → auto-détection USB (E5+),
+                                "COMx" → port explicite (E3/E4),
+                                "stub" → mode simulation
     AGENT_ENCODER_SECTORS       défaut "0000000000011111"  (secteurs TTHotel 12-16)
 
-Si AGENT_ENCODER_PORT n'est pas défini ou que CardEncoder.dll est absent,
+Si CardEncoder.dll est absent ou AGENT_ENCODER_PORT="stub",
 l'agent passe en mode STUB (simule 2s puis marque done).
 """
 
@@ -75,11 +77,17 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-7s %(message)s",
-    datefmt="%H:%M:%S",
-)
+# Log vers console ET fichier (rotation 5 Mo, 3 backups) pour que `pythonw` garde une trace.
+_log_dir = Path(__file__).with_name("logs")
+_log_dir.mkdir(exist_ok=True)
+_log_file = _log_dir / "agent.log"
+_formatter = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+_console = logging.StreamHandler()
+_console.setFormatter(_formatter)
+from logging.handlers import RotatingFileHandler
+_file = RotatingFileHandler(_log_file, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+_file.setFormatter(_formatter)
+logging.basicConfig(level=logging.INFO, handlers=[_console, _file])
 log = logging.getLogger("agent")
 
 
@@ -144,24 +152,39 @@ except Exception as e:
     is_available = lambda: False  # type: ignore
 
 _encoder: Any = None
-USE_REAL_ENCODER = bool(ENCODER_PORT) and is_available()
+USE_REAL_ENCODER = ENCODER_PORT.lower() != "stub" and is_available()
 
 
 def setup_encoder() -> None:
-    """Connect au port, init avec hotelInfo, configure les secteurs. Une seule fois."""
+    """Valide la DLL + détecte l'encodeur sans tenir la connexion.
+    L'encodeur n'est connecté qu'au moment où un job arrive (cf encode_card),
+    pour laisser TTHotel desktop ou autres apps l'utiliser entre les jobs."""
     global _encoder
     if not USE_REAL_ENCODER:
         log.info(
-            "Mode STUB (pas de port ou DLL absent). "
-            "Définir AGENT_ENCODER_PORT et placer CardEncoder.dll dans lib/ pour activer."
+            "Mode STUB (AGENT_ENCODER_PORT=stub ou DLL absent). "
+            "Pour activer : placer CardEncoder.dll dans lib/ et laisser "
+            "AGENT_ENCODER_PORT vide (auto-détection E5+) ou =COMx (E3/E4)."
         )
         return
-    log.info(f"Initialisation encodeur sur {ENCODER_PORT}…")
+    mode = f"port={ENCODER_PORT}" if ENCODER_PORT else "auto-détection USB"
+    log.info(f"Validation encodeur ({mode})…")
     _encoder = CardEncoder()
-    _encoder.connect(ENCODER_PORT)
-    _encoder.init_encoder(get_hotel_info())
-    _encoder.set_sectors(ENCODER_SECTORS)
-    log.info("Encodeur prêt")
+    # Test de connexion bref pour identifier le modèle + valider la DLL,
+    # puis on relâche l'encodeur immédiatement. Si l'encodeur est déjà tenu
+    # par une autre app (TTHotel desktop), on continue quand même : la connexion
+    # sera retentée à chaque job.
+    try:
+        _encoder.connect(ENCODER_PORT)
+        try:
+            ver = _encoder.get_version()
+            if ver:
+                log.info(f"Encodeur détecté : {ver}")
+        finally:
+            _encoder.disconnect()
+        log.info("Encodeur libre (sera connecté à la demande à chaque job)")
+    except EncoderError as e:
+        log.warning(f"Encodeur indispo au boot ({e}). On retentera à chaque job.")
 
 
 # ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -266,38 +289,67 @@ def encode_card(job: dict[str, Any]) -> dict[str, Any]:
 
     hotel_info = get_hotel_info()
     written: list[dict[str, Any]] = []
+    card_no: str | None = None
 
-    for lock in locks:
+    # Ouvre une session DLL (connect + init + set_sectors), puis disconnect
+    # à la sortie pour laisser l'encodeur libre pour TTHotel desktop ou autres.
+    with _encoder.session(hotel_info, port=ENCODER_PORT, sectors=ENCODER_SECTORS) as enc:
         try:
-            _encoder.write_card(
-                hotel_info,
-                lock["buildNo"],
-                lock["floorNo"],
-                lock["mac"],
-                expire_sec,
-                False,
-            )
-            written.append({"lockId": lock["lockId"], "mac": lock["mac"]})
-            log.info(f"  ✓ écrit pour {lock['mac']} (build={lock['buildNo']}, floor={lock['floorNo']})")
-        except EncoderError as e:
-            # Code 13 = hotelInfo expiré → refresh + retry une fois
-            if e.code == 13:
-                log.warning("hotelInfo expiré, refresh + retry")
-                _hotel_info_cache["fetched_at"] = 0  # force refresh
-                hotel_info = get_hotel_info()
-                _encoder.write_card(
-                    hotel_info, lock["buildNo"], lock["floorNo"], lock["mac"],
-                    expire_sec, False,
-                )
-                written.append({"lockId": lock["lockId"], "mac": lock["mac"], "retried": True})
-            else:
-                raise
-
-    card_no = None
-    try:
-        card_no = _encoder.get_card_no()
-    except Exception:
-        pass
+            card_initialized = False  # init_card appelé au plus une fois par carte
+            for i, lock in enumerate(locks):
+                try:
+                    enc.write_card(
+                        hotel_info,
+                        lock["buildNo"],
+                        lock["floorNo"],
+                        lock["mac"],
+                        expire_sec,
+                        False,
+                    )
+                    written.append({"lockId": lock["lockId"], "mac": lock["mac"]})
+                    log.info(f"  [OK] ecrit pour {lock['mac']} (build={lock['buildNo']}, floor={lock['floorNo']})")
+                except EncoderError as e:
+                    # Code 13 = hotelInfo expiré → refresh, ré-init, retry une fois
+                    if e.code == 13:
+                        log.warning("hotelInfo expiré, refresh + retry")
+                        _hotel_info_cache["fetched_at"] = 0  # force refresh
+                        hotel_info = get_hotel_info()
+                        enc.init_encoder(hotel_info)
+                        enc.write_card(
+                            hotel_info, lock["buildNo"], lock["floorNo"], lock["mac"],
+                            expire_sec, False,
+                        )
+                        written.append({"lockId": lock["lockId"], "mac": lock["mac"], "retried": True})
+                    # Code 106 sur la 1re écriture = carte vierge → init puis retry.
+                    # Sur les écritures suivantes la carte est forcément déjà initialisée,
+                    # donc 106 = vraie erreur (carte d'un autre hôtel).
+                    elif e.code == 106 and i == 0 and not card_initialized:
+                        log.warning("Carte vierge détectée (code 106), CE_InitCard…")
+                        try:
+                            enc.init_card(hotel_info)
+                        except EncoderError as init_err:
+                            raise EncoderError(
+                                f"CE_InitCard a échoué après code 106 — carte probablement d'un autre hôtel : {init_err}",
+                                init_err.code,
+                            ) from init_err
+                        card_initialized = True
+                        log.info("Carte initialisée, retry write_card")
+                        enc.write_card(
+                            hotel_info, lock["buildNo"], lock["floorNo"], lock["mac"],
+                            expire_sec, False,
+                        )
+                        written.append({"lockId": lock["lockId"], "mac": lock["mac"], "initialized": True})
+                        log.info(f"  [OK] ecrit pour {lock['mac']} (build={lock['buildNo']}, floor={lock['floorNo']})")
+                    else:
+                        raise
+            try:
+                card_no = enc.get_card_no()
+            except Exception:
+                pass
+            enc.beep(150, 50, 1)  # succès : un bip court (mêmes paramètres que TTHotel desktop)
+        except Exception:
+            enc.beep(50, 50, 2)  # erreur : double bip bref
+            raise
 
     return {
         "simulated": False,
