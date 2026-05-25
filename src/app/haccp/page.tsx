@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  Thermometer, AlertTriangle, Battery, Wifi,
+  Thermometer, AlertTriangle, Battery,
   Loader2, RefreshCw, Check,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -415,32 +415,25 @@ function SensorCard({
           )}
         </div>
 
-        {latest && (latest.battery !== null || latest.rssi !== null) && (
+        {latest && latest.battery !== null && (
           <div className="flex gap-3 text-xs text-muted-foreground">
-            {latest.battery !== null && (
-              <span
-                className={`flex items-center gap-1 ${
-                  latest.battery >= 70 ? 'text-emerald-600'
-                  : latest.battery >= 30 ? 'text-amber-600'
-                  : 'text-red-600 font-medium'
-                }`}
-                title={
-                  latest.battery >= 70 ? 'Pile pleine'
-                  : latest.battery >= 30 ? 'Pile moyenne — à surveiller'
-                  : 'Pile faible — à remplacer'
-                }
-              >
-                <Battery className="w-3 h-3" />
-                {latest.battery >= 70 ? 'Pile OK'
-                  : latest.battery >= 30 ? 'Pile moyenne'
-                  : 'Pile faible'}
-              </span>
-            )}
-            {latest.rssi !== null && (
-              <span className="flex items-center gap-1">
-                <Wifi className="w-3 h-3" /> {latest.rssi}
-              </span>
-            )}
+            <span
+              className={`flex items-center gap-1 ${
+                latest.battery >= 70 ? 'text-emerald-600'
+                : latest.battery >= 30 ? 'text-amber-600'
+                : 'text-red-600 font-medium'
+              }`}
+              title={
+                latest.battery >= 70 ? 'Pile pleine'
+                : latest.battery >= 30 ? 'Pile moyenne — à surveiller'
+                : 'Pile faible — à remplacer'
+              }
+            >
+              <Battery className="w-3 h-3" />
+              {latest.battery >= 70 ? 'Pile OK'
+                : latest.battery >= 30 ? 'Pile moyenne'
+                : 'Pile faible'}
+            </span>
           </div>
         )}
       </CardContent>
