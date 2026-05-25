@@ -1,0 +1,12 @@
+{
+  "name": "haccp-mqtt-bridge",
+  "version": "0.1.0",
+  "description": "Forwarder MQTT local → siteconsignes (Supabase) pour relevés HACCP",
+  "main": "index.js",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
+    "mqtt": "^5.10.1"
+  }
+}

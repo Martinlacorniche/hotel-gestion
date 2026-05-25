@@ -1,0 +1,60 @@
+homeassistant:
+  enabled: false
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://mosquitto:1883
+serial:
+  port: /dev/ttyACM0
+  adapter: ember
+frontend:
+  enabled: true
+  port: 8080
+  host: 0.0.0.0
+advanced:
+  log_level: info
+  network_key:
+    - 42
+    - 22
+    - 96
+    - 85
+    - 73
+    - 84
+    - 142
+    - 199
+    - 252
+    - 61
+    - 195
+    - 226
+    - 161
+    - 196
+    - 34
+    - 34
+  pan_id: 30363
+  ext_pan_id:
+    - 92
+    - 47
+    - 242
+    - 248
+    - 198
+    - 241
+    - 126
+    - 162
+  channel: 11
+availability:
+  enabled: true
+  active:
+    timeout: 10
+  passive:
+    timeout: 1500
+version: 5
+devices:
+  '0xa4c138904d90e259':
+    friendly_name: frigo_gauche
+  '0xa4c1384ff0395fcc':
+    friendly_name: frigo_droit
+  '0xa4c138635ea9d4b3':
+    friendly_name: congel_rs
+  '0xa4c138ff6e8b54f0':
+    friendly_name: congel_pain
+  '0xa4c1386cc9d97858':
+    friendly_name: congel_viennoiserie

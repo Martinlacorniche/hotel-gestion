@@ -1,0 +1,58 @@
+# ============================================================================
+# Stack Zigbee Gateway HACCP — à déployer sur le mini-PC Linux de chaque hôtel
+# ============================================================================
+# Services :
+#   mosquitto      : broker MQTT local (port 1883)
+#   zigbee2mqtt   : pont Zigbee↔MQTT via dongle Sonoff ZBDongle-E
+#   mqtt-bridge   : forwarder qui publie les relevés vers le siteconsignes prod
+# ============================================================================
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: haccp-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"      # MQTT local (LAN uniquement, ne pas exposer en WAN)
+      - "9001:9001"      # WebSocket (debug Z2M frontend)
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:latest
+    container_name: haccp-zigbee2mqtt
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    ports:
+      - "8080:8080"      # frontend Z2M (LAN uniquement)
+    volumes:
+      - ./zigbee2mqtt/data:/app/data
+      - /run/udev:/run/udev:ro
+    devices:
+      - ${ZIGBEE_DONGLE_PATH:-/dev/ttyACM0}:/dev/ttyACM0
+    environment:
+      - TZ=Europe/Paris
+
+  mqtt-bridge:
+    image: node:22-alpine
+    container_name: haccp-mqtt-bridge
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    working_dir: /app
+    volumes:
+      - ./bridge:/app
+    command: sh -c "npm install --omit=dev && node index.js"
+    environment:
+      - MQTT_LOCAL_URL=mqtt://mosquitto:1883
+      - HOTEL_ID=${HOTEL_ID}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - TZ=Europe/Paris
+
+volumes:
+  mosquitto-data:
+  mosquitto-log:
