@@ -120,7 +120,6 @@ const CONFIG_FIELDS: Record<string, ConfigField[]> = {
   ],
   curiosites: [
     { key: "description", label: "Description courte", type: "textarea", translate: true },
-    { key: "note_prix",   label: "Note tarif", translate: true },
   ],
   byca: [
     { key: "description", label: "Description", type: "textarea", translate: true },
@@ -269,18 +268,13 @@ function TilesTab() {
     const swapIdx = idx + dir;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
 
-    const a = sorted[idx];
-    const b = sorted[swapIdx];
-    const newTiles = tiles.map(t => {
-      if (t.id === a.id) return { ...t, ordre: b.ordre };
-      if (t.id === b.id) return { ...t, ordre: a.ordre };
-      return t;
-    });
-    setTiles(newTiles);
-    await Promise.all([
-      supabase.from("wifi_tiles").update({ ordre: b.ordre }).eq("id", a.id),
-      supabase.from("wifi_tiles").update({ ordre: a.ordre }).eq("id", b.id),
-    ]);
+    [sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]];
+    const reordered = sorted.map((t, i) => ({ ...t, ordre: i }));
+    const byId = new Map(reordered.map(t => [t.id, t.ordre]));
+    setTiles(prev => prev.map(t => byId.has(t.id) ? { ...t, ordre: byId.get(t.id)! } : t));
+    await Promise.all(reordered.map(t =>
+      supabase.from("wifi_tiles").update({ ordre: t.ordre }).eq("id", t.id)
+    ));
   };
 
   const deleteTile = async (id: string) => {
@@ -1203,17 +1197,14 @@ function CuriositesTab() {
     const idx = sorted.findIndex(i => i.id === item.id);
     const swapIdx = idx + dir;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const a = sorted[idx];
-    const b = sorted[swapIdx];
-    setItems(prev => prev.map(i => {
-      if (i.id === a.id) return { ...i, ordre: b.ordre };
-      if (i.id === b.id) return { ...i, ordre: a.ordre };
-      return i;
-    }));
-    await Promise.all([
-      supabase.from("wifi_curiosites").update({ ordre: b.ordre }).eq("id", a.id),
-      supabase.from("wifi_curiosites").update({ ordre: a.ordre }).eq("id", b.id),
-    ]);
+
+    [sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]];
+    const reordered = sorted.map((i, n) => ({ ...i, ordre: n }));
+    const byId = new Map(reordered.map(i => [i.id, i.ordre]));
+    setItems(prev => prev.map(i => byId.has(i.id) ? { ...i, ordre: byId.get(i.id)! } : i));
+    await Promise.all(reordered.map(i =>
+      supabase.from("wifi_curiosites").update({ ordre: i.ordre }).eq("id", i.id)
+    ));
   };
 
   useEffect(() => {
