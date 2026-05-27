@@ -240,17 +240,13 @@ function ActiveAlertsBanner({
 
   const acknowledge = async (alertId: string) => {
     setBusy(alertId);
-    const action = window.prompt('Action corrective réalisée (obligatoire) :');
-    if (!action || !action.trim()) {
-      setBusy(null);
-      return;
-    }
+    const now = new Date().toISOString();
     const { error } = await supabase
       .from('haccp_alerts')
       .update({
         acknowledged_by: userId,
-        acknowledged_at: new Date().toISOString(),
-        action_taken: action.trim(),
+        acknowledged_at: now,
+        resolved_at: now,
       })
       .eq('id', alertId);
     setBusy(null);
@@ -283,7 +279,7 @@ function ActiveAlertsBanner({
                 </span>
                 {ackd && (
                   <span className="ml-2 text-green-700 text-xs">
-                    ✓ acquittée — {a.action_taken}
+                    ✓ acquittée{a.action_taken ? ` — ${a.action_taken}` : ''}
                   </span>
                 )}
               </span>
