@@ -15,7 +15,8 @@ import {
   ChevronDown, ChevronRight, Wrench, Lightbulb, Droplets, Fan, Hammer,
   PaintRoller, DoorClosed, PlugZap, Plus, Calendar,
   CheckCircle, AlertCircle, Clock, Euro, ArrowRight, Trash2, Edit2,
-  LayoutGrid, List, History, MessageCircle, Send, XCircle
+  LayoutGrid, List, History, MessageCircle, Send, XCircle,
+  Snowflake, Sun, Zap, Search
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -65,6 +66,21 @@ const ROOM_OPTIONS_VOILES = [
 const TYPE_OPTIONS = [
   'plomberie','electricité','luminaires','sol','salle de bain','murs','portes','clim','dégat','autres'
 ];
+
+// --- CLIMATISATION : réseaux (1 réseau = 1 groupe extérieur / moteur) ---
+// Données en base (table public.clim_reseaux), éditables par les admins.
+type ClimReseau = {
+  id: string;
+  hotel_id: string;
+  label: string | null;
+  rooms: string[];
+  tableau: string | null;
+  sort_order: number;
+};
+
+// Titre d'un réseau : son nom libre s'il existe, sinon la liste de ses chambres.
+const climTitle = (r: ClimReseau) =>
+  r.label?.trim() || r.rooms.map(rm => (rm === 'Seminaire' ? 'Séminaire' : `#${rm}`)).join(' · ') || 'Réseau';
 
 // Couleurs "Vibrantes" pour moderniser
 const TYPE_COLORS: Record<string, string> = {
@@ -136,6 +152,11 @@ function MaintenancePageInner() {
   const [showCreate, setShowCreate] = useState(false);
   const [showClose, setShowClose] = useState<null | MaintItem>(null);
   const [editItem, setEditItem] = useState<MaintItem | null>(null);
+  const [climSearch, setClimSearch] = useState('');
+  const [climReseaux, setClimReseaux] = useState<ClimReseau[]>([]);
+  const [climEdit, setClimEdit] = useState<ClimReseau | 'new' | null>(null);
+  const isAdmin = ['admin', 'superadmin'].includes((rawUser as any)?.role);
+  const hasClim = climReseaux.length > 0 || isAdmin;
 
   // Chat (style SMS) sur tickets maintenance
   const [chatItem, setChatItem] = useState<MaintItem | null>(null);
@@ -215,6 +236,15 @@ function MaintenancePageInner() {
       setHotels(data || []);
     })();
   }, []);
+
+  useEffect(() => {
+    if (!hotelId) { setClimReseaux([]); return; }
+    (async () => {
+      const { data, error } = await supabase
+        .from('clim_reseaux').select('*').eq('hotel_id', hotelId).order('sort_order', { ascending: true });
+      if (!error) setClimReseaux((data as any) || []);
+    })();
+  }, [hotelId]);
 
   const switchHotel = (newId: string) => {
     if (!newId || newId === hotelId) return;
@@ -317,6 +347,42 @@ function MaintenancePageInner() {
     await supabase.from('maintenance').update(payload).eq('id', editItem.id);
     setItems(prev => prev.map(x => (x.id === editItem.id ? { ...x, ...payload } : x)));
     setEditItem(null);
+  };
+
+  // --- CLIM (réseaux / moteurs) ---
+  const normClim = climSearch.replace(/[#\s]/g, '').toLowerCase();
+  const climFiltered = !normClim
+    ? climReseaux
+    : climReseaux.filter(r =>
+        (r.label || '').toLowerCase().includes(normClim) ||
+        r.rooms.some(rm => rm.toLowerCase().includes(normClim)) ||
+        (r.tableau || '').toLowerCase().includes(normClim)
+      );
+  const reportClim = (r: ClimReseau) => {
+    setNewItem({ titre: `Clim — ${climTitle(r)}`, type: 'clim', chambres: [...r.rooms], commentaire: '' });
+    setShowCreate(true);
+  };
+  const saveClim = async (form: { label: string; rooms: string[]; tableau: string }, existing: ClimReseau | null) => {
+    if (!hotelId || form.rooms.length === 0) return;
+    if (existing) {
+      const payload = { label: form.label.trim() || null, rooms: form.rooms, tableau: form.tableau.trim() || null };
+      const { error } = await supabase.from('clim_reseaux').update(payload).eq('id', existing.id);
+      if (error) { alert('Erreur : ' + error.message); return; }
+      setClimReseaux(prev => prev.map(x => (x.id === existing.id ? { ...x, ...payload } : x)));
+    } else {
+      const nextOrder = climReseaux.reduce((m, x) => Math.max(m, x.sort_order), 0) + 1;
+      const payload = { hotel_id: hotelId, label: form.label.trim() || null, rooms: form.rooms, tableau: form.tableau.trim() || null, sort_order: nextOrder };
+      const { data, error } = await supabase.from('clim_reseaux').insert(payload).select().single();
+      if (error) { alert('Erreur : ' + error.message); return; }
+      setClimReseaux(prev => [...prev, data as any]);
+    }
+    setClimEdit(null);
+  };
+  const deleteClim = async (id: string) => {
+    if (!confirm('Supprimer ce réseau clim ?')) return;
+    const { error } = await supabase.from('clim_reseaux').delete().eq('id', id);
+    if (error) { alert('Erreur : ' + error.message); return; }
+    setClimReseaux(prev => prev.filter(x => x.id !== id));
   };
 
   // --- CHAT ACTIONS ---
@@ -422,7 +488,7 @@ function MaintenancePageInner() {
         <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
             <Tabs defaultValue="type" className="h-full flex flex-col">
                 <div className="shrink-0 mb-6">
-                    <TabsList className="bg-white/60 backdrop-blur-md p-1.5 rounded-2xl border border-white shadow-sm w-full max-w-md grid grid-cols-3">
+                    <TabsList className={`bg-white/60 backdrop-blur-md p-1.5 rounded-2xl border border-white shadow-sm w-full grid ${hasClim ? 'max-w-2xl grid-cols-4' : 'max-w-md grid-cols-3'}`}>
                         <TabsTrigger value="type" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
                             <LayoutGrid className="w-4 h-4 mr-2 mb-0.5 inline-block" />Par Type
                         </TabsTrigger>
@@ -432,6 +498,11 @@ function MaintenancePageInner() {
                         <TabsTrigger value="historique" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
                             <History className="w-4 h-4 mr-2 mb-0.5 inline-block" />Historique
                         </TabsTrigger>
+                        {hasClim && (
+                          <TabsTrigger value="clim" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
+                              <Snowflake className="w-4 h-4 mr-2 mb-0.5 inline-block" />Clim
+                          </TabsTrigger>
+                        )}
                     </TabsList>
                 </div>
 
@@ -583,6 +654,54 @@ function MaintenancePageInner() {
                                 </TabsContent>
                             </div>
                         </Tabs>
+                    </TabsContent>
+
+                    {/* --- CLIM (réseaux / moteurs) --- */}
+                    <TabsContent value="clim" className="mt-0 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {/* Recherche + rappel mode télécommandes */}
+                        <div className="flex flex-col md:flex-row md:items-center gap-3 mb-6">
+                            <div className="relative flex-1 max-w-md">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <Input
+                                    placeholder="Chercher une chambre (ex. 26)…"
+                                    value={climSearch}
+                                    onChange={(e) => setClimSearch(e.target.value)}
+                                    className="pl-11 h-12 rounded-2xl bg-white border-slate-200 text-base font-medium shadow-sm"
+                                />
+                                {climSearch && (
+                                    <button onClick={() => setClimSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600" aria-label="Effacer">
+                                        <XCircle className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs font-bold bg-white border border-slate-200 rounded-2xl px-4 h-12 shadow-sm shrink-0">
+                                <span className="text-slate-400 uppercase tracking-wide">Même mode :</span>
+                                <span className="flex items-center gap-1 text-amber-600"><Sun className="w-4 h-4" /> Hiver</span>
+                                <span className="flex items-center gap-1 text-sky-600"><Snowflake className="w-4 h-4" /> Été</span>
+                            </div>
+                            {isAdmin && (
+                                <Button onClick={() => setClimEdit('new')} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl h-12 px-5 font-bold shadow-lg shadow-indigo-200 shrink-0">
+                                    <Plus className="w-4 h-4 mr-2" /> Réseau
+                                </Button>
+                            )}
+                        </div>
+
+                        {climFiltered.length === 0 ? (
+                            <EmptyState message={normClim ? `Aucun réseau pour « ${climSearch} »` : (isAdmin ? 'Aucun réseau clim. Ajoute-en un avec le bouton « Réseau ».' : 'Aucun réseau clim configuré.')} />
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-6">
+                                {climFiltered.map(r => (
+                                    <ClimCard
+                                        key={r.id}
+                                        r={r}
+                                        query={normClim}
+                                        onReport={() => reportClim(r)}
+                                        onEdit={isAdmin ? () => setClimEdit(r) : undefined}
+                                        onDelete={isAdmin ? () => deleteClim(r.id) : undefined}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </TabsContent>
                 </div>
             </Tabs>
@@ -805,6 +924,16 @@ function MaintenancePageInner() {
         );
       })()}
 
+      {/* CLIM — créer / modifier un réseau */}
+      {climEdit && (
+        <ClimEditModal
+          initial={climEdit === 'new' ? null : climEdit}
+          ROOM_OPTIONS={ROOM_OPTIONS}
+          onCancel={() => setClimEdit(null)}
+          onSave={(form) => saveClim(form, climEdit === 'new' ? null : climEdit)}
+        />
+      )}
+
     </div>
   );
 }
@@ -987,6 +1116,86 @@ function EditModal({ item, form, setForm, onCancel, onSave, ROOM_OPTIONS }: any)
       </div>
     </div>
   );
+}
+
+function ClimCard({ r, query, onReport, onEdit, onDelete }: { r: ClimReseau; query: string; onReport: () => void; onEdit?: () => void; onDelete?: () => void }) {
+    return (
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+            {/* Moteur = chambres reliées */}
+            <div className="flex items-center gap-2.5 px-4 pt-3 pb-2">
+                <Fan className="w-4 h-4 text-indigo-500 shrink-0" />
+                <div className="flex-1 min-w-0 text-sm font-extrabold text-slate-800 leading-tight">
+                    {r.label?.trim()
+                        ? <span className="truncate">{r.label}</span>
+                        : r.rooms.map((rm, i) => {
+                            const hit = !!query && rm.toLowerCase().includes(query);
+                            return (
+                                <span key={rm}>
+                                    {i > 0 && <span className="text-slate-300"> · </span>}
+                                    <span className={hit ? 'text-indigo-600 bg-indigo-50 rounded px-1' : ''}>
+                                        {rm === 'Seminaire' ? 'Séminaire' : `#${rm}`}
+                                    </span>
+                                </span>
+                            );
+                        })}
+                </div>
+                {(onEdit || onDelete) && (
+                    <div className="flex items-center gap-0.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        {onEdit && <button onClick={onEdit} className="p-1 text-slate-300 hover:text-indigo-600 rounded transition" title="Modifier"><Edit2 className="w-3.5 h-3.5" /></button>}
+                        {onDelete && <button onClick={onDelete} className="p-1 text-slate-300 hover:text-red-600 rounded transition" title="Supprimer"><Trash2 className="w-3.5 h-3.5" /></button>}
+                    </div>
+                )}
+            </div>
+            {/* Disjoncteur + signalement */}
+            <div className="flex items-center gap-2 px-4 pb-2.5 pt-1.5 border-t border-slate-50">
+                <Zap className={`w-3.5 h-3.5 shrink-0 ${r.tableau ? 'text-amber-500' : 'text-slate-300'}`} />
+                <span className={`flex-1 min-w-0 truncate text-xs ${r.tableau ? 'text-slate-500 font-medium' : 'text-amber-500 font-semibold'}`}>
+                    {r.tableau || 'À renseigner'}
+                </span>
+                <button onClick={onReport} title="Signaler une panne sur ce réseau" className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 rounded-md px-2 h-7 transition active:scale-95">
+                    <Plus className="w-3 h-3" /> Panne
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function ClimEditModal({ initial, ROOM_OPTIONS, onCancel, onSave }: { initial: ClimReseau | null; ROOM_OPTIONS: string[]; onCancel: () => void; onSave: (form: { label: string; rooms: string[]; tableau: string }) => void }) {
+    const [label, setLabel] = useState(initial?.label || '');
+    const [rooms, setRooms] = useState<string[]>(initial?.rooms || []);
+    const [tableau, setTableau] = useState(initial?.tableau || '');
+    return (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-3xl w-full max-w-lg space-y-5 shadow-2xl">
+                <h2 className="text-lg font-extrabold text-slate-800">{initial ? 'Modifier le réseau' : 'Nouveau réseau clim'}</h2>
+                <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Nom (optionnel)</label>
+                    <Input placeholder="ex. Bagagerie, 2e étage Sud… (sinon : les chambres)" value={label} onChange={(e) => setLabel(e.target.value)} className="rounded-xl h-12 font-medium" />
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Chambres reliées à ce moteur</label>
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-44 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100 custom-scrollbar">
+                        {ROOM_OPTIONS.map(r => {
+                            const on = rooms.includes(r);
+                            return (
+                                <button key={r} type="button" onClick={() => setRooms(prev => (on ? prev.filter(x => x !== r) : [...prev, r]))} className={`px-2 py-2 rounded-lg border text-xs font-bold transition-all ${on ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>
+                                    {r === 'Seminaire' ? 'Sém.' : r}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Emplacement du disjoncteur</label>
+                    <Input placeholder="ex. Bout du couloir 2e étage (vide si inconnu)" value={tableau} onChange={(e) => setTableau(e.target.value)} className="rounded-xl h-12 font-medium" />
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                    <Button variant="ghost" onClick={onCancel} className="rounded-xl text-slate-500">Annuler</Button>
+                    <Button onClick={() => onSave({ label, rooms, tableau })} disabled={rooms.length === 0} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl font-bold text-white px-6 disabled:opacity-50">Enregistrer</Button>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function EmptyState({ message }: { message: string }) {
