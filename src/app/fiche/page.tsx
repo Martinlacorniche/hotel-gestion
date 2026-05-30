@@ -104,9 +104,9 @@ function FicheContent() {
       if (ficheData) {
         setFicheId(ficheData.id);
         setFiche({
-          notes_generales:   ficheData.notes_housekeeping ?? '',
-          notes_gaetan:      ficheData.notes_reception ?? '',
-          notes_facturation: ficheData.notes_food ?? '',
+          notes_generales:   ficheData.notes_generales ?? '',
+          notes_gaetan:      ficheData.notes_gaetan ?? '',
+          notes_facturation: ficheData.notes_facturation ?? '',
         });
       }
 
@@ -186,9 +186,9 @@ function FicheContent() {
       lead_id: leadId,
       hotel_id: hotelId,
       programme:          JSON.stringify(programmeRows),
-      notes_housekeeping: fiche.notes_generales || null,
-      notes_reception:    fiche.notes_gaetan || null,
-      notes_food:         fiche.notes_facturation || null,
+      notes_generales:   fiche.notes_generales || null,
+      notes_gaetan:      fiche.notes_gaetan || null,
+      notes_facturation: fiche.notes_facturation || null,
       updated_at: new Date().toISOString(),
     };
     if (ficheId) {
