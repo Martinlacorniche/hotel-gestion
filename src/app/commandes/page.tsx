@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -163,18 +164,19 @@ export default function PageCommandes() {
   }, [commandes, lignes, showArchived, search]);
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+    <div className="flex h-screen font-sans text-slate-900 overflow-hidden">
+      <ThemedBackground />
       
       {/* --- SIDEBAR GAUCHE (Ajout Rapide) --- */}
       <div className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 z-20 shadow-sm">
         <div className="p-6 border-b border-slate-100">
             <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-4">
-                <ShoppingCart className="w-6 h-6 text-indigo-600" /> Commandes
+                <ShoppingCart className="w-6 h-6 text-[var(--brand)]" /> Commandes
             </h1>
             
             {hotels.length > 1 && (
                 <select 
-                    className="w-full mb-4 bg-slate-50 border border-slate-200 text-xs font-bold py-2 px-3 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-slate-600"
+                    className="w-full mb-4 bg-slate-50 border border-slate-200 text-xs font-bold py-2 px-3 rounded-lg outline-none focus:ring-2 focus:ring-[var(--brand)] text-slate-600"
                     value={selectedHotelId}
                     onChange={(e) => setSelectedHotelId(e.target.value)}
                 >
@@ -191,7 +193,7 @@ export default function PageCommandes() {
                 <div>
                     <label className="text-[10px] font-bold text-indigo-400 uppercase">Fournisseur</label>
                     <input 
-                        className="w-full mt-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full mt-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
                         placeholder="Ex: Metro, Amazon..."
                         value={quickAdd.fournisseur}
                         onChange={e => setQuickAdd({...quickAdd, fournisseur: e.target.value})}
@@ -201,7 +203,7 @@ export default function PageCommandes() {
                 <div>
                     <label className="text-[10px] font-bold text-indigo-400 uppercase">Produit</label>
                     <input 
-                        className="w-full mt-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full mt-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
                         placeholder="Ex: 500g Café grains"
                         value={quickAdd.produit}
                         onChange={e => setQuickAdd({...quickAdd, produit: e.target.value})}
@@ -212,7 +214,7 @@ export default function PageCommandes() {
                 <div>
                     <label className="text-[10px] font-bold text-indigo-400 uppercase">Note (Optionnel)</label>
                     <input 
-                        className="w-full mt-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full mt-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
                         placeholder="Réf, quantité..."
                         value={quickAdd.commentaire}
                         onChange={e => setQuickAdd({...quickAdd, commentaire: e.target.value})}
@@ -228,7 +230,7 @@ export default function PageCommandes() {
                     <span className={`text-xs font-bold ${quickAdd.urgence ? 'text-red-500' : 'text-slate-500'}`}>Marquer comme Urgent</span>
                 </label>
 
-                <Button onClick={handleAddNeed} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md shadow-indigo-200 transition-all active:scale-95">
+                <Button onClick={handleAddNeed} className="w-full btn-brand hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md shadow-slate-300/40 transition-all active:scale-95">
                     Ajouter à la liste
                 </Button>
             </div>
@@ -239,14 +241,14 @@ export default function PageCommandes() {
             <div className="relative">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
                 <input 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] outline-none" 
                     placeholder="Filtrer..." 
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                 />
             </div>
             <label className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
-                <input type="checkbox" className="rounded text-indigo-600" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+                <input type="checkbox" className="rounded text-[var(--brand)]" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
                 <span className="text-sm text-slate-600 font-medium">Voir l'historique (Reçues)</span>
             </label>
         </div>
@@ -387,7 +389,7 @@ function CommandeCard({ cmd, lignes, onDeleteLigne, onDeleteCmd, onNextStep, nex
             {/* Footer Actions */}
             {!isDone && onNextStep && (
                 <div className="pt-3 border-t border-slate-100 flex justify-end">
-                    <button onClick={onNextStep} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-transform active:scale-95 ${color === 'blue' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                    <button onClick={onNextStep} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-transform active:scale-95 ${color === 'blue' ? 'btn-brand hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
                         {nextLabel} <ChevronRight className="w-3 h-3"/>
                     </button>
                 </div>

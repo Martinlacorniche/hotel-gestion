@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import { confirmDialog } from '@/components/ConfirmDialog';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { addDays, format, startOfWeek, isWithinInterval, addWeeks, differenceInCalendarDays } from 'date-fns';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -712,7 +713,8 @@ export default function PlanningPage() {
   if (!user) { router.push('/login'); return null; }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6">
+    <div className="min-h-screen p-4 md:p-6">
+      <ThemedBackground />
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 px-4 md:px-8 py-6 max-w-[1600px] mx-auto">
         
         {/* HEADER FLOTTANT */}
@@ -793,7 +795,7 @@ export default function PlanningPage() {
 
               <div className="flex items-center gap-2">
                   <button onClick={exportPDF} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Exporter PDF"><Printer className="w-5 h-5"/></button>
-                  <button onClick={() => { setPublishSelectedUserIds(users.map(u => u.id_auth)); setPublishUntil(format(addDays(startOfWeek(currentWeekStart, { weekStartsOn: 1 }), 6), 'yyyy-MM-dd')); setShowPublishModal(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md shadow-indigo-200 hover:shadow-lg transition hover:-translate-y-0.5">
+                  <button onClick={() => { setPublishSelectedUserIds(users.map(u => u.id_auth)); setPublishUntil(format(addDays(startOfWeek(currentWeekStart, { weekStartsOn: 1 }), 6), 'yyyy-MM-dd')); setShowPublishModal(true); }} className="flex items-center gap-2 btn-brand text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md shadow-indigo-200 hover:shadow-lg transition hover:-translate-y-0.5">
                       <Share2 className="w-4 h-4"/> Publier
                   </button>
               </div>

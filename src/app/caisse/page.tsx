@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { ThemedBackground } from "@/components/ThemedBackground";
 import { supabase } from "@/lib/supabaseClient";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -413,7 +414,8 @@ function CaissePageInner() {
   }, [dateJour]);
 
   return (
-    <div className="min-h-screen font-sans text-slate-900 relative" style={{ background: "linear-gradient(180deg, #ffffff 0%, #fafafa 200px, #f7f7f8 100%)" }}>
+    <div className="min-h-screen font-sans text-slate-900 relative">
+      <ThemedBackground />
       {/* Print styles — 1 page A4 paysage, ultra compact */}
       <style jsx global>{`
         /* Grille encaissements (header + lignes + total alignés sur les mêmes colonnes) */

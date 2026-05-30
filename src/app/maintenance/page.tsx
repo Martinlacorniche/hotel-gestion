@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { confirmDialog } from '@/components/ConfirmDialog';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -457,8 +458,9 @@ function MaintenancePageInner() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
-      
+    <div className="flex h-screen font-sans text-slate-900 overflow-hidden">
+      <ThemedBackground />
+
       {/* --- MAIN CONTENT --- */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         
@@ -466,14 +468,14 @@ function MaintenancePageInner() {
         <div className="h-20 shrink-0 flex items-center justify-between px-8 z-20 gap-4">
             <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 bg-white rounded-2xl shadow-sm flex items-center justify-center shrink-0">
-                    <Wrench className="w-5 h-5 text-indigo-600" />
+                    <Wrench className="w-5 h-5 text-[var(--brand)]" />
                 </div>
                 <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">Maintenance</h1>
                 {hotels.length > 1 && (
                     <select
                         value={hotelId}
                         onChange={(e) => switchHotel(e.target.value)}
-                        className="ml-3 bg-white border border-slate-200 rounded-xl px-3 h-10 text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 focus:ring-2 focus:ring-indigo-500 outline-none transition"
+                        className="ml-3 bg-white border border-slate-200 rounded-xl px-3 h-10 text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 focus:ring-2 focus:ring-[var(--brand)] outline-none transition"
                     >
                         {hotels.map(h => (
                             <option key={h.id} value={h.id}>{h.nom}</option>
@@ -481,7 +483,7 @@ function MaintenancePageInner() {
                     </select>
                 )}
             </div>
-            <Button onClick={() => setShowCreate(true)} disabled={!hotelId} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200 rounded-2xl px-6 h-12 text-sm font-bold transition-all hover:-translate-y-0.5 shrink-0">
+            <Button onClick={() => setShowCreate(true)} disabled={!hotelId} className="btn-brand text-white shadow-lg shadow-slate-300/40 rounded-2xl px-6 h-12 text-sm font-bold transition-all hover:-translate-y-0.5 shrink-0">
                 <Plus className="w-5 h-5 mr-2" /> Signalement
             </Button>
         </div>
@@ -491,17 +493,17 @@ function MaintenancePageInner() {
             <Tabs defaultValue="type" className="h-full flex flex-col">
                 <div className="shrink-0 mb-6">
                     <TabsList className={`bg-white/60 backdrop-blur-md p-1.5 rounded-2xl border border-white shadow-sm w-full grid ${hasClim ? 'max-w-2xl grid-cols-4' : 'max-w-md grid-cols-3'}`}>
-                        <TabsTrigger value="type" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
+                        <TabsTrigger value="type" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
                             <LayoutGrid className="w-4 h-4 mr-2 mb-0.5 inline-block" />Par Type
                         </TabsTrigger>
-                        <TabsTrigger value="chambre" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
+                        <TabsTrigger value="chambre" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
                             <List className="w-4 h-4 mr-2 mb-0.5 inline-block" />Par Chambre
                         </TabsTrigger>
-                        <TabsTrigger value="historique" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
+                        <TabsTrigger value="historique" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
                             <History className="w-4 h-4 mr-2 mb-0.5 inline-block" />Historique
                         </TabsTrigger>
                         {hasClim && (
-                          <TabsTrigger value="clim" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
+                          <TabsTrigger value="clim" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
                               <Snowflake className="w-4 h-4 mr-2 mb-0.5 inline-block" />Clim
                           </TabsTrigger>
                         )}
@@ -526,7 +528,7 @@ function MaintenancePageInner() {
                                                 {type} <span className="text-xs font-medium text-slate-400 bg-white px-2 py-1 rounded-full shadow-sm border border-slate-100">{enCours.length}</span>
                                             </h2>
                                         </div>
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${open ? 'bg-indigo-100 text-indigo-600 rotate-180' : 'bg-white text-slate-400'}`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${open ? 'bg-indigo-100 text-[var(--brand)] rotate-180' : 'bg-white text-slate-400'}`}>
                                             <ChevronDown className="w-5 h-5" />
                                         </div>
                                     </button>
@@ -567,7 +569,7 @@ function MaintenancePageInner() {
                                                 Chambre {room} <span className="text-xs font-medium text-slate-400 bg-white px-2 py-1 rounded-full shadow-sm border border-slate-100">{enCours.length}</span>
                                             </h2>
                                         </div>
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${open ? 'bg-indigo-100 text-indigo-600 rotate-180' : 'bg-white text-slate-400'}`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${open ? 'bg-indigo-100 text-[var(--brand)] rotate-180' : 'bg-white text-slate-400'}`}>
                                             <ChevronDown className="w-5 h-5" />
                                         </div>
                                     </button>
@@ -637,8 +639,8 @@ function MaintenancePageInner() {
 
                         <Tabs defaultValue="h-type" className="w-full flex-1 overflow-hidden flex flex-col">
                             <TabsList className="w-full bg-transparent justify-start rounded-none p-0 mb-4 h-auto space-x-6 border-b border-slate-200 shrink-0">
-                                <TabsTrigger value="h-type" className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:text-indigo-600 data-[state=active]:bg-transparent pb-3 font-bold text-sm text-slate-400 hover:text-slate-600 transition-colors">Par Type</TabsTrigger>
-                                <TabsTrigger value="h-room" className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:text-indigo-600 data-[state=active]:bg-transparent pb-3 font-bold text-sm text-slate-400 hover:text-slate-600 transition-colors">Par Chambre</TabsTrigger>
+                                <TabsTrigger value="h-type" className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:text-[var(--brand)] data-[state=active]:bg-transparent pb-3 font-bold text-sm text-slate-400 hover:text-slate-600 transition-colors">Par Type</TabsTrigger>
+                                <TabsTrigger value="h-room" className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:text-[var(--brand)] data-[state=active]:bg-transparent pb-3 font-bold text-sm text-slate-400 hover:text-slate-600 transition-colors">Par Chambre</TabsTrigger>
                             </TabsList>
 
                             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
@@ -682,7 +684,7 @@ function MaintenancePageInner() {
                                 <span className="flex items-center gap-1 text-sky-600"><Snowflake className="w-4 h-4" /> Été</span>
                             </div>
                             {isAdmin && (
-                                <Button onClick={() => setClimEdit('new')} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl h-12 px-5 font-bold shadow-lg shadow-indigo-200 shrink-0">
+                                <Button onClick={() => setClimEdit('new')} className="btn-brand text-white rounded-2xl h-12 px-5 font-bold shadow-lg shadow-slate-300/40 shrink-0">
                                     <Plus className="w-4 h-4 mr-2" /> Réseau
                                 </Button>
                             )}
@@ -718,7 +720,7 @@ function MaintenancePageInner() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white p-8 rounded-3xl w-full max-w-lg space-y-6 shadow-2xl animate-in fade-in zoom-in duration-200 border border-white/50">
             <h2 className="text-2xl font-extrabold text-slate-800">Nouveau signalement</h2>
-            <Input placeholder="Qu'est-ce qui ne va pas ?" className="text-lg font-medium h-12 rounded-xl bg-slate-50 border-slate-200 focus:ring-indigo-500" value={newItem.titre || ''} onChange={(e) => setNewItem({ ...newItem, titre: e.target.value })} />
+            <Input placeholder="Qu'est-ce qui ne va pas ?" className="text-lg font-medium h-12 rounded-xl bg-slate-50 border-slate-200 focus:ring-[var(--brand)]" value={newItem.titre || ''} onChange={(e) => setNewItem({ ...newItem, titre: e.target.value })} />
             
             <div className="grid grid-cols-1 gap-4">
                 <div>
@@ -745,11 +747,11 @@ function MaintenancePageInner() {
               </div>
             </div>
 
-            <textarea rows={2} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none placeholder:text-slate-400" placeholder="Détails supplémentaires..." value={newItem.commentaire || ''} onChange={(e) => setNewItem({ ...newItem, commentaire: e.target.value })} />
+            <textarea rows={2} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[var(--brand)] resize-none placeholder:text-slate-400" placeholder="Détails supplémentaires..." value={newItem.commentaire || ''} onChange={(e) => setNewItem({ ...newItem, commentaire: e.target.value })} />
 
             <div className="flex justify-end gap-3 pt-2">
               <Button variant="ghost" onClick={() => setShowCreate(false)} className="rounded-xl hover:bg-slate-100 text-slate-500">Annuler</Button>
-              <Button onClick={createItem} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl px-6 font-bold shadow-lg shadow-indigo-200">Créer</Button>
+              <Button onClick={createItem} className="btn-brand rounded-xl px-6 font-bold shadow-lg shadow-slate-300/40">Créer</Button>
             </div>
           </div>
         </div>
@@ -784,7 +786,7 @@ function MaintenancePageInner() {
               {/* Header */}
               <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                  <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-[var(--brand)] shrink-0">
                     <Wrench className="w-4 h-4" />
                   </div>
                   <div className="leading-tight min-w-0">
@@ -867,7 +869,7 @@ function MaintenancePageInner() {
                               <div className={`absolute top-1/2 -translate-y-1/2 ${mine ? '-left-14' : '-right-14'} flex gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity`}>
                                 <button
                                   onClick={() => startEditReply(r)}
-                                  className="p-1 rounded-full bg-white shadow text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition"
+                                  className="p-1 rounded-full bg-white shadow text-slate-500 hover:text-[var(--brand)] hover:bg-slate-50 transition"
                                   title="Modifier"
                                 >
                                   <Edit2 className="w-3 h-3" />
@@ -908,12 +910,12 @@ function MaintenancePageInner() {
                       }
                     }}
                     rows={1}
-                    className="flex-1 resize-none bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none max-h-32"
+                    className="flex-1 resize-none bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-indigo-500 outline-none max-h-32"
                   />
                   <button
                     onClick={sendReply}
                     disabled={chatInput.trim() === ''}
-                    className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-full w-10 h-10 flex items-center justify-center shadow-md transition shrink-0"
+                    className="btn-brand disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-full w-10 h-10 flex items-center justify-center shadow-md transition shrink-0"
                     aria-label="Envoyer"
                   >
                     <Send className="w-4 h-4" />
@@ -945,7 +947,7 @@ function MaintenancePageInner() {
 function TaskCard({ item, onEdit, onClose, onDelete, onChat }: { item: MaintItem, onEdit: () => void, onClose: () => void, onDelete: () => void, onChat: () => void }) {
     const replyCount = Array.isArray(item.replies) ? item.replies.length : 0;
     return (
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col gap-3 group">
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col gap-3 group/card">
             <div className="flex justify-between items-start">
                 <div className="flex flex-col gap-1">
                     <div className="flex gap-2 items-center mb-1">
@@ -967,7 +969,7 @@ function TaskCard({ item, onEdit, onClose, onDelete, onChat }: { item: MaintItem
                     <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Calendar className="w-3 h-3"/> {toFr(item.date_creation)}</span>
                     <button
                         onClick={onChat}
-                        className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full transition ${replyCount > 0 ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100' : 'text-slate-400 hover:bg-slate-100'}`}
+                        className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full transition ${replyCount > 0 ? 'bg-indigo-50 text-[var(--brand)] hover:bg-indigo-100' : 'text-slate-400 hover:bg-slate-100'}`}
                         title="Conversation"
                     >
                         <MessageCircle className="w-3 h-3" />
@@ -975,10 +977,10 @@ function TaskCard({ item, onEdit, onClose, onDelete, onChat }: { item: MaintItem
                     </button>
                 </div>
 
-                <div className="flex items-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={onEdit} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"><Edit2 className="w-4 h-4"/></button>
+                <div className="flex items-center gap-1 opacity-100 lg:opacity-0 group-hover/card:opacity-100 transition-opacity">
+                    <button onClick={onEdit} className="p-1.5 text-slate-400 hover:text-[var(--brand)] hover:bg-indigo-50 rounded-lg transition"><Edit2 className="w-4 h-4"/></button>
                     <button onClick={onDelete} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"><Trash2 className="w-4 h-4"/></button>
-                    <button onClick={onClose} className="ml-1 flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-white hover:bg-black rounded-lg text-xs font-bold transition shadow-md transform active:scale-95">
+                    <button onClick={onClose} className="ml-1 flex items-center gap-1 px-3 py-1.5 btn-brand text-white rounded-lg text-xs font-bold transition shadow-md transform active:scale-95">
                         <CheckCircle className="w-3.5 h-3.5"/> Fait
                     </button>
                 </div>
@@ -997,7 +999,7 @@ function HistoryFolder({ title, items, openState, toggleFunc, id, onReopen, onCh
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden group">
             <button onClick={toggleFunc} className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-xl transition-colors ${open ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-indigo-500'}`}>
+                    <div className={`p-2 rounded-xl transition-colors ${open ? 'bg-indigo-100 text-[var(--brand)]' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-indigo-500'}`}>
                         {open ? <ChevronDown className="w-5 h-5"/> : <ChevronRight className="w-5 h-5"/>}
                     </div>
                     <div className="text-left">
@@ -1039,7 +1041,7 @@ function HistoryFolder({ title, items, openState, toggleFunc, id, onReopen, onCh
                                     return (
                                         <button
                                             onClick={() => onChat(it)}
-                                            className={`flex items-center gap-1 text-xs h-8 px-2.5 rounded-lg border transition ${replyCount > 0 ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                                            className={`flex items-center gap-1 text-xs h-8 px-2.5 rounded-lg border transition ${replyCount > 0 ? 'bg-indigo-50 text-[var(--brand)] border-indigo-100 hover:bg-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
                                             title="Conversation"
                                         >
                                             <MessageCircle className="w-3.5 h-3.5" />
@@ -1102,10 +1104,10 @@ function EditModal({ item, form, setForm, onCancel, onSave, ROOM_OPTIONS }: any)
         <h2 className="text-lg font-bold text-slate-800">Modifier</h2>
         <Input placeholder="Titre" value={form.titre} onChange={(e) => setForm({ ...form, titre: e.target.value })} className="rounded-xl h-12 font-medium" />
         <div className="grid grid-cols-2 gap-4">
-            <select className="w-full border rounded-xl px-3 h-12 text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+            <select className="w-full border rounded-xl px-3 h-12 text-sm bg-white outline-none focus:ring-2 focus:ring-[var(--brand)]" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
             {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select className="w-full border rounded-xl px-3 h-12 text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" value={form.chambre} onChange={(e) => setForm({ ...form, chambre: e.target.value })}>
+            <select className="w-full border rounded-xl px-3 h-12 text-sm bg-white outline-none focus:ring-2 focus:ring-[var(--brand)]" value={form.chambre} onChange={(e) => setForm({ ...form, chambre: e.target.value })}>
                 <option value="">Zone...</option>
                 {ROOM_OPTIONS.map((r: string) => <option key={r} value={r}>{r}</option>)}
             </select>
@@ -1113,7 +1115,7 @@ function EditModal({ item, form, setForm, onCancel, onSave, ROOM_OPTIONS }: any)
         <textarea rows={3} className="w-full border rounded-xl px-3 py-3 text-sm resize-none bg-slate-50" value={form.commentaire} onChange={(e) => setForm({ ...form, commentaire: e.target.value })} />
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onCancel} className="rounded-xl">Annuler</Button>
-          <Button onClick={onSave} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl font-bold text-white">Sauvegarder</Button>
+          <Button onClick={onSave} className="btn-brand rounded-xl font-bold text-white">Sauvegarder</Button>
         </div>
       </div>
     </div>
@@ -1122,7 +1124,7 @@ function EditModal({ item, form, setForm, onCancel, onSave, ROOM_OPTIONS }: any)
 
 function ClimCard({ r, query, onReport, onEdit, onDelete }: { r: ClimReseau; query: string; onReport: () => void; onEdit?: () => void; onDelete?: () => void }) {
     return (
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all group/row">
             {/* Moteur = chambres reliées */}
             <div className="flex items-center gap-2.5 px-4 pt-3 pb-2">
                 <Fan className="w-4 h-4 text-indigo-500 shrink-0" />
@@ -1134,7 +1136,7 @@ function ClimCard({ r, query, onReport, onEdit, onDelete }: { r: ClimReseau; que
                             return (
                                 <span key={rm}>
                                     {i > 0 && <span className="text-slate-300"> · </span>}
-                                    <span className={hit ? 'text-indigo-600 bg-indigo-50 rounded px-1' : ''}>
+                                    <span className={hit ? 'text-[var(--brand)] bg-indigo-50 rounded px-1' : ''}>
                                         {rm === 'Seminaire' ? 'Séminaire' : `#${rm}`}
                                     </span>
                                 </span>
@@ -1142,8 +1144,8 @@ function ClimCard({ r, query, onReport, onEdit, onDelete }: { r: ClimReseau; que
                         })}
                 </div>
                 {(onEdit || onDelete) && (
-                    <div className="flex items-center gap-0.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        {onEdit && <button onClick={onEdit} className="p-1 text-slate-300 hover:text-indigo-600 rounded transition" title="Modifier"><Edit2 className="w-3.5 h-3.5" /></button>}
+                    <div className="flex items-center gap-0.5 opacity-100 lg:opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0">
+                        {onEdit && <button onClick={onEdit} className="p-1 text-slate-300 hover:text-[var(--brand)] rounded transition" title="Modifier"><Edit2 className="w-3.5 h-3.5" /></button>}
                         {onDelete && <button onClick={onDelete} className="p-1 text-slate-300 hover:text-red-600 rounded transition" title="Supprimer"><Trash2 className="w-3.5 h-3.5" /></button>}
                     </div>
                 )}
@@ -1154,7 +1156,7 @@ function ClimCard({ r, query, onReport, onEdit, onDelete }: { r: ClimReseau; que
                 <span className={`flex-1 min-w-0 truncate text-xs ${r.tableau ? 'text-slate-500 font-medium' : 'text-amber-500 font-semibold'}`}>
                     {r.tableau || 'À renseigner'}
                 </span>
-                <button onClick={onReport} title="Signaler une panne sur ce réseau" className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 rounded-md px-2 h-7 transition active:scale-95">
+                <button onClick={onReport} title="Signaler une panne sur ce réseau" className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-[var(--brand)] hover:bg-indigo-50 rounded-md px-2 h-7 transition active:scale-95">
                     <Plus className="w-3 h-3" /> Panne
                 </button>
             </div>
@@ -1193,7 +1195,7 @@ function ClimEditModal({ initial, ROOM_OPTIONS, onCancel, onSave }: { initial: C
                 </div>
                 <div className="flex justify-end gap-2 pt-1">
                     <Button variant="ghost" onClick={onCancel} className="rounded-xl text-slate-500">Annuler</Button>
-                    <Button onClick={() => onSave({ label, rooms, tableau })} disabled={rooms.length === 0} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl font-bold text-white px-6 disabled:opacity-50">Enregistrer</Button>
+                    <Button onClick={() => onSave({ label, rooms, tableau })} disabled={rooms.length === 0} className="btn-brand rounded-xl font-bold text-white px-6 disabled:opacity-50">Enregistrer</Button>
                 </div>
             </div>
         </div>

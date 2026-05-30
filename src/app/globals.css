@@ -133,3 +133,18 @@ body {
   background: var(--bg-base, #f9f9fb);
   color: #23272f;
 }
+
+/* Bouton d'action piloté par le thème user (--brand). Non-layered → bat le
+   `bg-primary` (quasi-noir) du composant shadcn <Button> qui vit dans la
+   couche utilities. Gère aussi le hover. Classe de référence pour les CTA. */
+.btn-brand {
+  background-color: var(--brand, #4f46e5);
+  color: var(--brand-text, #ffffff);
+}
+.btn-brand:hover {
+  background-color: var(--brand-hover, #4338ca);
+}
+.btn-brand:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

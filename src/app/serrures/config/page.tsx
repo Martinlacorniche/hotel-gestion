@@ -110,14 +110,14 @@ export default function SerruresPage() {
 
   if (authLoading) {
     return (
-      <main className="min-h-screen bg-neutral-50 px-6 py-10 max-w-5xl mx-auto">
+      <main className="min-h-screen px-6 py-10 max-w-5xl mx-auto">
         <p className="text-neutral-500">Chargement…</p>
       </main>
     );
   }
   if (!isAdmin) {
     return (
-      <main className="min-h-screen bg-neutral-50 flex items-center justify-center px-6">
+      <main className="min-h-screen flex items-center justify-center px-6">
         <div className="text-center max-w-sm">
           <ShieldAlert className="w-10 h-10 mx-auto mb-4 text-neutral-300" />
           <h1 className="text-lg font-semibold text-neutral-800 mb-1">Réglages réservés aux admins</h1>
@@ -126,7 +126,7 @@ export default function SerruresPage() {
           </p>
           <Link
             href="/serrures"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg btn-brand hover:bg-indigo-700 text-white text-sm"
           >
             Retour aux serrures
           </Link>
@@ -136,14 +136,14 @@ export default function SerruresPage() {
   }
   if (loading && !data) {
     return (
-      <main className="min-h-screen bg-neutral-50 px-6 py-10 max-w-5xl mx-auto">
+      <main className="min-h-screen px-6 py-10 max-w-5xl mx-auto">
         <p className="text-neutral-500">Chargement…</p>
       </main>
     );
   }
   if (!data || data.ok === false) {
     return (
-      <main className="min-h-screen bg-neutral-50 px-6 py-10 max-w-5xl mx-auto">
+      <main className="min-h-screen px-6 py-10 max-w-5xl mx-auto">
         <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-700">
           <strong>Erreur :</strong> {data?.ok === false ? data.error : 'inconnue'}
         </div>
@@ -155,7 +155,7 @@ export default function SerruresPage() {
   const mappedLockIds = new Set(chambres.map((c) => c.tthotel_lock_id));
 
   return (
-    <main className="min-h-screen bg-neutral-50 px-6 py-10 max-w-5xl mx-auto">
+    <main className="min-h-screen px-6 py-10 max-w-5xl mx-auto">
       <header className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <Lock className="w-6 h-6" />

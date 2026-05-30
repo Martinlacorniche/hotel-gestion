@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { ThemedBackground } from "@/components/ThemedBackground";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -283,7 +284,8 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen">
+      <ThemedBackground />
       {/* Header sticky */}
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -312,7 +314,7 @@ export default function UsersPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <StatCard icon={UsersIcon} iconBg="bg-slate-100" iconColor="text-slate-600" label="Total" value={stats.total} />
           <StatCard icon={UserCheck} iconBg="bg-emerald-100" iconColor="text-emerald-600" label="Actifs" value={stats.active} />
-          <StatCard icon={ShieldCheck} iconBg="bg-indigo-100" iconColor="text-indigo-600" label="Admins" value={stats.admins} />
+          <StatCard icon={ShieldCheck} iconBg="bg-indigo-100" iconColor="text-[var(--brand)]" label="Admins" value={stats.admins} />
           <StatCard icon={UserX} iconBg="bg-rose-100" iconColor="text-rose-600" label="Désactivés" value={stats.inactive} />
         </div>
 
@@ -484,7 +486,7 @@ export default function UsersPage() {
 
       {/* Modal Invite */}
       {inviteOpen && (
-        <Modal onClose={() => !inviting && setInviteOpen(false)} icon={<Mail className="text-indigo-600" size={20} />} title="Inviter un utilisateur" subtitle="Un email lui sera envoyé pour définir son mot de passe.">
+        <Modal onClose={() => !inviting && setInviteOpen(false)} icon={<Mail className="text-[var(--brand)]" size={20} />} title="Inviter un utilisateur" subtitle="Un email lui sera envoyé pour définir son mot de passe.">
           <div className="space-y-3">
             <Field label="Prénom">
               <Input value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Jean" />
@@ -543,7 +545,7 @@ export default function UsersPage() {
 
       {/* Modal Edit Profile */}
       {editTarget && (
-        <Modal onClose={() => !editingProfile && setEditTarget(null)} icon={<Pencil className="text-indigo-600" size={20} />} title={`Modifier ${editTarget.name || editTarget.email}`} subtitle={editTarget.email}>
+        <Modal onClose={() => !editingProfile && setEditTarget(null)} icon={<Pencil className="text-[var(--brand)]" size={20} />} title={`Modifier ${editTarget.name || editTarget.email}`} subtitle={editTarget.email}>
           <div className="space-y-3">
             <Field label="Prénom">
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Jean" />
@@ -554,7 +556,7 @@ export default function UsersPage() {
           </div>
           <div className="flex justify-end gap-2 mt-6">
             <Button variant="ghost" onClick={() => setEditTarget(null)} disabled={editingProfile}>Annuler</Button>
-            <Button onClick={doEditProfile} disabled={editingProfile} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+            <Button onClick={doEditProfile} disabled={editingProfile} className="btn-brand hover:bg-indigo-700 text-white">
               {editingProfile ? <><Loader2 size={14} className="animate-spin mr-2" /> Enregistrement…</> : "Enregistrer"}
             </Button>
           </div>

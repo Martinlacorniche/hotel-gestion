@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { useAuth } from '@/context/AuthContext';
 import { useHotelScope } from '@/hooks/useHotelScope';
 import { confirmDialog } from '@/components/ConfirmDialog';
@@ -154,7 +155,8 @@ export default function TrousseauPage() {
   }, [search, entries]);
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+    <div className="flex h-screen font-sans text-slate-900 overflow-hidden">
+      <ThemedBackground />
       
       {/* --- SIDEBAR (Liste) --- */}
       <div className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 z-20 shadow-sm">
@@ -164,15 +166,15 @@ export default function TrousseauPage() {
             <div>
                 <div className="flex items-center justify-between mb-2">
                     <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                        <Key className="w-6 h-6 text-indigo-600" /> Identifiants
+                        <Key className="w-6 h-6 text-[var(--brand)]" /> Identifiants
                     </h1>
-                    <button onClick={handleCreate} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition" title="Nouvelle clé">
+                    <button onClick={handleCreate} className="p-2 bg-indigo-50 text-[var(--brand)] rounded-lg hover:bg-indigo-100 transition" title="Nouvelle clé">
                         <Plus className="w-5 h-5" />
                     </button>
                 </div>
                 {hotels.length > 1 && (
                     <select 
-                        className="w-full bg-slate-50 border border-slate-200 text-xs font-bold py-2 px-3 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-slate-600"
+                        className="w-full bg-slate-50 border border-slate-200 text-xs font-bold py-2 px-3 rounded-lg outline-none focus:ring-2 focus:ring-[var(--brand)] text-slate-600"
                         value={selectedHotelId}
                         onChange={(e) => { setSelectedHotelId(e.target.value); setSelectedEntry(null); }}
                     >
@@ -184,7 +186,7 @@ export default function TrousseauPage() {
             <div className="relative group">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                 <input 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:bg-white outline-none transition-all" 
                     placeholder="Rechercher un outil..." 
                     value={search}
                     onChange={e => setSearch(e.target.value)}
@@ -203,12 +205,12 @@ export default function TrousseauPage() {
                     className={`
                         group p-3 rounded-xl cursor-pointer transition-all border border-transparent flex items-center gap-3
                         ${selectedEntry?.id === entry.id 
-                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' 
+                            ? 'btn-brand text-white shadow-md shadow-slate-300/40' 
                             : 'hover:bg-slate-50 text-slate-700 hover:border-slate-100'
                         }
                     `}
                 >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${selectedEntry?.id === entry.id ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${selectedEntry?.id === entry.id ? 'bg-white/20 text-white' : 'bg-indigo-50 text-[var(--brand)]'}`}>
                         {entry.outil.substring(0, 2).toUpperCase()}
                     </div>
                     <div className="overflow-hidden">
@@ -269,7 +271,7 @@ export default function TrousseauPage() {
                               </div>
                               <button 
                                   onClick={() => copyToClipboard(selectedEntry.identifiant, 'id')} 
-                                  className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === 'id' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'}`}
+                                  className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === 'id' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-[var(--brand)]'}`}
                               >
                                   {copiedField === 'id' ? <Check className="w-4 h-4"/> : <Copy className="w-4 h-4"/>}
                                   {copiedField === 'id' ? 'Copié' : 'Copier'}
@@ -283,13 +285,13 @@ export default function TrousseauPage() {
                           <div className="flex gap-2">
                               <div className="relative flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-mono text-sm text-slate-700 font-medium overflow-hidden flex items-center">
                                   {showPassword ? selectedEntry.mot_de_passe : '••••••••••••••••'}
-                                  <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 text-slate-400 hover:text-indigo-600 transition">
+                                  <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 text-slate-400 hover:text-[var(--brand)] transition">
                                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                   </button>
                               </div>
                               <button 
                                   onClick={() => copyToClipboard(selectedEntry.mot_de_passe, 'pwd')} 
-                                  className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === 'pwd' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'}`}
+                                  className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === 'pwd' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-[var(--brand)]'}`}
                               >
                                   {copiedField === 'pwd' ? <Check className="w-4 h-4"/> : <Copy className="w-4 h-4"/>}
                                   {copiedField === 'pwd' ? 'Copié' : 'Copier'}
@@ -328,16 +330,16 @@ export default function TrousseauPage() {
             {errorMsg && <div className="bg-red-50 text-red-500 text-xs p-3 rounded-lg font-bold">{errorMsg}</div>}
             
             <div className="space-y-3">
-                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="Nom de l'outil (ex: Booking)" value={newEntry.outil} onChange={(e) => setNewEntry({ ...newEntry, outil: e.target.value })} />
-                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="Identifiant" value={newEntry.identifiant} onChange={(e) => setNewEntry({ ...newEntry, identifiant: e.target.value })} />
-                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="Mot de passe" value={newEntry.mot_de_passe} onChange={(e) => setNewEntry({ ...newEntry, mot_de_passe: e.target.value })} />
-                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="Lien URL (optionnel)" value={newEntry.url} onChange={(e) => setNewEntry({ ...newEntry, url: e.target.value })} />
-                <textarea className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500 resize-none text-sm" placeholder="Commentaire..." rows={2} value={newEntry.commentaire} onChange={(e) => setNewEntry({ ...newEntry, commentaire: e.target.value })} />
+                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)] font-bold" placeholder="Nom de l'outil (ex: Booking)" value={newEntry.outil} onChange={(e) => setNewEntry({ ...newEntry, outil: e.target.value })} />
+                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)] text-sm" placeholder="Identifiant" value={newEntry.identifiant} onChange={(e) => setNewEntry({ ...newEntry, identifiant: e.target.value })} />
+                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)] text-sm" placeholder="Mot de passe" value={newEntry.mot_de_passe} onChange={(e) => setNewEntry({ ...newEntry, mot_de_passe: e.target.value })} />
+                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)] text-sm" placeholder="Lien URL (optionnel)" value={newEntry.url} onChange={(e) => setNewEntry({ ...newEntry, url: e.target.value })} />
+                <textarea className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)] resize-none text-sm" placeholder="Commentaire..." rows={2} value={newEntry.commentaire} onChange={(e) => setNewEntry({ ...newEntry, commentaire: e.target.value })} />
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
               <button className="px-5 py-3 rounded-xl text-slate-500 font-bold hover:bg-slate-50 transition" onClick={() => setShowModal(false)}>Annuler</button>
-              <button className="px-5 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700 transition" onClick={createOrUpdateEntry}>
+              <button className="px-5 py-3 rounded-xl btn-brand text-white font-bold shadow-lg hover:bg-indigo-700 transition" onClick={createOrUpdateEntry}>
                 {editingId ? 'Enregistrer' : 'Créer'}
               </button>
             </div>

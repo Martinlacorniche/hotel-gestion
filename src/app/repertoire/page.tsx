@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
+import { ThemedBackground } from "@/components/ThemedBackground";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
@@ -128,7 +129,8 @@ export default function RepertoirePage() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+    <div className="flex h-screen font-sans text-slate-900 overflow-hidden">
+      <ThemedBackground />
       
       {/* --- SIDEBAR GAUCHE (Liste) --- */}
       <div className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 z-20 shadow-sm">
@@ -138,15 +140,15 @@ export default function RepertoirePage() {
             <div>
                 <div className="flex items-center justify-between mb-2">
                     <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                        <NotebookText className="w-6 h-6 text-indigo-600" /> Répertoire
+                        <NotebookText className="w-6 h-6 text-[var(--brand)]" /> Répertoire
                     </h1>
-                    <button onClick={handleCreate} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition" title="Nouveau contact">
+                    <button onClick={handleCreate} className="p-2 bg-indigo-50 text-[var(--brand)] rounded-lg hover:bg-indigo-100 transition" title="Nouveau contact">
                         <Plus className="w-5 h-5" />
                     </button>
                 </div>
                 {hotels.length > 1 && (
                     <select 
-                        className="w-full bg-slate-50 border border-slate-200 text-xs font-bold py-2 px-3 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-slate-600"
+                        className="w-full bg-slate-50 border border-slate-200 text-xs font-bold py-2 px-3 rounded-lg outline-none focus:ring-2 focus:ring-[var(--brand)] text-slate-600"
                         value={selectedHotelId}
                         onChange={(e) => { setSelectedHotelId(e.target.value); setSelectedEntry(null); setIsEditing(false); }}
                     >
@@ -158,7 +160,7 @@ export default function RepertoirePage() {
             <div className="relative group">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                 <input 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:bg-white outline-none transition-all" 
                     placeholder="Rechercher un contact..." 
                     value={search}
                     onChange={e => setSearch(e.target.value)}
@@ -244,7 +246,7 @@ export default function RepertoirePage() {
                                   <button onClick={() => { if(selectedEntry) { setIsEditing(false); setForm({qui_quoi: selectedEntry.qui_quoi, contact: selectedEntry.contact, commentaire: selectedEntry.commentaire || ""}); } else { setSelectedEntry(null); setIsEditing(false); } }} className="p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition">
                                       <ChevronLeft className="w-5 h-5" />
                                   </button>
-                                  <button onClick={saveEntry} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md transition transform active:scale-95">
+                                  <button onClick={saveEntry} className="p-2 btn-brand text-white rounded-lg hover:bg-indigo-700 shadow-md transition transform active:scale-95">
                                       <Save className="w-5 h-5" />
                                   </button>
                               </>
@@ -253,7 +255,7 @@ export default function RepertoirePage() {
                                   <button onClick={deleteEntry} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
                                       <Trash2 className="w-5 h-5" />
                                   </button>
-                                  <button onClick={() => { setForm({ qui_quoi: selectedEntry!.qui_quoi, contact: selectedEntry!.contact, commentaire: selectedEntry!.commentaire || "" }); setIsEditing(true); }} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition">
+                                  <button onClick={() => { setForm({ qui_quoi: selectedEntry!.qui_quoi, contact: selectedEntry!.contact, commentaire: selectedEntry!.commentaire || "" }); setIsEditing(true); }} className="p-2 text-[var(--brand)] hover:bg-indigo-50 rounded-lg transition">
                                       <Edit2 className="w-5 h-5" />
                                   </button>
                               </>
@@ -282,7 +284,7 @@ export default function RepertoirePage() {
                   {!isEditing && selectedEntry && (
                       <div className="bg-slate-50 p-4 border-t border-slate-100 flex gap-4 justify-center">
                            {selectedEntry.contact.includes('@') && (
-                               <a href={`mailto:${selectedEntry.contact}`} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-600 transition shadow-sm">
+                               <a href={`mailto:${selectedEntry.contact}`} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-[var(--brand)] transition shadow-sm">
                                    <Mail className="w-4 h-4" /> Envoyer Email
                                </a>
                            )}

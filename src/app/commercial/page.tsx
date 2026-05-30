@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { confirmDialog } from '@/components/ConfirmDialog';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import { format, isBefore, isToday, parseISO, getYear } from 'date-fns';
@@ -524,7 +525,8 @@ export default function CommercialDashboard() {
         .sep-line { background: #f0f0f0; }
       `}</style>
 
-      <div className="min-h-screen p-4 md:p-8 font-sans" style={{backgroundColor: '#f5f5f5', color: '#111'}} onClick={handleGlobalClick}>
+      <div className="min-h-screen p-4 md:p-8 font-sans" style={{color: '#111'}} onClick={handleGlobalClick}>
+        <ThemedBackground />
 
         {/* ═══════════════════════════════════════
             HEADER

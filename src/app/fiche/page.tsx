@@ -2,6 +2,7 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { BlobProvider } from '@react-pdf/renderer';
 import { FichePDF } from './FichePDF';
 import { CombinedPDF } from './CombinedPDF';
@@ -239,7 +240,8 @@ function FicheContent() {
   const devisItems = quoteItems.filter((i: any) => i.label?.trim());
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
+      <ThemedBackground />
 
       {/* ── Top bar ── */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">

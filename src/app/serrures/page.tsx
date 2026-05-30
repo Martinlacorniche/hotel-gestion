@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import {
   KeyRound,
   CreditCard,
@@ -398,7 +399,7 @@ export default function SerruresPage() {
         <h1 className="text-2xl font-light text-stone-800 mb-4">Aucune chambre mappée</h1>
         <Link
           href="/serrures/config"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg btn-brand hover:bg-indigo-700 text-white"
         >
           <Settings className="w-4 h-4" />
           Configuration
@@ -413,7 +414,8 @@ export default function SerruresPage() {
     selectedChambres.length === 1 && isOccupied(selectedChambres[0]) ? selectedChambres[0] : null;
 
   return (
-    <main className="min-h-screen bg-stone-50">
+    <main className="min-h-screen">
+      <ThemedBackground />
       <header className="sticky top-0 z-10 bg-stone-50/80 backdrop-blur border-b border-stone-200/60 px-8 py-4 flex items-center justify-between">
         <h1 className="text-sm font-medium tracking-wide uppercase text-stone-500">Serrures</h1>
         {isAdmin && (
@@ -446,7 +448,7 @@ export default function SerruresPage() {
               onClick={openPasses}
               className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition ${
                 showPass
-                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
+                  ? 'btn-brand text-white shadow-sm shadow-slate-300/40'
                   : 'bg-white hover:bg-stone-100 text-stone-700 border border-stone-200'
               }`}
             >
@@ -475,7 +477,7 @@ export default function SerruresPage() {
                     <span className="font-medium tabular-nums text-lg">{c.numero}</span>
                     <span>
                       {isSel ? (
-                        <Check className={`w-4 h-4 ${occ ? 'text-emerald-600' : 'text-indigo-600'}`} />
+                        <Check className={`w-4 h-4 ${occ ? 'text-emerald-600' : 'text-[var(--brand)]'}`} />
                       ) : occ && c.sejour ? (
                         c.sejour.methode === 'code' ? (
                           <KeyRound className="w-4 h-4" />
@@ -597,7 +599,7 @@ function PassPanel(props: {
             setLabel('');
           }}
           disabled={busy}
-          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 font-medium shadow-sm shadow-indigo-200 transition"
+          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 font-medium shadow-sm shadow-slate-300/40 transition"
         >
           <Users className="w-5 h-5" />
           Nouveau pass
@@ -774,7 +776,7 @@ function NumberPills({
               onClick={() => onChange(n)}
               className={`flex-1 h-12 rounded-xl font-medium transition text-base ${
                 value === n
-                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
+                  ? 'btn-brand text-white shadow-sm shadow-slate-300/40'
                   : 'bg-white hover:bg-stone-100 text-stone-600 border border-stone-200'
               }`}
             >
@@ -788,7 +790,7 @@ function NumberPills({
             }}
             className={`flex-1 h-12 rounded-xl font-medium transition text-base ${
               value > max
-                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
+                ? 'btn-brand text-white shadow-sm shadow-slate-300/40'
                 : 'bg-white hover:bg-stone-100 text-stone-400 border border-stone-200'
             }`}
           >
@@ -919,7 +921,7 @@ function ParamsPanel(props: {
             <button
               onClick={onCarte}
               disabled={busy}
-              className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-indigo-200 transition"
+              className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
             >
               <CreditCard className="w-6 h-6" />
               {nbCartes > 1 ? `${nbCartes} cartes` : 'Carte'}
@@ -944,7 +946,7 @@ function ParamsPanel(props: {
             <button
               onClick={onReplace}
               disabled={busy}
-              className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-indigo-200 transition"
+              className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
             >
               <RefreshCw className="w-6 h-6" />
               Remplacer ({nbCartes > 1 ? `${nbCartes} cartes` : '1 carte'}, {nuits} nuit{nuits > 1 ? 's' : ''})
@@ -1232,7 +1234,7 @@ function EncodingPanel(props: {
         <button
           onClick={onNext}
           disabled={busy}
-          className="mt-6 w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 font-medium shadow-sm shadow-indigo-200 transition"
+          className="mt-6 w-full flex items-center justify-center gap-2 py-4 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 font-medium shadow-sm shadow-slate-300/40 transition"
         >
           <CreditCard className="w-5 h-5" />
           Carte suivante ({encoding.carteIndex + 1}/{encoding.totalCartes})

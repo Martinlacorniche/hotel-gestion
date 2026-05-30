@@ -13,6 +13,7 @@ import {
   Trash2, User, X, Package, Plus
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { ThemedBackground } from "@/components/ThemedBackground";
 
 type CurioItem = { id: string; nom: string; emoji: string | null; ordre: number; duree_heures: number; prix_reservation: number };
 type Reservation = { id: string; objet_id: string; client_nom: string; chambre: string; debut: string; fin: string };
@@ -34,7 +35,8 @@ export default function ObjetsPretPage() {
   if (authLoading || !user) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen">
+      <ThemedBackground />
       <div className="px-6 py-8">
         <div className="flex items-center gap-3 mb-8">
           <div className="w-10 h-10 rounded-xl bg-[#004e7c] flex items-center justify-center">

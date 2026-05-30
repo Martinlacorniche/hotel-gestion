@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
@@ -304,7 +305,7 @@ function AddRoomModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
             <Button
               onClick={handleAdd}
               disabled={saving || !effectiveIp || !roomNumber}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+              className="w-full btn-brand hover:bg-indigo-700 text-white"
             >
               {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Ajout en cours…</> : 'Ajouter la chambre'}
             </Button>
@@ -391,7 +392,8 @@ export default function ChromecastDashboard() {
   const alerts = rooms.filter((r) => r.alert).length;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen">
+      <ThemedBackground />
       <div className="w-full px-6 py-6">
 
         {/* Header */}
@@ -401,7 +403,7 @@ export default function ChromecastDashboard() {
           </button>
           <div className="flex items-center gap-2 flex-1">
             <div className="bg-indigo-100 p-2 rounded-lg">
-              <Tv2 className="w-5 h-5 text-indigo-600" />
+              <Tv2 className="w-5 h-5 text-[var(--brand)]" />
             </div>
             <div>
               <h1 className="font-bold text-slate-800 text-lg leading-none">Chromecasts</h1>
@@ -419,7 +421,7 @@ export default function ChromecastDashboard() {
             <button
               onClick={fetchStatus}
               disabled={fetching}
-              className="text-slate-400 hover:text-indigo-600 transition-colors"
+              className="text-slate-400 hover:text-[var(--brand)] transition-colors"
               title="Rafraîchir"
             >
               <RefreshCw className={`w-4 h-4 ${fetching ? 'animate-spin' : ''}`} />
@@ -427,7 +429,7 @@ export default function ChromecastDashboard() {
             <Button
               onClick={() => setShowAddModal(true)}
               size="sm"
-              className="bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1"
+              className="btn-brand hover:bg-indigo-700 text-white flex items-center gap-1"
             >
               <Plus className="w-4 h-4" /> Ajouter
             </Button>
@@ -471,7 +473,7 @@ export default function ChromecastDashboard() {
             <p className="text-sm">Aucune Chromecast configurée</p>
             <button
               onClick={() => setShowAddModal(true)}
-              className="mt-3 text-sm text-indigo-600 hover:underline"
+              className="mt-3 text-sm text-[var(--brand)] hover:underline"
             >
               Ajouter la première
             </button>

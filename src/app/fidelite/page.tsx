@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import { supabase } from '@/lib/supabaseClient';
 import { format } from 'date-fns';
@@ -149,19 +150,20 @@ export default function FidelitePage() {
     .sort((a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }));
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans overflow-hidden text-slate-900">
+    <div className="flex h-screen font-sans overflow-hidden text-slate-900">
+      <ThemedBackground />
       
       {/* --- SIDEBAR (Liste Clients) --- */}
       <div className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 z-20 shadow-sm">
         {/* Header Sidebar */}
         <div className="p-4 border-b border-slate-100">
             <h1 className="text-xl font-extrabold text-slate-800 mb-4 flex items-center gap-2">
-               <Crown className="w-6 h-6 text-indigo-600" /> Fidélité
+               <Crown className="w-6 h-6 text-[var(--brand)]" /> Fidélité
             </h1>
             <div className="relative group">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                 <input 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:border-indigo-500 outline-none transition-all" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:bg-white focus:border-indigo-500 outline-none transition-all" 
                     placeholder="Rechercher..." 
                     value={search} 
                     onChange={(e) => setSearch(e.target.value)} 
@@ -173,7 +175,7 @@ export default function FidelitePage() {
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
             <button 
                 onClick={() => setShowClientModal(true)}
-                className="w-full flex items-center justify-center gap-2 p-3 mb-2 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-bold hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                className="w-full flex items-center justify-center gap-2 p-3 mb-2 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-bold hover:border-indigo-300 hover:text-[var(--brand)] hover:bg-indigo-50 transition-all"
             >
                 <Plus className="w-4 h-4" /> Nouveau Client
             </button>
@@ -185,7 +187,7 @@ export default function FidelitePage() {
                     className={`
                         group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all
                         ${selectedClient?.id === c.id 
-                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' 
+                            ? 'btn-brand text-white shadow-md shadow-slate-300/40' 
                             : 'hover:bg-slate-50 text-slate-700'
                         }
                     `}
@@ -210,7 +212,7 @@ export default function FidelitePage() {
                     {/* BOUTON RETOUR AU TOP 10 */}
                     <button 
                         onClick={() => setSelectedClient(null)} 
-                        className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 font-bold transition-colors mb-2"
+                        className="flex items-center gap-2 text-slate-500 hover:text-[var(--brand)] font-bold transition-colors mb-2"
                     >
                         <ChevronLeft className="w-5 h-5" /> Retour au Top 10
                     </button>
@@ -218,7 +220,7 @@ export default function FidelitePage() {
                     {/* Header Fiche Client */}
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
                         <div className="flex items-center gap-4">
-                             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 text-indigo-600 flex items-center justify-center text-2xl font-extrabold shadow-inner">
+                             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 text-[var(--brand)] flex items-center justify-center text-2xl font-extrabold shadow-inner">
                                  {selectedClient.prenom[0]}{selectedClient.nom[0]}
                              </div>
                              <div>
@@ -247,7 +249,7 @@ export default function FidelitePage() {
                             <button onClick={() => { 
                                 setNewClient({ nom: selectedClient.nom, prenom: selectedClient.prenom, societe: selectedClient.societe || '', email: selectedClient.email || '', commentaire: selectedClient.commentaire || '' });
                                 setEditMode(true); setShowClientModal(true); 
-                            }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-indigo-600 transition">
+                            }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-[var(--brand)] transition">
                                 <Edit2 className="w-5 h-5" />
                             </button>
                             <button onClick={async () => { if (await confirmDialog('Supprimer ce client ?')) { await supabase.from('clients').delete().eq('id', selectedClient.id); setClients(clients.filter((c) => c.id !== selectedClient.id)); setSelectedClient(null); } }} className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition">
@@ -269,7 +271,7 @@ export default function FidelitePage() {
                                 </div>
                                 <div className="text-right">
                                     <span className="block text-xs text-[#8A8475] font-bold">10 passages</span>
-                                    <span className="block text-xs text-indigo-600 font-bold">= 1 OFFERT</span>
+                                    <span className="block text-xs text-[var(--brand)] font-bold">= 1 OFFERT</span>
                                 </div>
                             </div>
 
@@ -310,7 +312,7 @@ export default function FidelitePage() {
                                         <div className="text-4xl mb-2">🎁</div>
                                         <h3 className="text-xl font-extrabold text-slate-800 mb-1">Félicitations !</h3>
                                         <p className="text-slate-500 text-sm mb-4">Le prochain passage est offert.</p>
-                                        <button onClick={resetCarte} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-full font-bold shadow-lg transition">
+                                        <button onClick={resetCarte} className="btn-brand hover:bg-indigo-700 text-white px-6 py-2 rounded-full font-bold shadow-lg transition">
                                             Utiliser le cadeau
                                         </button>
                                     </div>
@@ -340,7 +342,7 @@ export default function FidelitePage() {
                                         setAbonnement(null); setAboEdit(false);
                                     }
                                 }} />
-                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:btn-brand"></div>
                              </label>
                          </div>
 
@@ -362,7 +364,7 @@ export default function FidelitePage() {
                                              </div>
                                          )}
                                          <div className="flex gap-3 pt-2">
-                                             <button onClick={() => setAboEdit(true)} className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1"><Edit2 className="w-3 h-3"/> Modifier</button>
+                                             <button onClick={() => setAboEdit(true)} className="text-xs font-bold text-[var(--brand)] hover:underline flex items-center gap-1"><Edit2 className="w-3 h-3"/> Modifier</button>
                                              <button onClick={deleteAbonnement} className="text-xs font-bold text-red-500 hover:underline flex items-center gap-1"><Trash2 className="w-3 h-3"/> Supprimer</button>
                                          </div>
                                      </div>
@@ -378,7 +380,7 @@ export default function FidelitePage() {
                                          <div><label className="text-xs font-bold text-slate-500 uppercase">Note</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm bg-white resize-none" rows={2} value={abonnement.commentaire || ''} onChange={(e) => setAbonnement({ ...abonnement, commentaire: e.target.value })} /></div>
                                          <div className="flex gap-2 justify-end">
                                              <button onClick={() => { selectClient(selectedClient); /* Reset */ }} className="px-4 py-2 rounded-lg text-slate-500 font-bold hover:bg-white transition text-sm">Annuler</button>
-                                             <button onClick={saveAbonnement} disabled={savingAbo} className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition text-sm shadow-md">{savingAbo ? '...' : 'Enregistrer'}</button>
+                                             <button onClick={saveAbonnement} disabled={savingAbo} className="px-4 py-2 rounded-lg btn-brand text-white font-bold hover:bg-indigo-700 transition text-sm shadow-md">{savingAbo ? '...' : 'Enregistrer'}</button>
                                          </div>
                                      </div>
                                  )}
@@ -416,7 +418,7 @@ export default function FidelitePage() {
                                             </div>
                                             <div className="flex-1">
                                                 <div className="flex justify-between items-end mb-1">
-                                                    <span className="font-bold text-slate-800 group-hover:text-indigo-600 transition">{c.nom} {c.prenom}</span>
+                                                    <span className="font-bold text-slate-800 group-hover:text-[var(--brand)] transition">{c.nom} {c.prenom}</span>
                                                     <span className="text-xs font-bold text-slate-400">{c.total_passages} passages</span>
                                                 </div>
                                                 <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -442,17 +444,17 @@ export default function FidelitePage() {
             
             <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                    <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nom" value={newClient.nom} onChange={(e) => setNewClient({ ...newClient, nom: e.target.value })} />
-                    <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Prénom" value={newClient.prenom} onChange={(e) => setNewClient({ ...newClient, prenom: e.target.value })} />
+                    <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)]" placeholder="Nom" value={newClient.nom} onChange={(e) => setNewClient({ ...newClient, nom: e.target.value })} />
+                    <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)]" placeholder="Prénom" value={newClient.prenom} onChange={(e) => setNewClient({ ...newClient, prenom: e.target.value })} />
                 </div>
-                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Société" value={newClient.societe} onChange={(e) => setNewClient({ ...newClient, societe: e.target.value })} />
-                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Email" value={newClient.email} onChange={(e) => setNewClient({ ...newClient, email: e.target.value })} />
-                <textarea className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500 resize-none" placeholder="Note..." rows={3} value={newClient.commentaire} onChange={(e) => setNewClient({ ...newClient, commentaire: e.target.value })} />
+                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)]" placeholder="Société" value={newClient.societe} onChange={(e) => setNewClient({ ...newClient, societe: e.target.value })} />
+                <input className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)]" placeholder="Email" value={newClient.email} onChange={(e) => setNewClient({ ...newClient, email: e.target.value })} />
+                <textarea className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-[var(--brand)] resize-none" placeholder="Note..." rows={3} value={newClient.commentaire} onChange={(e) => setNewClient({ ...newClient, commentaire: e.target.value })} />
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
               <button className="px-5 py-3 rounded-xl text-slate-500 font-bold hover:bg-slate-50 transition" onClick={() => { setShowClientModal(false); setEditMode(false); }}>Annuler</button>
-              <button className="px-5 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700 transition"
+              <button className="px-5 py-3 rounded-xl btn-brand text-white font-bold shadow-lg hover:bg-indigo-700 transition"
                 onClick={async () => {
                   if (editMode && selectedClient) {
                     const { data, error } = await supabase.from('clients').update(newClient).eq('id', selectedClient.id).select().single();

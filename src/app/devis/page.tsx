@@ -8,6 +8,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { confirmDialog } from '@/components/ConfirmDialog';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import {
   Trash2, FileText, Send, AlertCircle,
   ArrowLeft, Calculator, Calendar, User, Building2, MapPin,
@@ -390,7 +391,8 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-900 font-sans print:bg-white print:p-0">
+    <div className="min-h-screen p-4 md:p-8 text-slate-900 font-sans print:bg-white print:p-0">
+      <ThemedBackground />
       {/* Toast notification */}
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[500] px-5 py-3 rounded-2xl shadow-xl text-sm font-black uppercase tracking-widest transition-all animate-in slide-in-from-bottom-4 ${ toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white' }`}>

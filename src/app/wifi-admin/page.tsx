@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import React, { createContext, useContext, Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { ThemedBackground } from "@/components/ThemedBackground";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
@@ -184,7 +185,8 @@ function WifiAdminContent() {
 
   return (
     <HotelCtx.Provider value={hotelId}>
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen">
+        <ThemedBackground />
         <div className="max-w-2xl mx-auto px-4 py-8">
           {/* Header */}
           <div className="flex items-center gap-3 mb-6">

@@ -307,7 +307,7 @@ export default function ParkingPage() {
 
         .pf-root {
           font-family: 'Barlow Condensed', sans-serif;
-          background: #ECEEF1;
+          background: var(--bg-base, #ECEEF1);
           color: #1F2228;
         }
 
