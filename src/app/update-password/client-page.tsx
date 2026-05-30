@@ -13,6 +13,15 @@ export default function UpdatePasswordClientPage() {
   const [status, setStatus] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [showPwd, setShowPwd] = useState(false)
+  // SÉCURITÉ : on n'autorise le changement QUE si le lien contient un token
+  // recovery/invite — capturé au 1er rendu, AVANT que Supabase nettoie l'URL.
+  // Sinon updateUser() modifierait la session déjà connectée (bug grave : on a
+  // changé le mauvais compte en bricolant un lien sans token).
+  const [recoveryReady, setRecoveryReady] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const u = window.location.hash + window.location.search;
+    return /access_token=|[?&]code=|type=recovery|type=invite/.test(u);
+  });
 
 
   // 🏷️ Détecter si on est sur un flow "invite" — soit via query string (?flow=invite),
@@ -25,46 +34,25 @@ export default function UpdatePasswordClientPage() {
     if (hashParams.get('type') === 'invite') setFlow('invite');
   }, [searchParams]);
 
-  // 🔐 Restaurer la session si access_token présent
+  // La session de récupération est établie automatiquement par Supabase
+  // (detectSessionInUrl) à partir du token du lien. On écoute l'event en backup
+  // pour confirmer `recoveryReady` (en plus de la détection au 1er rendu).
   useEffect(() => {
-    const accessToken = searchParams?.get('access_token');
-    const type = searchParams?.get('type');
-
-    console.log('🔎 URL:', window.location.href);
-  console.log('🔐 access_token:', accessToken);
-  console.log('🔐 type:', type);
-
-    if (accessToken && (type === 'recovery' || type === 'invite')) {
-      console.log('🔑 Tentative de récupération de session avec token :', accessToken);
-      supabase.auth
-        .exchangeCodeForSession(accessToken)
-        .then(({ data, error }) => {
- console.log('🧪 Résultat exchangeCodeForSession');
-      console.log('data:', data);
-      console.log('error:', error);
-          if (error) {
-            console.error('Erreur exchangeCodeForSession:', error.message);
-            setStatus('❌ Erreur session : ' + error.message);
-          } else {
-            console.log('✅ Session restaurée avec succès.');
-          }
-        });
-    }
-  }, [searchParams]);
-
-  // 🔁 Sécurité : écouter les changements de session en fallback
-  useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('🪝 Auth event:', event, session);
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') setRecoveryReady(true);
     });
-
-    return () => {
-      listener?.subscription.unsubscribe();
-    };
+    return () => { listener?.subscription.unsubscribe(); };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Garde-fou : sans session de récupération valide (lien sans token), on
+    // refuse — sinon on changerait le mot de passe du compte déjà connecté.
+    if (!recoveryReady) {
+      setStatus('❌ Lien invalide ou expiré. Redemandez un email de réinitialisation.');
+      return;
+    }
 
     const { error } = await supabase.auth.updateUser({ password: newPassword });
 
@@ -88,7 +76,13 @@ export default function UpdatePasswordClientPage() {
             Définissez le mot de passe de votre compte pour terminer la création.
           </p>
         )}
-        {!isSubmitted ? (
+        {!recoveryReady ? (
+          <div>
+            <p className="text-red-600 text-sm font-medium">❌ Lien invalide ou expiré.</p>
+            <p className="text-gray-500 text-xs mt-2">Ce lien ne contient pas de jeton de récupération valide. Redemandez un email de réinitialisation.</p>
+            <a href="/forgot-password" className="inline-block mt-4 bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition text-sm">Redemander un lien</a>
+          </div>
+        ) : !isSubmitted ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="relative">
   <input
