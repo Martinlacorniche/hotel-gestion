@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 import { 
   Lock, Unlock, ArrowDown, CheckCircle, ArrowUp, Plus, Calendar as CalendarIcon, 
   ChevronLeft, ChevronRight, Filter, Printer, Share2, Scissors, Trash2, 
-  User, Clock, AlertCircle, Wrench, Copy, Eye, EyeOff
+  User, Clock, AlertCircle, Wrench, Copy, Eye, EyeOff, Pencil
 } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -28,30 +28,30 @@ const SERVICE_ROWS = [
 ];
 
 const SHIFT_OPTIONS = [
-  // RECEPTION (Bleu / Indigo)
-  { label: "Réception matin", value: "Réception matin", color: "bg-sky-100 border-l-[5px] border-sky-600 text-sky-900 shadow-sm" },
-  { label: "Réception soir", value: "Réception soir", color: "bg-indigo-100 border-l-[5px] border-indigo-600 text-indigo-900 shadow-sm" },
-  { label: "Night", value: "Night", color: "bg-slate-800 border-l-[5px] border-indigo-400 text-white shadow-md" }, // Night reste sombre pour le contraste
+  // RECEPTION (Bleu / Indigo) — fond doux + texte foncé (lisible, sans ombre)
+  { label: "Réception matin", value: "Réception matin", color: "bg-sky-200 text-sky-900" },
+  { label: "Réception soir", value: "Réception soir", color: "bg-indigo-200 text-indigo-900" },
+  { label: "Night", value: "Night", color: "bg-slate-600 text-white" },
 
   // HOUSEKEEPING (Vert / Teal)
-  { label: "Housekeeping Chambre", value: "Housekeeping Chambre", color: "bg-emerald-100 border-l-[5px] border-emerald-600 text-emerald-900 shadow-sm" },
-  { label: "Housekeeping Communs", value: "Housekeeping Communs", color: "bg-teal-100 border-l-[5px] border-teal-600 text-teal-900 shadow-sm" },
-  
+  { label: "Housekeeping Chambre", value: "Housekeeping Chambre", color: "bg-emerald-200 text-emerald-900" },
+  { label: "Housekeeping Communs", value: "Housekeeping Communs", color: "bg-teal-200 text-teal-900" },
+
   // F&B (Ambre / Orange)
-  { label: "Petit Déjeuner", value: "Petit Déjeuner", color: "bg-amber-100 border-l-[5px] border-amber-500 text-amber-900 shadow-sm" },
-  { label: "Les Voiles", value: "Les Voiles", color: "bg-blue-900 border-l-[5px] border-amber-400 text-white shadow-md" },
-  
+  { label: "Petit Déjeuner", value: "Petit Déjeuner", color: "bg-amber-200 text-amber-900" },
+  { label: "Les Voiles", value: "Les Voiles", color: "bg-blue-200 text-blue-900" },
+
   // MAINTENANCE & DIVERS
-  { label: "Maintenance", value: "Maintenance", color: "bg-orange-100 border-l-[5px] border-orange-600 text-orange-900 shadow-sm" },
-  { label: "Extra", value: "Extra", color: "bg-fuchsia-100 border-l-[5px] border-fuchsia-600 text-fuchsia-900 shadow-sm" },
-  { label: "Présence", value: "Présence", color: "bg-violet-100 border-l-[5px] border-violet-600 text-violet-900 shadow-sm" },
-  { label: "École", value: "École", color: "bg-lime-100 border-l-[5px] border-lime-600 text-lime-900 shadow-sm" },
+  { label: "Maintenance", value: "Maintenance", color: "bg-orange-200 text-orange-900" },
+  { label: "Extra", value: "Extra", color: "bg-fuchsia-200 text-fuchsia-900" },
+  { label: "Présence", value: "Présence", color: "bg-violet-200 text-violet-900" },
+  { label: "École", value: "École", color: "bg-lime-200 text-lime-900" },
 
   // ABSENCES (Rouge / Rose)
-  { label: "CP", value: "CP", color: "bg-pink-100 border-l-[5px] border-pink-500 text-pink-900 opacity-90" },
-  { label: "Maladie", value: "Maladie", color: "bg-red-100 border-l-[5px] border-red-500 text-red-900 opacity-90" },
-  { label: "Injustifié", value: "Injustifié", color: "bg-red-200 border-l-[5px] border-red-700 text-red-950 font-bold" },
-  { label: "Repos", value: "Repos", color: "bg-slate-50 border border-dashed border-slate-300 text-slate-400 opacity-60" },
+  { label: "CP", value: "CP", color: "bg-pink-200 text-pink-900" },
+  { label: "Maladie", value: "Maladie", color: "bg-rose-200 text-rose-900" },
+  { label: "Injustifié", value: "Injustifié", color: "bg-red-500 text-white" },
+  { label: "Repos", value: "Repos", color: "bg-slate-100 text-slate-400 border border-dashed border-slate-200" },
 ];
 
 const getShiftColor = (shift) => SHIFT_OPTIONS.find(opt => opt.value === shift)?.color || 'bg-gray-50 border border-gray-200 text-gray-700';
@@ -75,6 +75,25 @@ const getEntry = (entries = [], userId, dateStr, preferDraft = false, isAdminFla
   return entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'published') ||
          entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'draft') || null;
 };
+
+// Jours fériés français d'une année (fixes + mobiles via Pâques Meeus).
+function feriesFR(year: number): Set<string> {
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mois = Math.floor((h + l - 7 * m + 114) / 31);
+  const jour = ((h + l - 7 * m + 114) % 31) + 1;
+  const easter = new Date(year, mois - 1, jour);
+  const fmt = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  const plus = (dt: Date, n: number) => { const x = new Date(dt); x.setDate(x.getDate() + n); return x; };
+  return new Set([
+    `${year}-01-01`, `${year}-05-01`, `${year}-05-08`, `${year}-07-14`,
+    `${year}-08-15`, `${year}-11-01`, `${year}-11-11`, `${year}-12-25`,
+    fmt(plus(easter, 1)), fmt(plus(easter, 39)), fmt(plus(easter, 50)),
+  ]);
+}
 
 const RETRO_LOCK_DAYS = 7;
 
@@ -406,6 +425,15 @@ export default function PlanningPage() {
     .gte('date', fromStr)
     .lte('date', toStr);
 
+  // EVP : contrats (pour les heures sup) + helpers nuit / fériés.
+  const { data: contratsData } = await supabase.from('contrats').select('*').in('user_id', userIds);
+  const contrats = contratsData || [];
+  const feries = feriesFR(year);
+  const WEEKS_M = 52 / 12;
+  const overlapMin = (a1: number, a2: number, b1: number, b2: number) => Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+  const nightMinOf = (e: any) => { if (!e.start_time || !e.end_time) return 0; const [sh, sm] = e.start_time.split(':').map(Number); const [eh, em] = e.end_time.split(':').map(Number); let s = sh * 60 + sm, en = eh * 60 + em; if (en <= s) en += 1440; return overlapMin(s, en, 1320, 1860) + overlapMin(s, en, 0, 420); };
+  const contratActifOf = (uid: string) => contrats.filter((c: any) => c.user_id === uid).find((c: any) => { const deb = new Date(c.date_debut), fin = c.date_fin ? new Date(c.date_fin) : null; return deb <= monthEnd && (!fin || fin >= monthStart); });
+
   const sourceEntries = monthErr ? entriesView : (monthEntries ?? []);
   const filtered = sourceEntries.filter(e => {
     const d = parseYMDLocal(e.date);
@@ -457,32 +485,48 @@ export default function PlanningPage() {
 
   const userStats = exportUsers.map(user => {
     const uEntries = entriesForMonth.filter(e => e.user_id === user.id_auth);
-    let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0, repas = 0;
+    let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0, repas = 0, nuitMin = 0, dimFerie = 0;
     for (const entry of uEntries) {
       if (!['Repos', 'CP', 'Maladie', 'Injustifié', 'École'].includes(entry.shift)) {
         workedDays++;
+        repas++; // 1 repas / jour travaillé (hors École, déjà exclu)
+        if (feries.has(entry.date)) dimFerie++; // jours fériés travaillés (dimanche = jour normal en HCR)
         if (entry.start_time && entry.end_time) {
           const [sh, sm] = entry.start_time.split(":").map(Number);
           const [eh, em] = entry.end_time.split(":").map(Number);
           let m = (eh * 60 + em) - (sh * 60 + sm);
           if (m < 0) m += 1440;
           workedHours += m / 60;
-          if (m > 300) repas++;
+          nuitMin += nightMinOf(entry);
         }
       }
       if (entry.shift === 'CP') cp++;
       if (entry.shift === 'Maladie') maladie++;
       if (entry.shift === 'Injustifié') injustifie++;
     }
-    return [user.name || user.email, workedDays, Math.round(workedHours * 100) / 100, cp, maladie, injustifie, repas];
+    // Heures sup du mois par tranche HCR (au-delà du contrat mensuel ; récup absorbée).
+    const ac = contratActifOf(user.id_auth);
+    let t10 = 0, t20 = 0, t50 = 0;
+    if (ac && ac.type !== 'Extra' && ac.heures_hebdo) {
+      const base = Math.max(ac.heures_hebdo, 35);
+      const monthOT = Math.max(0, workedHours - ac.heures_hebdo * WEEKS_M);
+      const cap10 = Math.max(0, 39 - base) * WEEKS_M, cap20 = Math.max(0, 43 - Math.max(base, 39)) * WEEKS_M;
+      let rem = monthOT; t10 = Math.min(rem, cap10); rem -= t10; t20 = Math.min(rem, cap20); rem -= t20; t50 = rem;
+    }
+    const r = (x: number) => Math.round(x * 100) / 100;
+    return [user.name || user.email, workedDays, r(workedHours), r(t10), r(t20), r(t50), r(nuitMin / 60), dimFerie, repas, cp, maladie, injustifie];
   });
 
   doc.setFontSize(14);
-  doc.text(`Récapitulatif du mois ${moisCap} ${year}`, 40, 40);
+  doc.text(`Récapitulatif du mois ${moisCap} ${year} — Éléments variables de paie`, 40, 40);
   autoTable(doc, {
-    startY: 60, head: [["Salarié", "Jours", "Heures", "CP", "Maladie", "Injust.", "Ind. Repas"]],
-    body: userStats, theme: "grid", styles: { fontSize: 10 }, headStyles: { fillColor: [245, 85, 85] },
+    startY: 60,
+    head: [["Salarié", "Jours", "Heures", "Sup +10%", "Sup +20%", "Sup +50%", "Nuit", "Fériés", "Repas", "CP", "Maladie", "Injust."]],
+    body: userStats, theme: "grid", styles: { fontSize: 8 }, headStyles: { fillColor: [79, 70, 229] },
   });
+  doc.setFontSize(7); doc.setTextColor(120);
+  doc.text("Heures sup au-delà du contrat mensuel (récup absorbée par le total mois) · Nuit = 22h-7h · Fériés = jours fériés travaillés · Repas = 1/jour travaillé · à valider service paie.", 40, (doc as any).lastAutoTable.finalY + 14);
+  doc.setTextColor(0);
 
   doc.addPage('a4', 'landscape');
   const daysInMonth = Array.from({ length: monthEnd.getDate() }, (_, i) => i + 1);
@@ -587,6 +631,7 @@ export default function PlanningPage() {
   const [showPrevWeek, setShowPrevWeek] = useState(false);
   const [showSurveillance, setShowSurveillance] = useState(false);
   const [hiddenServices, setHiddenServices] = useState<Set<string>>(new Set());
+  const [showServiceFilter, setShowServiceFilter] = useState(false);
   const displayDates = useMemo(() => {
     if (!showPrevWeek) return weekDates;
     const prev = Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i - 7));
@@ -711,8 +756,13 @@ export default function PlanningPage() {
     }
 
     // Couverture par jour : ≥ 1 personne sur chaque service requis (effectif draft/publié).
+    // Règles PAR HÔTEL — Les Voiles : juste réception matin/soir. (À terme : config par hôtel.)
+    const isVoiles = (currentHotel?.nom || '').toLowerCase().includes('voiles');
+    const couverture = isVoiles
+      ? [{ label: 'Réception matin', shifts: ['Réception matin'] }, { label: 'Réception soir', shifts: ['Réception soir'] }]
+      : COUVERTURE_REQUISE;
     weekStrs.forEach(ds => {
-      COUVERTURE_REQUISE.forEach(req => {
+      couverture.forEach(req => {
         const covered = (employees as any[]).some(emp => {
           const e = effEntry(emp.id_auth, ds);
           return e && req.shifts.includes(e.shift);
@@ -729,7 +779,7 @@ export default function PlanningPage() {
       alerts.unshift({ uid: '', name: '', type: 'prevenance', label: `Planning non publié à J-${daysUntilWeek} (délai ${SEUILS.prevenanceJours}j)` });
 
     return { totals, alerts, cellFlags };
-  }, [isAdmin, rows, planningEntries, weekDates, currentWeekStart]);
+  }, [isAdmin, rows, planningEntries, weekDates, currentWeekStart, currentHotel]);
 
   // Filtre "services masqués" — préférence par utilisateur, persistée en base.
   useEffect(() => {
@@ -795,12 +845,13 @@ export default function PlanningPage() {
 
     const entriesQuery = supabase.from('planning_entries').select('*').eq('hotel_id', hotelId).in('status', isAdmin ? ['draft', 'published'] : ['published']).gte('date', fetchFrom).lte('date', fetchTo).order('date', { ascending: true });
     
-    const [usersRes, configRes, entriesRes, cpRes, defRes] = await Promise.all([
-      supabase.from('users').select('id_auth, name, email, hotel_id, role, ordre, employment_start_date, employment_end_date, emoji').eq('hotel_id', hotelId),
+    const [usersRes, configRes, entriesRes, cpRes, defRes, contratsRes] = await Promise.all([
+      supabase.from('users').select('id_auth, name, email, hotel_id, role, ordre, employment_start_date, employment_end_date, active, emoji').eq('hotel_id', hotelId),
       supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
       entriesQuery,
       supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
-      supabase.from('default_shift_hours').select('*')
+      supabase.from('default_shift_hours').select('*'),
+      supabase.from('contrats').select('*')
     ]);
 
     if (myLoadId !== lastLoadId.current) return;
@@ -808,20 +859,37 @@ export default function PlanningPage() {
     const usersData = usersRes.data || [];
     const configData = configRes.data || [];
     const entriesData = entriesRes.data || [];
-    
+    const contratsData = contratsRes.data || [];
+
+    const weekStartD = atNoon(weekStart), weekEndD = atNoon(weekEnd);
+    // Contrat actif sur la semaine affichée (couvre [début, fin] ∩ semaine).
+    const activeContrat = (uid: string) => (contratsData as any[])
+      .filter(c => c.user_id === uid)
+      .find(c => {
+        const deb = new Date(c.date_debut);
+        const fin = c.date_fin ? new Date(c.date_fin) : null;
+        return deb <= weekEndD && (!fin || fin >= weekStartD);
+      });
+
     const usersWithOrder = usersData.map(u => {
       const cfg = configData.find(c => c.user_id === u.id_auth);
-      return { ...u, ordre: cfg?.ordre ?? 9999, service: cfg?.service ?? null };
+      const ac = activeContrat(u.id_auth);
+      return { ...u, ordre: cfg?.ordre ?? 9999, service: cfg?.service ?? null,
+               contratType: ac?.type ?? null, contratHeures: ac?.heures_hebdo ?? null };
     });
-    
+
+    // Règle d'apparition : a des shifts cette semaine → visible (filet). Sinon,
+    // a des contrats → visible seulement si un contrat actif couvre la semaine.
+    // Aucun contrat → pont rétroactif : comportement historique (visible sauf
+    // clôturé via employment_end_date), le temps que Martin saisisse les contrats.
     const usersVisible = usersWithOrder.filter(u => {
        if (u.role === 'superadmin') return false;
+       const hasEntries = entriesData.some(e => e.user_id === u.id_auth && new Date(e.date) >= weekStartD && new Date(e.date) <= weekEndD);
+       if (hasEntries) return true;
+       const userContrats = (contratsData as any[]).filter(c => c.user_id === u.id_auth);
+       if (userContrats.length > 0) return !!activeContrat(u.id_auth);
        const end = u.employment_end_date ? new Date(u.employment_end_date) : null;
-       if (end && end < atNoon(weekStart)) {
-         // Check if entries this week
-         return entriesData.some(e => e.user_id === u.id_auth && new Date(e.date) >= atNoon(weekStart) && new Date(e.date) <= atNoon(weekEnd));
-       }
-       return true;
+       return !(end && end < weekStartD);
     });
 
     const serviceRows = configData.filter(c => c.service_id && c.hotel_id === hotelId).map((c, i) => ({
@@ -952,31 +1020,52 @@ export default function PlanningPage() {
               <div className="flex items-center gap-2">
                   <button onClick={() => setIsUnlocked(!isUnlocked)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${isUnlocked ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-200' : 'bg-slate-100 text-slate-400'}`}>
                       {isUnlocked ? <Unlock className="w-4 h-4"/> : <Lock className="w-4 h-4"/>}
-                      {isUnlocked ? 'Édition activée' : 'Lecture seule'}
+                      {isUnlocked ? 'Édition' : 'Lecture seule'}
                   </button>
-                  <button onClick={() => setCutMode(!cutMode)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${cutMode ? 'bg-red-50 text-red-600 ring-1 ring-red-100' : 'hover:bg-white hover:text-slate-700 text-slate-500'}`}>
-                      <Scissors className="w-4 h-4"/> {cutMode ? 'Mode Couper' : 'Couper'}
+                  {isUnlocked && (
+                    <button onClick={() => setCutMode(!cutMode)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition ${cutMode ? 'bg-red-50 text-red-600 ring-1 ring-red-100' : 'hover:bg-white hover:text-slate-700 text-slate-500'}`} title="Déplacer un shift au lieu de le copier">
+                        <Scissors className="w-4 h-4"/> {cutMode ? 'Couper actif' : 'Couper'}
+                    </button>
+                  )}
+
+                  <div className="w-px h-6 bg-slate-200 mx-1" />
+
+                  <button onClick={() => setShowPrevWeek(!showPrevWeek)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition ${showPrevWeek ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-200' : 'hover:bg-white hover:text-slate-700 text-slate-500'}`} title="Afficher la semaine précédente (continuité repos)">
+                      <CalendarIcon className="w-4 h-4"/> S-1
                   </button>
 
-                  <button onClick={() => setShowPrevWeek(!showPrevWeek)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${showPrevWeek ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-200' : 'hover:bg-white hover:text-slate-700 text-slate-500'}`} title="Afficher la semaine précédente pour la continuité (repos entre services)">
-                      <CalendarIcon className="w-4 h-4"/> {showPrevWeek ? 'Sem. préc. affichée' : 'Voir S-1'}
-                  </button>
-
-                  <div className="flex items-center gap-1 ml-1 pl-2 border-l border-slate-200">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1"><Filter className="w-3 h-3"/> Voir</span>
-                    {SERVICE_ROWS.map(s => {
-                      const hidden = hiddenServices.has(s.id);
-                      return (
-                        <button key={s.id} onClick={() => toggleServiceVisibility(s.id)} title={hidden ? `Afficher ${s.name}` : `Masquer ${s.name}`}
-                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition ${hidden ? 'bg-slate-100 text-slate-300' : 'bg-white text-slate-700 ring-1 ring-slate-200 shadow-sm'}`}>
-                          {hidden ? <EyeOff className="w-3 h-3"/> : <Eye className="w-3 h-3"/>}
-                          {s.name}
-                        </button>
-                      );
-                    })}
+                  <div className="relative">
+                    <button onClick={() => setShowServiceFilter(!showServiceFilter)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition ${hiddenServices.size > 0 ? 'bg-[var(--brand-bg)] text-[var(--brand)] ring-1 ring-indigo-100' : 'hover:bg-white hover:text-slate-700 text-slate-500'}`}>
+                        <Filter className="w-4 h-4"/> Services
+                        {hiddenServices.size > 0 && <span className="text-[10px] font-bold bg-white/70 px-1.5 py-0.5 rounded-full">{SERVICE_ROWS.length - hiddenServices.size}/{SERVICE_ROWS.length}</span>}
+                        <ArrowDown className="w-3 h-3 opacity-50"/>
+                    </button>
+                    {showServiceFilter && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowServiceFilter(false)} />
+                        <div className="absolute top-12 left-0 z-50 bg-white border border-slate-100 rounded-2xl shadow-xl p-2 w-56 animate-in fade-in zoom-in duration-150">
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 py-1.5">Services affichés</div>
+                          {SERVICE_ROWS.map(s => {
+                            const hidden = hiddenServices.has(s.id);
+                            return (
+                              <button key={s.id} onClick={() => toggleServiceVisibility(s.id)} className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-slate-50 text-sm transition">
+                                <span className={`font-semibold ${hidden ? 'text-slate-300' : 'text-slate-700'}`}>{s.name}</span>
+                                {hidden ? <EyeOff className="w-4 h-4 text-slate-300"/> : <Eye className="w-4 h-4 text-[var(--brand)]"/>}
+                              </button>
+                            );
+                          })}
+                          {hiddenServices.size > 0 && (
+                            <button onClick={() => SERVICE_ROWS.forEach(s => hiddenServices.has(s.id) && toggleServiceVisibility(s.id))} className="w-full text-center text-xs font-semibold text-[var(--brand)] hover:bg-indigo-50 rounded-lg py-2 mt-1">Tout afficher</button>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
-                  
-                  {/* BOUTON MODIFIÉ ICI : "Demandes CP" au lieu de "Absences" */}
+                  <button onClick={() => router.push('/users')} className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-[var(--brand)] hover:bg-indigo-50 rounded-lg text-sm font-semibold transition" title="Gérer l'équipe : contrats, profils, rôles"><User className="w-4 h-4"/> Équipe</button>
+                  <button onClick={exportPDF} className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg text-sm font-semibold transition" title="Exporter le PDF (récap mois + éléments de paie)"><Printer className="w-4 h-4"/> Imprimer</button>
+              </div>
+
+              <div className="flex items-center gap-2">
                   <button onClick={() => setShowCpAdminModal(true)} className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-white hover:text-slate-700 text-slate-500 transition">
                       <div className="relative">
                         <span className="absolute -top-1 -right-1 flex h-2 w-2">
@@ -987,10 +1076,6 @@ export default function PlanningPage() {
                       </div>
                       Demandes CP
                   </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                  <button onClick={exportPDF} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Exporter PDF"><Printer className="w-5 h-5"/></button>
                   <button onClick={() => { setPublishSelectedUserIds(users.map(u => u.id_auth)); setPublishUntil(format(addDays(startOfWeek(currentWeekStart, { weekStartsOn: 1 }), 6), 'yyyy-MM-dd')); setShowPublishModal(true); }} className="flex items-center gap-2 btn-brand text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md shadow-indigo-200 hover:shadow-lg transition hover:-translate-y-0.5">
                       <Share2 className="w-4 h-4"/> Publier
                   </button>
@@ -999,7 +1084,7 @@ export default function PlanningPage() {
         )}
 
         {/* PANNEAU SURVEILLANCE */}
-        {isAdmin && surveillance && (
+        {isAdmin && surveillance && surveillance.alerts.length > 0 && (
           <div className="mb-6">
             <button
               onClick={() => surveillance.alerts.length > 0 && setShowSurveillance(!showSurveillance)}
@@ -1100,6 +1185,14 @@ export default function PlanningPage() {
                                   <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
                                      <Clock className="w-3 h-3"/> {getWeeklyHours(row.id_auth)}
                                   </span>
+                                  {(() => {
+                                     const t = surveillance?.totals[(row as any).id_auth];
+                                     const ch = (row as any).contratHeures;
+                                     if (!t || !ch) return null;
+                                     const supMin = t.week - ch * 60;
+                                     if (supMin <= 0) return null;
+                                     return <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full" title={`Heures sup vs contrat ${ch}h/sem`}>+{Math.floor(supMin / 60)}h{String(supMin % 60).padStart(2, '0')} sup</span>;
+                                  })()}
                                   {/* BOUTON DUPLIQUER CORRIGÉ ICI (Icône Copy) */}
                                   {isAdmin && (
                                     <button onClick={() => openDuplicationModal(row)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Dupliquer la semaine">
@@ -1138,23 +1231,23 @@ export default function PlanningPage() {
                              onDragStart={() => isAdmin && !cellLocked && setDraggedShift({ userId: row.id_auth, date: formatted })}
                              onClick={() => isAdmin && handleCellClick(row.id_auth, formatted, entry)}
                              title={cellLocked ? `Verrouillé (>${RETRO_LOCK_DAYS}j) — conservation légale` : undefined}
-                             // STYLE COMBO : Fond coloré + Barre latérale + Centré
+                             // Pastille pleine douce — fill couleur + texte contrasté, arrondi propre.
                              className={`
-                                relative group/shift select-none rounded-r-md rounded-l-sm mb-1.5
-                                transition-all duration-200 hover:shadow-md hover:z-10
-                                flex flex-col items-center justify-center text-center min-h-[52px] px-1
+                                relative group/shift select-none rounded-xl
+                                transition-all duration-200 hover:shadow-sm hover:z-10
+                                w-full flex flex-col items-center justify-center text-center min-h-[44px] px-2 py-1.5
                                 ${getShiftColor(entry?.shift || '')}
-                                ${cellLocked ? 'opacity-60 cursor-not-allowed grayscale-[40%]' : 'cursor-pointer hover:scale-[1.02]'}
+                                ${cellLocked ? 'opacity-60 cursor-not-allowed grayscale-[40%]' : 'cursor-pointer hover:-translate-y-0.5'}
                              `}
                           >
                              {/* Titre du shift */}
                              <div className="font-bold text-[11px] leading-tight w-full break-words">
                                 {entry?.shift}
                              </div>
-                             
+
                              {/* Heures */}
                              {entry?.shift !== 'Repos' && entry?.start_time && (
-                                <div className="text-[10px] font-mono opacity-90 mt-1 font-semibold">
+                                <div className="text-[10px] opacity-70 mt-0.5 font-semibold tabular-nums">
                                    {entry.start_time.slice(0,5)} - {entry.end_time.slice(0,5)}
                                 </div>
                              )}
@@ -1183,7 +1276,7 @@ export default function PlanningPage() {
                              )}
 
                         {isAdmin && isDraft && (
-                                <span className="absolute top-0.5 left-1 text-[8px] opacity-90 text-amber-900 bg-amber-200/50 px-1 rounded-full border border-amber-300 font-bold">📝</span>
+                                <Pencil className="absolute top-1 left-1 w-2.5 h-2.5 opacity-45" />
                              )}
 
                           </div>
@@ -1212,7 +1305,7 @@ export default function PlanningPage() {
                        }
 
                        return (
-                          <td key={`${row.id || row.id_auth}-${date.toISOString()}`} className={`px-2 py-2 align-top border-b border-slate-50 bg-opacity-30 min-h-[80px] ${rowBgClass} ${isPrevCol ? 'opacity-60' : ''} ${firstCurrentCol ? 'border-l-2 border-l-slate-300' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={() => handleShiftDrop(row.id_auth, formatted)}>
+                          <td key={`${row.id || row.id_auth}-${date.toISOString()}`} className={`px-2 py-2 align-middle border-b border-slate-50 bg-opacity-30 min-h-[80px] ${rowBgClass} ${isPrevCol ? 'opacity-60' : ''} ${firstCurrentCol ? 'border-l-2 border-l-slate-300' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={() => handleShiftDrop(row.id_auth, formatted)}>
                              {content}
                           </td>
                        );
