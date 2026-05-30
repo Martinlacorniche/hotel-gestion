@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { Inter, Poppins, DM_Sans, Lora, Playfair_Display, Kalam } from 'next/font/google';
 import { AuthProvider } from '@/context/AuthContext';
 import { Toaster } from 'react-hot-toast';
+import { ConfirmHost } from '@/components/ConfirmDialog';
 
 // Polices chargées en parallèle, chaque exposée via une variable CSS
 // (--font-inter, --font-poppins, ...) que `applyFont()` peut activer.
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <AuthProvider>
           {children}
+          <ConfirmHost />
           <Toaster
             position="top-right"
             toastOptions={{

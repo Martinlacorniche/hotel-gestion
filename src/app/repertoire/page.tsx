@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
+import { confirmDialog } from "@/components/ConfirmDialog";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useHotelScope } from "@/hooks/useHotelScope";
@@ -70,7 +72,7 @@ export default function RepertoirePage() {
 
   async function saveEntry() {
     if (!form.qui_quoi.trim() || !form.contact.trim()) {
-        alert("Nom et contact obligatoires");
+        toast.error("Nom et contact obligatoires");
         return;
     }
     
@@ -100,7 +102,7 @@ export default function RepertoirePage() {
 
   async function deleteEntry() {
     if (!selectedEntry) return;
-    if (!confirm("Supprimer ce contact ?")) return;
+    if (!(await confirmDialog("Supprimer ce contact ?"))) return;
     await supabase.from("repertoire").delete().eq("id", selectedEntry.id);
     fetchEntries();
     setSelectedEntry(null);

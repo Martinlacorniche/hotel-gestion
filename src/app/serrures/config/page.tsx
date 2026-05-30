@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
+import { confirmDialog } from '@/components/ConfirmDialog';
 import Link from 'next/link';
 import { Lock, Battery, Radio, RefreshCw, Link2, Unlink, Check, X, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -82,14 +84,14 @@ export default function SerruresPage() {
       setNumero('');
       await load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
   }
 
   async function unmapChambre(id: string) {
-    if (!confirm('Démapper cette chambre ?')) return;
+    if (!(await confirmDialog('Démapper cette chambre ?'))) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/serrures/admin/map?id=${id}`, {
@@ -100,7 +102,7 @@ export default function SerruresPage() {
       if (!json.ok) throw new Error(json.error);
       await load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }

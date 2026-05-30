@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
+import { confirmDialog } from '@/components/ConfirmDialog';
 import { supabase } from '@/lib/supabaseClient';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -117,7 +119,7 @@ export default function FidelitePage() {
   // Save Abonnement
   const saveAbonnement = async () => {
     if (!selectedClient || !abonnement) return;
-    if (!abonnement.date_debut || !abonnement.date_fin) { alert('Merci de renseigner les dates "Du" et "Au".'); return; }
+    if (!abonnement.date_debut || !abonnement.date_fin) { toast.error('Merci de renseigner les dates "Du" et "Au".'); return; }
     setSavingAbo(true);
     const payload = {
       client_id: selectedClient.id,
@@ -130,13 +132,13 @@ export default function FidelitePage() {
     } as any;
     const { error } = await supabase.from('abonnements').upsert(payload);
     setSavingAbo(false);
-    if (error) { alert("Impossible d'enregistrer l'abonnement"); return; }
+    if (error) { toast.error("Impossible d'enregistrer l'abonnement"); return; }
     setAboEdit(false);
   };
 
   const deleteAbonnement = async () => {
     if (!selectedClient) return;
-    if (!confirm('Supprimer les infos abonnement pour ce client ?')) return;
+    if (!(await confirmDialog('Supprimer les infos abonnement pour ce client ?'))) return;
     await supabase.from('abonnements').delete().eq('client_id', selectedClient.id);
     setAbonnement(null);
     setAboEdit(false);
@@ -248,7 +250,7 @@ export default function FidelitePage() {
                             }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-indigo-600 transition">
                                 <Edit2 className="w-5 h-5" />
                             </button>
-                            <button onClick={async () => { if (confirm('Supprimer ce client ?')) { await supabase.from('clients').delete().eq('id', selectedClient.id); setClients(clients.filter((c) => c.id !== selectedClient.id)); setSelectedClient(null); } }} className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition">
+                            <button onClick={async () => { if (await confirmDialog('Supprimer ce client ?')) { await supabase.from('clients').delete().eq('id', selectedClient.id); setClients(clients.filter((c) => c.id !== selectedClient.id)); setSelectedClient(null); } }} className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition">
                                 <Trash2 className="w-5 h-5" />
                             </button>
                         </div>

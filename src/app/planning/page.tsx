@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
+import { confirmDialog } from '@/components/ConfirmDialog';
 import { addDays, format, startOfWeek, isWithinInterval, addWeeks, differenceInCalendarDays } from 'date-fns';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -162,7 +163,7 @@ export default function PlanningPage() {
     setIsSendingCp(false);
     if (!error) {
       setSuccessMessage("Demande envoyée ✅"); setShowCpModal(false); setCpComment(''); loadCpRequests();
-    } else { alert("Erreur envoi : " + error.message); }
+    } else { toast.error("Erreur envoi : " + error.message); }
   };
 
   const router = useRouter();
@@ -261,17 +262,17 @@ export default function PlanningPage() {
   const [draggedShift, setDraggedShift] = useState(null);
 
   const handleDeleteCp = async (id) => {
-    if (!confirm("Supprimer cette demande ?")) return;
+    if (!(await confirmDialog("Supprimer cette demande ?"))) return;
     const { error } = await supabase.from('cp_requests').delete().eq('id', id);
-    if (error) alert("Erreur suppression : " + error.message); else loadCpRequests();
+    if (error) toast.error("Erreur suppression : " + error.message); else loadCpRequests();
   };
 
   const handleRefuseCp = async (req) => {
-    if (!confirm("Refuser cette demande ?")) return;
+    if (!(await confirmDialog("Refuser cette demande ?"))) return;
     const { error } = await supabase.from('cp_requests').update({
       status: 'refused', handled_by: user.id_auth, handled_at: new Date().toISOString(), handled_by_name: user?.name || user?.email || null,
     }).eq('id', req.id);
-    if (error) alert("Erreur refus : " + error.message); else loadCpRequests();
+    if (error) toast.error("Erreur refus : " + error.message); else loadCpRequests();
   };
 
   const [cutMode, setCutMode] = useState(false);
@@ -296,7 +297,7 @@ export default function PlanningPage() {
   const handleAcceptCp = async (req) => {
     const start = new Date(req.start_date);
     const end = new Date(req.end_date);
-    if (!confirm(`Valider CP du ${req.start_date} au ${req.end_date} ?`)) return;
+    if (!(await confirmDialog(`Valider CP du ${req.start_date} au ${req.end_date} ?`))) return;
 
     const { data: existing } = await supabase.from('planning_entries').select('id,date').eq('user_id', req.user_id).eq('hotel_id', hotelId);
     const daysCount = differenceInCalendarDays(end, start) + 1;
@@ -307,7 +308,7 @@ export default function PlanningPage() {
 
     let replaceConflicts = true;
     if (conflictingDates.length > 0) {
-      replaceConflicts = confirm(`Conflits sur ${conflictingDates.length} jour(s). Remplacer ?`);
+      replaceConflicts = await confirmDialog(`Conflits sur ${conflictingDates.length} jour(s). Remplacer ?`);
     }
 
     if (replaceConflicts && conflictingDates.length > 0) {
@@ -500,7 +501,7 @@ export default function PlanningPage() {
       return;
     }
     const existingTarget = planningEntries.find(e => e.user_id === targetUserId && e.date === targetDate && e.status === 'draft');
-    if (existingTarget && !confirm("Écraser le shift existant ?")) { setDraggedShift(null); return; }
+    if (existingTarget && !(await confirmDialog("Écraser le shift existant ?"))) { setDraggedShift(null); return; }
 
     const sourceEntry = planningEntries.find(e => e.user_id === sourceUserId && e.date === sourceDate && e.status === 'draft') ||
                         planningEntries.find(e => e.user_id === sourceUserId && e.date === sourceDate && e.status === 'published');

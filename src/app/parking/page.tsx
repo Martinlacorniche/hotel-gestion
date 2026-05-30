@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import toast from "react-hot-toast";
+import { confirmDialog } from "@/components/ConfirmDialog";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   format, parseISO, addMonths, subMonths, startOfMonth, endOfMonth, 
@@ -180,7 +182,7 @@ export default function ParkingPage() {
     // Pré-check côté client (UX) — si on glisse sur une autre résa : on annule et on prévient.
     const conflict = findOverlap(newParkingId, newStartStr, newEndStr, resId);
     if (conflict) {
-      alert(formatOverlapMessage(conflict));
+      toast.error(formatOverlapMessage(conflict));
       target.setAttribute('data-x', 0);
       target.setAttribute('data-y', 0);
       target.style.transform = 'none';
@@ -198,7 +200,7 @@ export default function ParkingPage() {
     // La contrainte DB EXCLUDE renvoie le code Postgres '23P01' (exclusion_violation).
     if (error) {
       if ((error as any).code === '23P01') {
-        alert("Conflit détecté : une autre réservation occupe déjà cette place sur ces dates. Modification annulée.");
+        toast.error("Conflit détecté : une autre réservation occupe déjà cette place sur ces dates. Modification annulée.");
       } else {
         console.error("Erreur Update:", error);
       }
@@ -217,14 +219,14 @@ export default function ParkingPage() {
     // Une résa doit donc avoir end > start (au minimum start + 1 = 1 nuit).
     // Sinon la contrainte DB EXCLUDE rejette avec une erreur Postgres peu lisible.
     if (endDate <= startDate) {
-      alert("La date de départ doit être au moins le lendemain de la date d'arrivée.");
+      toast.error("La date de départ doit être au moins le lendemain de la date d'arrivée.");
       return;
     }
 
     // Pré-check côté client (UX) — message clair avant submit.
     const conflict = findOverlap(selectedParking, startDate, endDate, editingId);
     if (conflict) {
-      alert(formatOverlapMessage(conflict));
+      toast.error(formatOverlapMessage(conflict));
       return;
     }
 
@@ -236,9 +238,9 @@ export default function ParkingPage() {
     if (error) {
       // Filet de sécurité : si la contrainte DB EXCLUDE déclenche (race condition), message clair.
       if ((error as any).code === '23P01') {
-        alert("Conflit détecté : une autre réservation occupe déjà cette place sur ces dates. Enregistrement annulé.");
+        toast.error("Conflit détecté : une autre réservation occupe déjà cette place sur ces dates. Enregistrement annulé.");
       } else {
-        alert("Erreur enregistrement : " + (error.message || error));
+        toast.error("Erreur enregistrement : " + (error.message || error));
       }
       return;
     }
@@ -259,7 +261,7 @@ export default function ParkingPage() {
   }
 
   async function handleDelete(id: string) {
-    if(!confirm("Supprimer cette réservation ?")) return;
+    if(!(await confirmDialog("Supprimer cette réservation ?"))) return;
     await supabase.from("parking_reservations").delete().eq("id", id);
     fetchReservations();
     setPopupReservation(null);

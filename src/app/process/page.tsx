@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { confirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
 import { useHotelScope } from "@/hooks/useHotelScope";
 import {
@@ -89,7 +90,7 @@ export default function ProcessPage() {
 
   async function deleteProcess() {
     if (!selectedProcess) return;
-    if (!confirm("Supprimer définitivement ce process ?")) return;
+    if (!(await confirmDialog("Supprimer définitivement ce process ?"))) return;
     await supabase.from("processes").delete().eq("id", selectedProcess.id);
     fetchProcesses();
     setSelectedProcess(null);

@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import React, { createContext, useContext, Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { confirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -927,7 +928,7 @@ function BarTab() {
   const deleteCategorie = async (cat: string) => {
     const hasItems = items.some(i => i.categorie === cat);
     if (hasItems) {
-      if (!confirm(`La catégorie "${cat}" contient des articles. Supprimer quand même (les articles seront aussi supprimés) ?`)) return;
+      if (!(await confirmDialog(`La catégorie "${cat}" contient des articles. Supprimer quand même (les articles seront aussi supprimés) ?`))) return;
       const ids = items.filter(i => i.categorie === cat).map(i => i.id);
       await supabase.from("wifi_bar").delete().in("id", ids);
       setItems(prev => prev.filter(i => i.categorie !== cat));

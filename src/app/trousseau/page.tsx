@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import { useHotelScope } from '@/hooks/useHotelScope';
+import { confirmDialog } from '@/components/ConfirmDialog';
 import { 
   Search, Plus, Key, Globe, Copy, Eye, EyeOff, 
   Trash2, Edit2, Shield, Check, Save, Lock, User 
@@ -88,7 +89,7 @@ export default function TrousseauPage() {
   }
 
   async function deleteEntry(id: string) {
-      if (!confirm("Supprimer cette entrée ?")) return;
+      if (!(await confirmDialog("Supprimer cette entrée ?"))) return;
       await supabase.from('trousseau').delete().eq('id', id);
       fetchTrousseau();
       if (selectedEntry?.id === id) setSelectedEntry(null);

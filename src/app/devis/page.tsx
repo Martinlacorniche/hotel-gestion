@@ -6,8 +6,9 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient'; 
-import { 
+import { supabase } from '@/lib/supabaseClient';
+import { confirmDialog } from '@/components/ConfirmDialog';
+import {
   Trash2, FileText, Send, AlertCircle,
   ArrowLeft, Calculator, Calendar, User, Building2, MapPin,
   StickyNote, Loader2, CheckCircle, Mail, Edit2, Settings2, GripVertical
@@ -934,7 +935,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
                           </Button>
                           <Button variant="ghost" size="sm" className="text-slate-400 hover:text-red-600 h-8 w-8 p-0"
                             onClick={async () => {
-                              if (confirm("Supprimer définitivement cet article du catalogue ?")) {
+                              if (await confirmDialog("Supprimer définitivement cet article du catalogue ?")) {
                                 await supabase.from('articles').delete().eq('id', item.id);
                                 setCatalog(catalog.filter(i => i.id !== item.id));
                               }

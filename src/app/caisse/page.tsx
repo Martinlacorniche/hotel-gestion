@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -335,7 +336,7 @@ function CaissePageInner() {
       .single();
 
     setSavingShift(null);
-    if (error) { alert("Erreur enregistrement : " + error.message); return; }
+    if (error) { toast.error("Erreur enregistrement : " + error.message); return; }
     if (data) {
       updateShift(s, {
         id: data.id, user_id: data.user_id, user_name: data.user_name, valide: data.valide,
@@ -395,7 +396,7 @@ function CaissePageInner() {
     const { error } = await supabase
       .from("caisse_config")
       .upsert({ hotel_id: hotelId, fond_cible: fondCibleDraft }, { onConflict: "hotel_id" });
-    if (error) { alert("Erreur : " + error.message); return; }
+    if (error) { toast.error("Erreur : " + error.message); return; }
     setFondCible(fondCibleDraft);
   };
 

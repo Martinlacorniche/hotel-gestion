@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import toast from 'react-hot-toast';
+import { confirmDialog } from '@/components/ConfirmDialog';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -360,9 +362,9 @@ export default function HotelDashboard() {
 
   const deleteObjet = async (id: string) => {
     if (!id) return;
-    if (!confirm('Supprimer cet objet ?')) return;
+    if (!(await confirmDialog('Supprimer cet objet ?'))) return;
     const { error } = await supabase.from('objets_trouves').delete().eq('id', id);
-    if (error) { alert('Suppression impossible : ' + error.message); return; }
+    if (error) { toast.error('Suppression impossible : ' + error.message); return; }
     setObjetsTrouves((prev) => prev.filter((o) => o.id !== id));
   };
 
@@ -589,21 +591,21 @@ export default function HotelDashboard() {
 
   const deleteDemande = async (id: string) => {
     const { error } = await supabase.from('demandes').delete().eq('id', id);
-    if (error) { alert('Suppression impossible : ' + error.message); return; }
+    if (error) { toast.error('Suppression impossible : ' + error.message); return; }
     setDemandes((prev) => prev.filter((d) => d.id !== id));
   };
 
   const deleteChauffeur = async (id: string) => {
-    if (!confirm("Supprimer ce chauffeur ?")) return;
+    if (!(await confirmDialog("Supprimer ce chauffeur ?"))) return;
     const { error } = await supabase.from("chauffeurs").delete().eq("id", id);
-    if (error) { alert("Erreur suppression : " + error.message); return; }
+    if (error) { toast.error("Erreur suppression : " + error.message); return; }
     setChauffeurs((prev) => prev.filter((c) => c.id !== id));
   };
 
   const createChauffeur = async () => {
     if (!newChauffeur.trim()) return;
     const { data, error } = await supabase.from("chauffeurs").insert([{ nom: newChauffeur.trim(), hotel_id: hotelId }]).select().single();
-    if (error) { alert("Erreur : " + error.message); return; }
+    if (error) { toast.error("Erreur : " + error.message); return; }
     setChauffeurs(prev => [...prev, data]);
     setNewChauffeur('');
   };
@@ -661,7 +663,7 @@ export default function HotelDashboard() {
     };
     const newReplies = [...(chatConsigne.replies || []), reply];
     const { error } = await supabase.from('consignes').update({ replies: newReplies }).eq('id', chatConsigne.id);
-    if (error) { alert('Erreur envoi : ' + error.message); return; }
+    if (error) { toast.error('Erreur envoi : ' + error.message); return; }
     setConsignes(prev => prev.map(c => c.id === chatConsigne.id ? { ...c, replies: newReplies } : c));
     setChatConsigne((prev: any) => prev ? { ...prev, replies: newReplies } : null);
     setChatInput('');
@@ -689,7 +691,7 @@ export default function HotelDashboard() {
       r.id === editingReplyId ? { ...r, texte: trimmed, edited_at: new Date().toISOString() } : r
     );
     const { error } = await supabase.from('consignes').update({ replies: newReplies }).eq('id', chatConsigne.id);
-    if (error) { alert('Erreur édition : ' + error.message); return; }
+    if (error) { toast.error('Erreur édition : ' + error.message); return; }
     setConsignes(prev => prev.map(c => c.id === chatConsigne.id ? { ...c, replies: newReplies } : c));
     setChatConsigne((prev: any) => prev ? { ...prev, replies: newReplies } : null);
     setEditingReplyId(null);
@@ -698,11 +700,11 @@ export default function HotelDashboard() {
 
   const deleteReply = async (replyId: string) => {
     if (!chatConsigne) return;
-    if (!confirm('Supprimer ce message ?')) return;
+    if (!(await confirmDialog('Supprimer ce message ?'))) return;
     const current = Array.isArray(chatConsigne.replies) ? chatConsigne.replies : [];
     const newReplies = current.filter((r: any) => r.id !== replyId);
     const { error } = await supabase.from('consignes').update({ replies: newReplies }).eq('id', chatConsigne.id);
-    if (error) { alert('Erreur suppression : ' + error.message); return; }
+    if (error) { toast.error('Erreur suppression : ' + error.message); return; }
     setConsignes(prev => prev.map(c => c.id === chatConsigne.id ? { ...c, replies: newReplies } : c));
     setChatConsigne((prev: any) => prev ? { ...prev, replies: newReplies } : null);
     if (editingReplyId === replyId) cancelEditReply();
@@ -1410,7 +1412,7 @@ const birthdayMessage = useMemo(() => {
                                      setNewTaxi({ type: d.type ?? 'Taxi', chambre: d.chambre ?? '', heure: d.heure ?? '', prix: d.prix ?? '', chauffeur: d.chauffeur_id ?? '', statut: d.statut ?? 'Prévu', dateAction: d.date ?? formatDate(selectedDate, 'yyyy-MM-dd') });
                                      setEditDemandeIndex(realIndex); setShowTaxiModal(true);
                                 }} className="text-slate-300 hover:text-indigo-600"><Edit2 className="w-3 h-3"/></button>
-                                <button onClick={() => { if(confirm('Supprimer ?')) deleteDemande(d.id); }} className="text-slate-300 hover:text-red-500"><XCircle className="w-3 h-3"/></button>
+                                <button onClick={async () => { if (await confirmDialog('Supprimer ?')) deleteDemande(d.id); }} className="text-slate-300 hover:text-red-500"><XCircle className="w-3 h-3"/></button>
                              </div>
                         </div>
                     ))}
@@ -1534,7 +1536,7 @@ const birthdayMessage = useMemo(() => {
                          <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all hover:-translate-y-0.5" onClick={async () => {
                              const payload = { hotel_id: hotelId, mois: selectedDate.getMonth() + 1, annee: selectedDate.getFullYear(), ...kpis };
                              await supabase.from("kpis").upsert(payload, { onConflict: "hotel_id,mois,annee" });
-                             alert("Données mises à jour ✅");
+                             toast.success("Données mises à jour");
                          }}>
                             <Save />
                          </Button>

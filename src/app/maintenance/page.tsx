@@ -3,6 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import toast from 'react-hot-toast';
+import { confirmDialog } from '@/components/ConfirmDialog';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -336,7 +338,7 @@ function MaintenancePageInner() {
   };
 
   const removeItem = async (id: string) => {
-    if (!confirm('Supprimer cette maintenance ?')) return;
+    if (!(await confirmDialog('Supprimer cette maintenance ?'))) return;
     await supabase.from('maintenance').delete().eq('id', id);
     setItems(prev => prev.filter(x => x.id !== id));
   };
@@ -367,21 +369,21 @@ function MaintenancePageInner() {
     if (existing) {
       const payload = { label: form.label.trim() || null, rooms: form.rooms, tableau: form.tableau.trim() || null };
       const { error } = await supabase.from('clim_reseaux').update(payload).eq('id', existing.id);
-      if (error) { alert('Erreur : ' + error.message); return; }
+      if (error) { toast.error('Erreur : ' + error.message); return; }
       setClimReseaux(prev => prev.map(x => (x.id === existing.id ? { ...x, ...payload } : x)));
     } else {
       const nextOrder = climReseaux.reduce((m, x) => Math.max(m, x.sort_order), 0) + 1;
       const payload = { hotel_id: hotelId, label: form.label.trim() || null, rooms: form.rooms, tableau: form.tableau.trim() || null, sort_order: nextOrder };
       const { data, error } = await supabase.from('clim_reseaux').insert(payload).select().single();
-      if (error) { alert('Erreur : ' + error.message); return; }
+      if (error) { toast.error('Erreur : ' + error.message); return; }
       setClimReseaux(prev => [...prev, data as any]);
     }
     setClimEdit(null);
   };
   const deleteClim = async (id: string) => {
-    if (!confirm('Supprimer ce réseau clim ?')) return;
+    if (!(await confirmDialog('Supprimer ce réseau clim ?'))) return;
     const { error } = await supabase.from('clim_reseaux').delete().eq('id', id);
-    if (error) { alert('Erreur : ' + error.message); return; }
+    if (error) { toast.error('Erreur : ' + error.message); return; }
     setClimReseaux(prev => prev.filter(x => x.id !== id));
   };
 
@@ -400,7 +402,7 @@ function MaintenancePageInner() {
     };
     const newReplies = [...(chatItem.replies || []), reply];
     const { error } = await supabase.from('maintenance').update({ replies: newReplies }).eq('id', chatItem.id);
-    if (error) { alert('Erreur envoi : ' + error.message); return; }
+    if (error) { toast.error('Erreur envoi : ' + error.message); return; }
     setItems(prev => prev.map(x => x.id === chatItem.id ? { ...x, replies: newReplies } : x));
     setChatItem(prev => prev ? { ...prev, replies: newReplies } : null);
     setChatInput('');
@@ -428,7 +430,7 @@ function MaintenancePageInner() {
       r.id === editingReplyId ? { ...r, texte: trimmed, edited_at: new Date().toISOString() } : r
     );
     const { error } = await supabase.from('maintenance').update({ replies: newReplies }).eq('id', chatItem.id);
-    if (error) { alert('Erreur édition : ' + error.message); return; }
+    if (error) { toast.error('Erreur édition : ' + error.message); return; }
     setItems(prev => prev.map(x => x.id === chatItem.id ? { ...x, replies: newReplies } : x));
     setChatItem(prev => prev ? { ...prev, replies: newReplies } : null);
     setEditingReplyId(null);
@@ -437,11 +439,11 @@ function MaintenancePageInner() {
 
   const deleteReply = async (replyId: string) => {
     if (!chatItem) return;
-    if (!confirm('Supprimer ce message ?')) return;
+    if (!(await confirmDialog('Supprimer ce message ?'))) return;
     const current = Array.isArray(chatItem.replies) ? chatItem.replies : [];
     const newReplies = current.filter((r) => r.id !== replyId);
     const { error } = await supabase.from('maintenance').update({ replies: newReplies }).eq('id', chatItem.id);
-    if (error) { alert('Erreur suppression : ' + error.message); return; }
+    if (error) { toast.error('Erreur suppression : ' + error.message); return; }
     setItems(prev => prev.map(x => x.id === chatItem.id ? { ...x, replies: newReplies } : x));
     setChatItem(prev => prev ? { ...prev, replies: newReplies } : null);
     if (editingReplyId === replyId) cancelEditReply();

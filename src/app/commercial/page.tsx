@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabaseClient'; 
+import toast from 'react-hot-toast';
+import { confirmDialog } from '@/components/ConfirmDialog';
+import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import { format, isBefore, isToday, parseISO, getYear } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -309,7 +311,7 @@ export default function CommercialDashboard() {
 
   const handleSave = async () => {
     if (isSaving) return;
-    if (!currentLead.nom_client || !currentLead.titre_demande) return alert('Nom et Titre obligatoires');
+    if (!currentLead.nom_client || !currentLead.titre_demande) { toast.error('Nom et Titre obligatoires'); return; }
     setIsSaving(true);
     const trace = getUpdateTrace();
     const payload = {
@@ -324,10 +326,10 @@ export default function CommercialDashboard() {
     let leadId = currentLead.id;
     if (leadId) {
       const { error } = await supabase.from('suivi_commercial').update(payload).eq('id', leadId);
-      if (error) return alert(error.message);
+      if (error) { toast.error(error.message); return; }
     } else {
       const { data, error } = await supabase.from('suivi_commercial').insert([{ ...payload, created_at: new Date().toISOString() }]).select().single();
-      if (error) return alert(error.message);
+      if (error) { toast.error(error.message); return; }
       leadId = data.id;
     }
     if (leadId) {
@@ -352,7 +354,7 @@ export default function CommercialDashboard() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer ce dossier ?')) return;
+    if (!(await confirmDialog('Supprimer ce dossier ?'))) return;
     // Supprimer les dépendances d'abord
     const { data: quotes } = await supabase.from('quotes').select('id').eq('lead_id', id);
     if (quotes?.length) {
@@ -361,7 +363,7 @@ export default function CommercialDashboard() {
     }
     await supabase.from('seminar_reservations').delete().eq('lead_id', id);
     const { error } = await supabase.from('suivi_commercial').delete().eq('id', id);
-    if (error) { alert(`Erreur suppression : ${error.message}`); return; }
+    if (error) { toast.error(`Erreur suppression : ${error.message}`); return; }
     setLeads(prev => prev.filter(l => l.id !== id));
   };
 
@@ -387,7 +389,7 @@ export default function CommercialDashboard() {
       }])
       .select()
       .single();
-    if (error || !newLead) return alert('Erreur lors de la duplication');
+    if (error || !newLead) { toast.error('Erreur lors de la duplication'); return; }
 
     // Copier le devis (lignes) si il existe
     const { data: existingQuote } = await supabase

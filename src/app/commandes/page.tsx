@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { confirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
@@ -136,7 +137,7 @@ export default function PageCommandes() {
   }
 
   async function deleteCommande(id: string) {
-    if (!confirm("Supprimer toute la commande ?")) return;
+    if (!(await confirmDialog("Supprimer toute la commande ?"))) return;
     await supabase.from('commandes').delete().eq('id', id); // Cascade delete normalement géré par Supabase, sinon ajouter delete lignes
     setCommandes(prev => prev.filter(c => c.id !== id));
     setLignes(prev => prev.filter(l => l.commande_id !== id));

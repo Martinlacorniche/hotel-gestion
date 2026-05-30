@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import toast from 'react-hot-toast';
+import { confirmDialog } from '@/components/ConfirmDialog';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -370,13 +372,13 @@ export default function ChromecastDashboard() {
 
   const handleDelete = async (room: Room, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`Supprimer ${room.name} ?`)) return;
+    if (!(await confirmDialog(`Supprimer ${room.name} ?`))) return;
     setDeletingId(room.id);
     try {
       await apiFetch(`/api/rooms/${room.id}`, { method: 'DELETE' });
       await fetchStatus();
     } catch {
-      alert('Erreur lors de la suppression.');
+      toast.error('Erreur lors de la suppression.');
     } finally {
       setDeletingId(null);
     }
