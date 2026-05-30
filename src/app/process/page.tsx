@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { 
-  Search, Plus, FileText, ChevronLeft, Trash2, Save, Edit2, BookOpen 
+import { useHotelScope } from "@/hooks/useHotelScope";
+import {
+  Search, Plus, FileText, ChevronLeft, Trash2, Save, Edit2, BookOpen
 } from 'lucide-react';
 
 // --- TYPES ---
@@ -14,12 +15,7 @@ export default function ProcessPage() {
   const { user } = useAuth();
 
   // --- ÉTATS GLOBAUX ---
-  const [hotels, setHotels] = useState<any[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string>(() => {
-    if (typeof window !== "undefined") return window.localStorage.getItem("selectedHotelId") || "";
-    return "";
-  });
-  const [currentHotel, setCurrentHotel] = useState<any | null>(null);
+  const { hotels, selectedHotelId, setSelectedHotelId, currentHotel } = useHotelScope();
   const [processes, setProcesses] = useState<Process[]>([]);
   const [search, setSearch] = useState("");
   
@@ -35,23 +31,7 @@ export default function ProcessPage() {
   }, [currentHotel]);
 
   useEffect(() => {
-    if (selectedHotelId && typeof window !== "undefined") {
-      window.localStorage.setItem("selectedHotelId", selectedHotelId);
-    }
-  }, [selectedHotelId]);
-
-  useEffect(() => {
-    supabase.from("hotels").select("id, nom").then(({ data }) => {
-        setHotels(data || []);
-        if(!selectedHotelId && data && data.length > 0) setSelectedHotelId(data[0].id);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (selectedHotelId) {
-      supabase.from("hotels").select("id, nom").eq("id", selectedHotelId).single().then(({ data }) => setCurrentHotel(data));
-      fetchProcesses();
-    }
+    if (selectedHotelId) fetchProcesses();
   }, [selectedHotelId]);
 
   // --- FONCTIONS ---
