@@ -331,6 +331,13 @@ export default function HotelDashboard() {
   
   const [users, setUsers] = useState<any[]>([]);
 
+  // Flash infos (nouveautés ciblées, lues une fois)
+  const [flashQueue, setFlashQueue] = useState<any[]>([]);
+  const [showFlashCreate, setShowFlashCreate] = useState(false);
+  const [flashMsg, setFlashMsg] = useState('');
+  const [flashTargets, setFlashTargets] = useState<string[]>([]);
+  const [flashSending, setFlashSending] = useState(false);
+
   const [showCalendar, setShowCalendar] = useState(false);
   const [editObjetIndex, setEditObjetIndex] = useState<number | null>(null);
   const [ticketsLoading, setTicketsLoading] = useState(false);
@@ -431,6 +438,47 @@ export default function HotelDashboard() {
     };
     if (hotelId) fetchUsers();
   }, [hotelId]);
+
+  // ── Flash infos (nouveautés) ──
+  const isSuperadmin = user?.role === 'superadmin';
+  const activeUsers = users.filter((u: any) => u.active !== false);
+
+  useEffect(() => {
+    const uid = (user as any)?.id_auth || user?.id;
+    if (!uid) return;
+    supabase.from('flash_infos').select('*').eq('active', true).order('created_at', { ascending: false })
+      .then(({ data }) => {
+        const unread = (data || []).filter((f: any) => {
+          const targeted = !f.target_ids || f.target_ids.length === 0 || f.target_ids.includes(uid);
+          const read = Array.isArray(f.read_by) && f.read_by.includes(uid);
+          return targeted && !read;
+        });
+        setFlashQueue(unread);
+      });
+  }, [user]);
+
+  const dismissFlash = async () => {
+    const uid = (user as any)?.id_auth || user?.id;
+    const f = flashQueue[0];
+    if (f && uid) {
+      const newRead = Array.isArray(f.read_by) ? [...f.read_by, uid] : [uid];
+      await supabase.from('flash_infos').update({ read_by: newRead }).eq('id', f.id);
+    }
+    setFlashQueue(prev => prev.slice(1));
+  };
+
+  const createFlash = async () => {
+    if (!flashMsg.trim()) { toast.error('Message vide'); return; }
+    setFlashSending(true);
+    const { error } = await supabase.from('flash_infos').insert({
+      hotel_id: hotelId || null, message: flashMsg.trim(), active: true,
+      target_ids: flashTargets.length ? flashTargets : null, read_by: [],
+    });
+    setFlashSending(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success('Nouveauté publiée');
+    setShowFlashCreate(false); setFlashMsg(''); setFlashTargets([]);
+  };
 
   useEffect(() => {
     const fetchTickets = async () => {
@@ -1638,17 +1686,11 @@ const birthdayMessage = useMemo(() => {
              </div>
          </div>
 
-         {/* Admin Section */}
-         {(user.role === 'admin' || user.role === 'superadmin') && (
-            <div className="bg-slate-100 rounded-2xl p-6 border border-slate-200">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="font-bold text-slate-700">Administration</h2>
-                    <div className="flex gap-2">
-                         <Link href="/users">
-                           <Button variant="outline" size="sm">Gérer les utilisateurs</Button>
-                         </Link>
-                    </div>
-                </div>
+         {isSuperadmin && (
+            <div className="flex justify-end">
+               <button onClick={() => setShowFlashCreate(true)} className="flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-[var(--brand)] bg-white border border-slate-200 px-4 py-2 rounded-xl hover:shadow-sm transition">
+                  📣 Communiquer une nouveauté
+               </button>
             </div>
          )}
 
@@ -2109,7 +2151,55 @@ const birthdayMessage = useMemo(() => {
             </div>
         </div>
       )}
-      
+
+      {/* Pop-up nouveauté (lue une fois) */}
+      {flashQueue.length > 0 && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-7 border border-slate-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">📣</span>
+              <h2 className="text-lg font-extrabold text-slate-800">Nouveauté</h2>
+            </div>
+            <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">{flashQueue[0].message}</p>
+            <div className="flex justify-end mt-6">
+              <Button onClick={dismissFlash} className="btn-brand text-white">Compris 👍</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal création nouveauté (superadmin) */}
+      {showFlashCreate && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-7 border border-slate-100">
+            <h2 className="text-lg font-extrabold text-slate-800 mb-4">📣 Communiquer une nouveauté</h2>
+            <textarea value={flashMsg} onChange={(e) => setFlashMsg(e.target.value)} rows={4} placeholder="Ton message aux équipes…" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-200 resize-none" />
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Destinataires</span>
+                <button onClick={() => setFlashTargets(flashTargets.length === activeUsers.length ? [] : activeUsers.map((u: any) => u.id_auth))} className="text-xs font-semibold text-[var(--brand)]">{flashTargets.length === activeUsers.length ? 'Aucun' : 'Tous'}</button>
+              </div>
+              <div className="max-h-48 overflow-y-auto grid grid-cols-2 gap-1 bg-slate-50 rounded-xl p-2 border border-slate-100">
+                {activeUsers.map((u: any) => {
+                  const sel = flashTargets.includes(u.id_auth);
+                  return (
+                    <button key={u.id_auth} onClick={() => setFlashTargets(sel ? flashTargets.filter(x => x !== u.id_auth) : [...flashTargets, u.id_auth])} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition ${sel ? 'bg-[var(--brand-bg)] text-[var(--brand)] font-semibold' : 'hover:bg-white text-slate-600'}`}>
+                      <span className={`w-3.5 h-3.5 rounded shrink-0 ${sel ? 'bg-[var(--brand)]' : 'border border-slate-300'}`} />
+                      <span className="truncate">{u.name || u.email}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1.5">Aucun sélectionné = tout le monde.</p>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <Button variant="ghost" onClick={() => setShowFlashCreate(false)}>Annuler</Button>
+              <Button onClick={createFlash} disabled={flashSending} className="btn-brand text-white">{flashSending ? 'Envoi…' : 'Publier'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
