@@ -24,6 +24,20 @@ function newRow(overrides: Partial<ProgRow> = {}): ProgRow {
   return { id: crypto.randomUUID(), date: '', heure: '', label: '', salle: '', disposition: '', type: 'autre', ...overrides };
 }
 
+// Lignes "séminaire" dérivées en live des réservations (salle/horaires = vérité).
+function seminaireRowsFromReservations(roomsList: any[], defaultDate: string): ProgRow[] {
+  return roomsList.flatMap((r: any) => [
+    newRow({ date: (r.start_date || defaultDate).substring(0, 10), heure: r.start_time?.substring(0, 5) || '', label: 'Début séminaire', salle: r.room_name || '', type: 'seminaire' }),
+    newRow({ date: (r.end_date || r.start_date || defaultDate).substring(0, 10), heure: r.end_time?.substring(0, 5) || '', label: 'Fin séminaire', salle: r.room_name || '', type: 'seminaire' }),
+  ]);
+}
+
+// Signature des lignes séminaire pour détecter une divergence fiche ↔ réservations.
+function seminaireSignature(rows: ProgRow[]): string {
+  return rows.filter(r => r.type === 'seminaire')
+    .map(r => `${r.salle}|${r.date}|${r.heure}|${r.label}`).sort().join('§');
+}
+
 function FicheContent() {
   const searchParams = useSearchParams();
   const leadId = searchParams?.get('leadId');
@@ -37,6 +51,7 @@ function FicheContent() {
   const [quoteItems, setQuoteItems] = useState<any[]>([]);
   const [ficheId, setFicheId] = useState<string | null>(null);
   const [programmeRows, setProgrammeRows] = useState<ProgRow[]>([]);
+  const [roomsOutOfSync, setRoomsOutOfSync] = useState(false);
   const [quoteMetadata, setQuoteMetadata] = useState<any>(null);
 
   const [fiche, setFiche] = useState({
@@ -109,10 +124,7 @@ function FicheContent() {
       }
       if (rows.length === 0) {
         if (roomsList.length > 0) {
-          rows = roomsList.flatMap((r: any) => [
-            newRow({ date: (r.start_date || defaultDate).substring(0, 10), heure: r.start_time?.substring(0,5) || '', label: 'Début séminaire', salle: r.room_name || '', type: 'seminaire' }),
-            newRow({ date: (r.end_date || r.start_date || defaultDate).substring(0, 10), heure: r.end_time?.substring(0,5) || '', label: 'Fin séminaire', salle: r.room_name || '', type: 'seminaire' }),
-          ]);
+          rows = seminaireRowsFromReservations(roomsList, defaultDate);
         }
         // Ajouter automatiquement les items Restauration du devis
         const restaurItems = loadedItems.filter((i: any) => i.category === 'Restauration' && i.label?.trim());
@@ -121,6 +133,11 @@ function FicheContent() {
         ));
       }
       setProgrammeRows(rows);
+
+      // Fiche LIVE : si un programme était déjà sauvegardé mais que les salles/
+      // horaires des réservations ont changé depuis, on le signale (resync 1 clic).
+      const liveSeminaire = seminaireRowsFromReservations(roomsList, defaultDate);
+      setRoomsOutOfSync(!!ficheData?.programme && seminaireSignature(rows) !== seminaireSignature(liveSeminaire));
 
       setLoading(false);
     }
@@ -144,6 +161,21 @@ function FicheContent() {
       .filter(i => i.label?.trim())
       .map(i => newRow({ date: (lead?.date_evenement || '').substring(0, 10), label: `${i.quantity}× ${i.label}`, type: 'repas' }));
     setProgrammeRows(prev => [...prev, ...toAdd]);
+  };
+
+  // Resynchronise les lignes séminaire depuis les réservations (vérité salle/horaires),
+  // en conservant la disposition saisie (rapprochée par salle + label) et toutes les
+  // autres lignes (repas/pause/autre). Non destructif : déclenché manuellement.
+  const resyncRooms = () => {
+    const defaultDate = (lead?.date_evenement || '').substring(0, 10);
+    const live = seminaireRowsFromReservations(rooms, defaultDate);
+    const merged = live.map(lr => {
+      const old = programmeRows.find(r => r.type === 'seminaire' && r.salle === lr.salle && r.label === lr.label);
+      return old ? { ...lr, disposition: old.disposition } : lr;
+    });
+    const others = programmeRows.filter(r => r.type !== 'seminaire');
+    setProgrammeRows([...merged, ...others]);
+    setRoomsOutOfSync(false);
   };
 
   const handleSave = async () => {
@@ -339,6 +371,15 @@ function FicheContent() {
             )}
           </div>
           <div className="p-5">
+            {roomsOutOfSync && (
+              <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <span className="text-sm text-amber-800">⚠️ Les salles ou horaires des réservations ont changé depuis la dernière sauvegarde — la fiche n'est plus à jour.</span>
+                <button onClick={resyncRooms}
+                  className="shrink-0 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-1.5 transition-colors">
+                  Resynchroniser les salles
+                </button>
+              </div>
+            )}
             {programmeRows.length > 0 && (
               <div className="grid grid-cols-[130px_90px_110px_1fr_140px_120px_76px] gap-2 mb-2 px-1">
                 {['Date','Heure','Type','Moment','Salle','Disposition',''].map((h, i) => (

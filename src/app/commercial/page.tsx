@@ -32,7 +32,8 @@ interface Lead {
   statut: 'Nouveau' | 'Devis envoyé' | 'Option' | 'Confirmé' | 'Refus';
   etat_paiement?: 'Attente acompte' | 'Acompte reçu' | 'RGT/P' | 'Soldé' | 'Facture envoyée' | 'Finalisé';
   budget_estime?: number;
-  montant_paye?: number; 
+  montant_devis?: number; // dérivé live des quote_items (non stocké en base)
+  montant_paye?: number;
   date_relance?: string | null;
   date_evenement?: string | null;
   date_fin_evenement?: string | null;
@@ -44,6 +45,11 @@ interface Lead {
   besoin_gaetan?: 'Pas besoin' | 'À valider' | 'Validé' | 'Pas dispo';
   source?: string;
 }
+
+// Montant de référence d'un lead : le total devis s'il existe (réalité chiffrée),
+// sinon le budget estimé manuel. Utilisé pour les KPI et le calcul débiteurs.
+const effectiveAmount = (l: Lead) =>
+  l.montant_devis && l.montant_devis > 0 ? l.montant_devis : (l.budget_estime || 0);
 
 // --- CONSTANTES ---
 const STATUS_COLORS: Record<string, string> = {
@@ -193,9 +199,20 @@ export default function CommercialDashboard() {
     setLoading(true);
     const { data, error } = await supabase
       .from('suivi_commercial')
-      .select('*')
+      .select('*, quotes(quote_items(quantity, unit_price_ttc))')
       .eq('hotel_id', selectedHotelId);
-    if (!error && data) setLeads(data);
+    if (!error && data) {
+      // Total devis dérivé en live depuis les lignes (somme quantité × prix TTC),
+      // sur tous les devis du lead. Pas de snapshot : toujours à jour.
+      const withDevis = (data as any[]).map((l) => {
+        const montant_devis = (l.quotes ?? []).reduce(
+          (s: number, q: any) =>
+            s + (q.quote_items ?? []).reduce(
+              (t: number, it: any) => t + (it.quantity || 0) * (it.unit_price_ttc || 0), 0), 0);
+        return { ...l, montant_devis };
+      });
+      setLeads(withDevis);
+    }
     setLoading(false);
   };
 
@@ -315,9 +332,10 @@ export default function CommercialDashboard() {
     if (!currentLead.nom_client || !currentLead.titre_demande) { toast.error('Nom et Titre obligatoires'); return; }
     setIsSaving(true);
     const trace = getUpdateTrace();
+    // Retirer les champs dérivés (non stockés en base) avant l'écriture Supabase.
+    const { montant_devis: _md, quotes: _q, ...leadClean } = currentLead as Record<string, unknown>;
     const payload = {
-      ...currentLead,
-      budget_estime: quoteTotal,
+      ...leadClean,
       hotel_id: selectedHotelId,
       date_relance: currentLead.date_relance === '' ? null : currentLead.date_relance,
       date_evenement: currentLead.date_evenement === '' ? null : currentLead.date_evenement,
@@ -453,7 +471,7 @@ export default function CommercialDashboard() {
       else if (filterStatut === 'Terminées') matchFilter = isPast;
       else if (filterStatut === 'Refus') matchFilter = l.statut === 'Refus';
       else if (filterStatut === 'Débiteurs') {
-        const budget = l.budget_estime || 0;
+        const budget = effectiveAmount(l);
         const paye = l.montant_paye || 0;
         matchFilter = isPast && l.statut !== 'Refus' && (budget - paye > 0);
       }
@@ -479,9 +497,9 @@ export default function CommercialDashboard() {
 
   const stats = useMemo(() => {
     const currentYear = new Date().getFullYear();
-    const pipeline = leads.filter(l => !['Confirmé', 'Refus'].includes(l.statut)).reduce((acc, curr) => acc + (curr.budget_estime || 0), 0);
-    const won = leads.filter(l => l.statut === 'Confirmé' && getYear(parseISO(l.created_at)) === currentYear).reduce((acc, curr) => acc + (curr.budget_estime || 0), 0);
-    const lost = leads.filter(l => l.statut === 'Refus' && getYear(parseISO(l.created_at)) === currentYear).reduce((acc, curr) => acc + (curr.budget_estime || 0), 0);
+    const pipeline = leads.filter(l => !['Confirmé', 'Refus'].includes(l.statut)).reduce((acc, curr) => acc + effectiveAmount(curr), 0);
+    const won = leads.filter(l => l.statut === 'Confirmé' && getYear(parseISO(l.created_at)) === currentYear).reduce((acc, curr) => acc + effectiveAmount(curr), 0);
+    const lost = leads.filter(l => l.statut === 'Refus' && getYear(parseISO(l.created_at)) === currentYear).reduce((acc, curr) => acc + effectiveAmount(curr), 0);
     const lateCount = leads.filter(l => getRelanceStatus(l.date_relance, l.statut, l.etat_paiement) === 'late').length;
     const todayCount = leads.filter(l => getRelanceStatus(l.date_relance, l.statut, l.etat_paiement) === 'today').length;
     return { pipeline, won, lost, lateCount, todayCount };
@@ -1401,6 +1419,10 @@ export default function CommercialDashboard() {
                         {quoteTotal > 0 ? quoteTotal.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : <span className="text-gray-300 font-normal text-sm">Aucun devis</span>}
                         {quoteTotal > 0 && <span className="ml-1 text-gray-400 font-normal">€</span>}
                       </div>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase tracking-widest mb-2 text-gray-400">Budget estimé (€)</label>
+                      <input type="number" placeholder="0" className="nt-input w-full h-10 rounded-xl px-4 font-bold border outline-none" value={currentLead.budget_estime || ''} onChange={e => setCurrentLead({...currentLead, budget_estime: parseFloat(e.target.value) || 0})} />
                     </div>
                   </div>
                   <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-3">
