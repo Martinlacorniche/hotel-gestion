@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 import { 
   Lock, Unlock, ArrowDown, CheckCircle, ArrowUp, Plus, Calendar as CalendarIcon, 
   ChevronLeft, ChevronRight, Filter, Printer, Share2, Scissors, Trash2, 
-  User, Clock, AlertCircle, Wrench, Copy // <--- AJOUTE "Copy" ICI
+  User, Clock, AlertCircle, Wrench, Copy, Eye, EyeOff
 } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -77,6 +77,40 @@ const getEntry = (entries = [], userId, dateStr, preferDraft = false, isAdminFla
 };
 
 const RETRO_LOCK_DAYS = 7;
+
+// Seuils de surveillance (paramétrables — à terme via config hôtel).
+const SEUILS = {
+  reposH: 11,            // repos minimum entre deux services
+  joursConsecutifs: 6,   // jours travaillés consécutifs max
+  journeeMaxH: 10,       // durée max d'une journée
+  semaineMaxH: 48,       // durée max d'une semaine
+  prevenanceJours: 14,   // planning à publier au moins X jours avant
+};
+
+// Couverture minimale requise chaque jour (≥ 1 personne sur l'un des shifts listés).
+const COUVERTURE_REQUISE = [
+  { label: 'Réception matin', shifts: ['Réception matin'] },
+  { label: 'Réception soir', shifts: ['Réception soir'] },
+  { label: 'Night', shifts: ['Night'] },
+  { label: 'Petit Déjeuner', shifts: ['Petit Déjeuner'] },
+  { label: 'Housekeeping', shifts: ['Housekeeping Chambre', 'Housekeeping Communs'] },
+];
+
+// Tri GROUPÉ par service : chaque salarié sous l'en-tête de SON service (rangé
+// selon l'ordre du service), puis par ordre individuel à l'intérieur. En-tête
+// avant ses gens. Salariés sans service (ou service inconnu) → en bas.
+function sortGroupedRows(all: any[]): any[] {
+  const isHeader = (r: any) => r.id && !r.id_auth;
+  const rank: Record<string, number> = {};
+  all.forEach(r => { if (isHeader(r)) rank[r.id] = r.ordre ?? 9999; });
+  const groupKey = (r: any) => isHeader(r) ? (r.ordre ?? 9999) : (rank[r.service] ?? Number.MAX_SAFE_INTEGER);
+  const sub = (r: any) => isHeader(r) ? -1 : (r.ordre ?? 9999);
+  return [...all].sort((a, b) => {
+    const ka = groupKey(a), kb = groupKey(b);
+    if (ka !== kb) return ka - kb;
+    return sub(a) - sub(b);
+  });
+}
 const isLockedDate = (dateStr: string): boolean => {
   if (!dateStr) return false;
   const d = new Date(dateStr + 'T00:00:00');
@@ -548,6 +582,16 @@ export default function PlanningPage() {
   const goToPreviousWeek = () => { const m = startOfWeek(addDays(currentWeekStart, -7), { weekStartsOn: 1 }); m.setHours(0, 0, 0, 0); setCurrentWeekStart(m); };
   const goToNextWeek = () => { const m = startOfWeek(addDays(currentWeekStart, 7), { weekStartsOn: 1 }); m.setHours(0, 0, 0, 0); setCurrentWeekStart(m); };
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i)), [currentWeekStart]);
+  // Affichage optionnel de la semaine précédente (continuité repos inter-semaines).
+  // weekDates reste la semaine COURANTE (compteur d'heures, publication, etc.).
+  const [showPrevWeek, setShowPrevWeek] = useState(false);
+  const [showSurveillance, setShowSurveillance] = useState(false);
+  const [hiddenServices, setHiddenServices] = useState<Set<string>>(new Set());
+  const displayDates = useMemo(() => {
+    if (!showPrevWeek) return weekDates;
+    const prev = Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i - 7));
+    return [...prev, ...weekDates];
+  }, [showPrevWeek, weekDates, currentWeekStart]);
 
   const todayMidnight = new Date(new Date().setHours(0, 0, 0, 0));
   const isActive = (r) => new Date(r.end_date) >= todayMidnight;
@@ -579,6 +623,137 @@ export default function PlanningPage() {
   const getWorkingDays = (userId) => {
     const userEntries = entriesView.filter(e => e.user_id === userId && weekDates.some(d => format(d, 'yyyy-MM-dd') === e.date));
     return new Set(userEntries.filter(e => e.shift && !['Repos', 'Maladie', 'CP', 'Injustifié'].includes(e.shift)).map(e => e.date)).size;
+  };
+
+  // ── SURVEILLANCE (admin) : garde-fous légaux + compteurs semaine/mois. ──
+  // Couverture par service = phase 1b (besoin du mapping shift→service requis).
+  const surveillance = useMemo(() => {
+    if (!isAdmin) return null;
+    const employees = rows.filter((r: any) => r.id_auth);
+    const weekStrs = weekDates.map(d => format(d, 'yyyy-MM-dd'));
+    const weekStart = weekDates[0];
+    const currentMonth = format(currentWeekStart, 'yyyy-MM');
+
+    const effEntry = (uid: string, ds: string) => {
+      const { draft, published } = getCellEntries(planningEntries, uid, ds);
+      return draft || published || null;
+    };
+    const isWork = (e: any) => e && e.shift && !['Repos', 'CP', 'Maladie', 'Injustifié'].includes(e.shift);
+    const minutesOf = (e: any) => {
+      if (!e?.start_time || !e?.end_time) return 0;
+      const [sh, sm] = e.start_time.split(':').map(Number);
+      const [eh, em] = e.end_time.split(':').map(Number);
+      let m = (eh * 60 + em) - (sh * 60 + sm); if (m < 0) m += 1440; return m;
+    };
+    const startDt = (ds: string, t: string) => new Date(`${ds}T${t.length === 5 ? t + ':00' : t}`);
+    const endDt = (ds: string, s: string, e: string) => {
+      const sd = startDt(ds, s); const ed = startDt(ds, e);
+      if (ed.getTime() <= sd.getTime()) ed.setDate(ed.getDate() + 1);
+      return ed;
+    };
+
+    const totals: Record<string, { week: number; month: number }> = {};
+    const alerts: { uid: string; name: string; type: string; label: string; date?: string }[] = [];
+    const cellFlags = new Set<string>(); // `${uid}|${date}` des cellules en alerte (repos/journée)
+
+    for (const emp of employees as any[]) {
+      const uid = emp.id_auth;
+      const name = emp.name || emp.email || '—';
+
+      let weekMin = 0;
+      weekStrs.forEach(ds => { const e = effEntry(uid, ds); if (isWork(e)) weekMin += minutesOf(e); });
+      const monthDates = new Set<string>();
+      planningEntries.forEach((e: any) => { if (e.user_id === uid && typeof e.date === 'string' && e.date.startsWith(currentMonth)) monthDates.add(e.date); });
+      let monthMin = 0;
+      monthDates.forEach(ds => { const e = effEntry(uid, ds); if (isWork(e)) monthMin += minutesOf(e); });
+      totals[uid] = { week: weekMin, month: monthMin };
+
+      if (weekMin > SEUILS.semaineMaxH * 60)
+        alerts.push({ uid, name, type: 'semaine', label: `${Math.floor(weekMin / 60)}h cette semaine (> ${SEUILS.semaineMaxH}h)` });
+
+      weekStrs.forEach(ds => {
+        const e = effEntry(uid, ds);
+        if (isWork(e) && minutesOf(e) > SEUILS.journeeMaxH * 60) {
+          alerts.push({ uid, name, type: 'journee', date: ds, label: `${Math.floor(minutesOf(e) / 60)}h le ${format(new Date(ds), 'EEE dd/MM', { locale: fr })} (> ${SEUILS.journeeMaxH}h)` });
+          cellFlags.add(`${uid}|${ds}`);
+        }
+      });
+
+      // Fenêtre élargie (J-7 → J+7) pour repos & jours consécutifs aux bords de semaine.
+      const workedShifts = Array.from({ length: 15 }, (_, k) => format(addDays(weekStart, k - 7), 'yyyy-MM-dd'))
+        .map(ds => ({ ds, e: effEntry(uid, ds) }))
+        .filter(x => isWork(x.e))
+        .map(x => ({ ds: x.ds, start: startDt(x.ds, x.e.start_time), end: endDt(x.ds, x.e.start_time, x.e.end_time) }))
+        .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+      for (let i = 1; i < workedShifts.length; i++) {
+        const restH = (workedShifts[i].start.getTime() - workedShifts[i - 1].end.getTime()) / 3600000;
+        if (restH < SEUILS.reposH && (weekStrs.includes(workedShifts[i].ds) || weekStrs.includes(workedShifts[i - 1].ds))) {
+          alerts.push({ uid, name, type: 'repos', date: workedShifts[i].ds, label: `repos ${restH.toFixed(1)}h entre ${format(new Date(workedShifts[i - 1].ds), 'EEE', { locale: fr })} et ${format(new Date(workedShifts[i].ds), 'EEE', { locale: fr })} (< ${SEUILS.reposH}h)` });
+          cellFlags.add(`${uid}|${workedShifts[i].ds}`);
+          if (weekStrs.includes(workedShifts[i - 1].ds)) cellFlags.add(`${uid}|${workedShifts[i - 1].ds}`);
+        }
+      }
+
+      const workedDaySet = new Set(workedShifts.map(s => s.ds));
+      let run = 0; let runDates: string[] = [];
+      for (let k = -7; k <= 7; k++) {
+        const ds = format(addDays(weekStart, k), 'yyyy-MM-dd');
+        if (workedDaySet.has(ds)) { run++; runDates.push(ds); }
+        else {
+          if (run > SEUILS.joursConsecutifs && runDates.some(d => weekStrs.includes(d)))
+            alerts.push({ uid, name, type: 'consecutifs', label: `${run} jours consécutifs (max ${SEUILS.joursConsecutifs})` });
+          run = 0; runDates = [];
+        }
+      }
+      if (run > SEUILS.joursConsecutifs && runDates.some(d => weekStrs.includes(d)))
+        alerts.push({ uid, name, type: 'consecutifs', label: `${run} jours consécutifs (max ${SEUILS.joursConsecutifs})` });
+    }
+
+    // Couverture par jour : ≥ 1 personne sur chaque service requis (effectif draft/publié).
+    weekStrs.forEach(ds => {
+      COUVERTURE_REQUISE.forEach(req => {
+        const covered = (employees as any[]).some(emp => {
+          const e = effEntry(emp.id_auth, ds);
+          return e && req.shifts.includes(e.shift);
+        });
+        if (!covered)
+          alerts.push({ uid: '', name: '', type: 'couverture', date: ds, label: `Pas de ${req.label} le ${format(new Date(ds), 'EEE dd/MM', { locale: fr })}` });
+      });
+    });
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const daysUntilWeek = Math.round((weekStart.getTime() - today.getTime()) / 86400000);
+    const hasDraft = planningEntries.some((e: any) => e.status === 'draft' && weekStrs.includes(e.date));
+    if (daysUntilWeek >= 0 && daysUntilWeek < SEUILS.prevenanceJours && hasDraft)
+      alerts.unshift({ uid: '', name: '', type: 'prevenance', label: `Planning non publié à J-${daysUntilWeek} (délai ${SEUILS.prevenanceJours}j)` });
+
+    return { totals, alerts, cellFlags };
+  }, [isAdmin, rows, planningEntries, weekDates, currentWeekStart]);
+
+  // Filtre "services masqués" — préférence par utilisateur, persistée en base.
+  useEffect(() => {
+    const uid = (user as any)?.id_auth || user?.id;
+    if (!uid) return;
+    supabase.from('users').select('planning_hidden_services').eq('id_auth', uid).maybeSingle()
+      .then(({ data }) => { if (data?.planning_hidden_services) setHiddenServices(new Set(data.planning_hidden_services)); });
+  }, [user]);
+
+  const toggleServiceVisibility = (serviceId: string) => {
+    setHiddenServices(prev => {
+      const next = new Set(prev);
+      if (next.has(serviceId)) next.delete(serviceId); else next.add(serviceId);
+      const uid = (user as any)?.id_auth || user?.id;
+      if (uid) supabase.from('users').update({ planning_hidden_services: [...next] }).eq('id_auth', uid).then(() => {});
+      return next;
+    });
+  };
+
+  // Assigne le service d'un salarié (planning_config.service, par hôtel).
+  const setUserService = async (userId: string, service: string) => {
+    if (!hotelId) return;
+    setRows((prev: any[]) => sortGroupedRows(prev.map(r => r.id_auth === userId ? { ...r, service: service || null } : r)));
+    await supabase.from('planning_config').update({ service: service || null }).eq('user_id', userId).eq('hotel_id', hotelId);
   };
 
   useEffect(() => {
@@ -634,7 +809,10 @@ export default function PlanningPage() {
     const configData = configRes.data || [];
     const entriesData = entriesRes.data || [];
     
-    const usersWithOrder = usersData.map(u => ({ ...u, ordre: configData.find(c => c.user_id === u.id_auth)?.ordre ?? 9999 }));
+    const usersWithOrder = usersData.map(u => {
+      const cfg = configData.find(c => c.user_id === u.id_auth);
+      return { ...u, ordre: cfg?.ordre ?? 9999, service: cfg?.service ?? null };
+    });
     
     const usersVisible = usersWithOrder.filter(u => {
        if (u.role === 'superadmin') return false;
@@ -655,7 +833,7 @@ export default function PlanningPage() {
     setUsers(usersWithOrder);
     setPlanningEntries(isAdmin ? entriesData : entriesData.filter(e => e.status === 'published'));
     setCpRequests(cpRes.data || []);
-    setRows([...serviceRows, ...usersVisible].sort((a, b) => (a.ordre ?? 9999) - (b.ordre ?? 9999)));
+    setRows(sortGroupedRows([...serviceRows, ...usersVisible]));
     setDefaultHours(defMap);
   };
 
@@ -779,6 +957,24 @@ export default function PlanningPage() {
                   <button onClick={() => setCutMode(!cutMode)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${cutMode ? 'bg-red-50 text-red-600 ring-1 ring-red-100' : 'hover:bg-white hover:text-slate-700 text-slate-500'}`}>
                       <Scissors className="w-4 h-4"/> {cutMode ? 'Mode Couper' : 'Couper'}
                   </button>
+
+                  <button onClick={() => setShowPrevWeek(!showPrevWeek)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${showPrevWeek ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-200' : 'hover:bg-white hover:text-slate-700 text-slate-500'}`} title="Afficher la semaine précédente pour la continuité (repos entre services)">
+                      <CalendarIcon className="w-4 h-4"/> {showPrevWeek ? 'Sem. préc. affichée' : 'Voir S-1'}
+                  </button>
+
+                  <div className="flex items-center gap-1 ml-1 pl-2 border-l border-slate-200">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1"><Filter className="w-3 h-3"/> Voir</span>
+                    {SERVICE_ROWS.map(s => {
+                      const hidden = hiddenServices.has(s.id);
+                      return (
+                        <button key={s.id} onClick={() => toggleServiceVisibility(s.id)} title={hidden ? `Afficher ${s.name}` : `Masquer ${s.name}`}
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition ${hidden ? 'bg-slate-100 text-slate-300' : 'bg-white text-slate-700 ring-1 ring-slate-200 shadow-sm'}`}>
+                          {hidden ? <EyeOff className="w-3 h-3"/> : <Eye className="w-3 h-3"/>}
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
                   
                   {/* BOUTON MODIFIÉ ICI : "Demandes CP" au lieu de "Absences" */}
                   <button onClick={() => setShowCpAdminModal(true)} className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-white hover:text-slate-700 text-slate-500 transition">
@@ -802,6 +998,64 @@ export default function PlanningPage() {
           </div>
         )}
 
+        {/* PANNEAU SURVEILLANCE */}
+        {isAdmin && surveillance && (
+          <div className="mb-6">
+            <button
+              onClick={() => surveillance.alerts.length > 0 && setShowSurveillance(!showSurveillance)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition ${surveillance.alerts.length > 0 ? 'bg-red-50 border-red-200 text-red-700 cursor-pointer' : 'bg-emerald-50 border-emerald-100 text-emerald-700 cursor-default'}`}>
+              <span className="flex items-center gap-2 font-bold text-sm">
+                {surveillance.alerts.length > 0 ? <AlertCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                {surveillance.alerts.length > 0
+                  ? `Surveillance — ${surveillance.alerts.length} alerte${surveillance.alerts.length > 1 ? 's' : ''}`
+                  : 'Surveillance — aucune alerte cette semaine'}
+              </span>
+              {surveillance.alerts.length > 0 && (showSurveillance ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />)}
+            </button>
+            {showSurveillance && surveillance.alerts.length > 0 && (
+              <div className="mt-2 p-4 bg-white rounded-2xl border border-slate-100 space-y-3">
+                {surveillance.alerts.filter(a => a.type === 'couverture').length > 0 && (
+                  <div className="rounded-xl border border-red-100 overflow-hidden">
+                    <div className="px-3 py-2 bg-red-50 font-bold text-sm text-red-700">Couverture manquante</div>
+                    <div className="px-3 py-2 grid grid-cols-1 md:grid-cols-2 gap-1">
+                      {surveillance.alerts.filter(a => a.type === 'couverture').map((a, i) => (
+                        <div key={`c${i}`} className="flex items-center gap-2 text-xs text-red-700">
+                          <AlertCircle className="w-3 h-3 shrink-0" /> {a.label}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {surveillance.alerts.filter(a => a.type === 'prevenance').map((a, i) => (
+                  <div key={`p${i}`} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {a.label}
+                  </div>
+                ))}
+                {[...new Set(surveillance.alerts.filter(a => a.uid).map(a => a.uid))].map(uid => {
+                  const empAlerts = surveillance.alerts.filter(a => a.uid === uid);
+                  const t = surveillance.totals[uid] || { week: 0, month: 0 };
+                  const fmt = (m: number) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
+                  return (
+                    <div key={uid} className="rounded-xl border border-red-100 overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 bg-red-50">
+                        <span className="font-bold text-sm text-slate-700">{empAlerts[0].name}</span>
+                        <span className="font-mono text-xs text-slate-500">semaine {fmt(t.week)} · mois {fmt(t.month)}</span>
+                      </div>
+                      <div className="px-3 py-2 space-y-1">
+                        {empAlerts.map((a, i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs text-red-700">
+                            <AlertCircle className="w-3 h-3 shrink-0" /> {a.label}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* --- TABLEAU --- */}
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto max-h-[75vh]">
@@ -809,20 +1063,31 @@ export default function PlanningPage() {
               <thead className="bg-slate-50 sticky top-0 z-20 shadow-sm">
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200 bg-slate-50">Salarié</th>
-                  {weekDates.map(date => (
-                    <th key={date.toISOString()} className="px-2 py-4 text-center min-w-[140px] border-b border-slate-200 bg-slate-50">
+                  {displayDates.map((date, di) => {
+                    const isPrev = showPrevWeek && di < 7;
+                    const firstCurrent = showPrevWeek && di === 7;
+                    return (
+                    <th key={date.toISOString()} className={`px-2 py-4 text-center min-w-[140px] border-b border-slate-200 bg-slate-50 ${isPrev ? 'opacity-50' : ''} ${firstCurrent ? 'border-l-2 border-l-slate-300' : ''}`}>
                       <div className="flex flex-col items-center">
+                        {isPrev && di === 0 && <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-0.5">Sem. préc.</span>}
                         <span className="text-xs font-bold text-slate-400 uppercase">{format(date, 'EEEE', { locale: fr })}</span>
                         <span className="text-lg font-bold text-slate-800">{format(date, 'dd')}</span>
                       </div>
                     </th>
-                  ))}
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row, index) => {
                   const rowBgClass = row.id && row.color ? row.color : 'bg-white';
-                  
+
+                  // Filtre services masqués (on garde l'index pour moveRow → return null).
+                  const rowHidden =
+                    ((row as any).id && hiddenServices.has((row as any).id)) ||
+                    ((row as any).id_auth && (row as any).service && hiddenServices.has((row as any).service));
+                  if (rowHidden) return null;
+
                   return (
                   <tr key={row.id || row.id_auth} className={`group transition-colors`}>
                     {/* COLONNE SALARIÉ */}
@@ -841,6 +1106,13 @@ export default function PlanningPage() {
                                         <Copy className="w-3.5 h-3.5"/>
                                     </button>
                                   )}
+                                  {isAdmin && isUnlocked && (
+                                    <select value={(row as any).service || ''} onChange={(e) => setUserService((row as any).id_auth, e.target.value)} onClick={(e) => e.stopPropagation()}
+                                       className="text-[10px] font-bold bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5 text-slate-500 outline-none cursor-pointer">
+                                       <option value="">— service —</option>
+                                       {SERVICE_ROWS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                  )}
                                </div>
                             )}
                          </div>
@@ -854,9 +1126,11 @@ export default function PlanningPage() {
                     </td>
 
                     {/* CELLULES JOURS */}
-                    {weekDates.map(date => {
+                    {displayDates.map((date, di) => {
                        const formatted = format(date, 'yyyy-MM-dd');
                        const cellLocked = isWriteBlocked(formatted);
+                       const isPrevCol = showPrevWeek && di < 7;
+                       const firstCurrentCol = showPrevWeek && di === 7;
 
                        const renderBubble = (entry, icon, isDraft = false) => (
                           <div
@@ -887,6 +1161,11 @@ export default function PlanningPage() {
 
                              {/* Icône Cadenas */}
                              {entry?.do_not_touch && <span className="absolute top-0.5 right-1 text-[8px] opacity-60">🔒</span>}
+
+                             {/* Alerte surveillance (repos < 11h / journée > 10h) */}
+                             {surveillance?.cellFlags.has(`${(row as any).id_auth}|${formatted}`) && (
+                                <span className="absolute bottom-0.5 left-1 text-xs leading-none" title="Repos < 11h ou journée > 10h — voir le panneau Surveillance">🛑</span>
+                             )}
 
                              {/* Bouton Suppression */}
                              {isAdmin && entry?.id && !cellLocked && (
@@ -933,7 +1212,7 @@ export default function PlanningPage() {
                        }
 
                        return (
-                          <td key={`${row.id || row.id_auth}-${date.toISOString()}`} className={`px-2 py-2 align-top border-b border-slate-50 bg-opacity-30 min-h-[80px] ${rowBgClass}`} onDragOver={(e) => e.preventDefault()} onDrop={() => handleShiftDrop(row.id_auth, formatted)}>
+                          <td key={`${row.id || row.id_auth}-${date.toISOString()}`} className={`px-2 py-2 align-top border-b border-slate-50 bg-opacity-30 min-h-[80px] ${rowBgClass} ${isPrevCol ? 'opacity-60' : ''} ${firstCurrentCol ? 'border-l-2 border-l-slate-300' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={() => handleShiftDrop(row.id_auth, formatted)}>
                              {content}
                           </td>
                        );
