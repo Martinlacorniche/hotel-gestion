@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { ThemedBackground } from "@/components/ThemedBackground";
+import { confirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,9 @@ import {
   Calendar,
   Pencil,
   X,
+  FileText,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -52,6 +56,17 @@ type UserRow = {
   employment_end_date: string | null;
   emoji: string | null;
   created_at?: string | null;
+};
+
+type ContratType = "CDI" | "CDD" | "Extra" | "Alternance";
+type ContratRow = {
+  id: string;
+  user_id: string;
+  type: ContratType;
+  date_debut: string;
+  date_fin: string | null;
+  heures_hebdo: number | null;
+  hotel_id: string | null;
 };
 
 const ROLE_LABEL: Record<AppRole, string> = {
@@ -151,6 +166,18 @@ export default function UsersPage() {
   const [editName, setEditName] = useState("");
   const [editBirth, setEditBirth] = useState("");
   const [editingProfile, setEditingProfile] = useState(false);
+
+  // Contrats
+  const [contratTarget, setContratTarget] = useState<UserRow | null>(null);
+  const [contrats, setContrats] = useState<ContratRow[]>([]);
+  const [loadingContrats, setLoadingContrats] = useState(false);
+  const [savingContrat, setSavingContrat] = useState(false);
+  const [editingContratId, setEditingContratId] = useState<string | null>(null);
+  const [cType, setCType] = useState<ContratType>("CDI");
+  const [cDebut, setCDebut] = useState("");
+  const [cFin, setCFin] = useState("");
+  const [cHeures, setCHeures] = useState("");
+  const [cHotel, setCHotel] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -260,6 +287,42 @@ export default function UsersPage() {
     toast.success("Profil mis à jour");
     setEditTarget(null);
     await loadAll();
+  };
+
+  // ── Contrats ──
+  const resetContratForm = () => {
+    setEditingContratId(null); setCType("CDI"); setCDebut(""); setCFin(""); setCHeures(""); setCHotel("");
+  };
+  const openContrats = async (u: UserRow) => {
+    setContratTarget(u); resetContratForm(); setLoadingContrats(true);
+    const { data } = await supabase.from("contrats").select("*").eq("user_id", u.id_auth).order("date_debut", { ascending: false });
+    setContrats((data as ContratRow[]) || []); setLoadingContrats(false);
+  };
+  const editContrat = (c: ContratRow) => {
+    setEditingContratId(c.id); setCType(c.type); setCDebut(c.date_debut); setCFin(c.date_fin || "");
+    setCHeures(c.heures_hebdo != null ? String(c.heures_hebdo) : ""); setCHotel(c.hotel_id || "");
+  };
+  const saveContrat = async () => {
+    if (!contratTarget || !cDebut) { toast.error("Date de début requise"); return; }
+    setSavingContrat(true);
+    const payload = {
+      user_id: contratTarget.id_auth, type: cType, date_debut: cDebut,
+      date_fin: cFin || null,
+      heures_hebdo: cType === "Extra" ? null : (cHeures ? parseFloat(cHeures) : null),
+      hotel_id: cHotel || null,
+    };
+    const { error } = editingContratId
+      ? await supabase.from("contrats").update(payload).eq("id", editingContratId)
+      : await supabase.from("contrats").insert(payload);
+    setSavingContrat(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(editingContratId ? "Contrat mis à jour" : "Contrat ajouté");
+    await openContrats(contratTarget);
+  };
+  const deleteContrat = async (id: string) => {
+    if (!(await confirmDialog("Supprimer ce contrat ?"))) return;
+    await supabase.from("contrats").delete().eq("id", id);
+    if (contratTarget) await openContrats(contratTarget);
   };
 
   const doUpdateRole = async () => {
@@ -455,6 +518,11 @@ export default function UsersPage() {
                                     <Pencil size={14} /> Modifier le profil
                                   </DropdownMenuItem>
                                 )}
+                                {!isClosed && (
+                                  <DropdownMenuItem onClick={() => openContrats(u)}>
+                                    <FileText size={14} /> Contrats
+                                  </DropdownMenuItem>
+                                )}
                                 {isSuperadmin && !isClosed && (
                                   <DropdownMenuItem onClick={() => { setRoleTarget(u); setNewRoleVal(u.role === "admin" ? "user" : "admin"); }}>
                                     <ShieldCheck size={14} /> Changer le rôle
@@ -559,6 +627,59 @@ export default function UsersPage() {
             <Button onClick={doEditProfile} disabled={editingProfile} className="btn-brand hover:bg-indigo-700 text-white">
               {editingProfile ? <><Loader2 size={14} className="animate-spin mr-2" /> Enregistrement…</> : "Enregistrer"}
             </Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal Contrats */}
+      {contratTarget && (
+        <Modal onClose={() => setContratTarget(null)} icon={<FileText className="text-[var(--brand)]" size={20} />} title={`Contrats — ${contratTarget.name || contratTarget.email}`} subtitle="CDI · CDD · Extra · Alternance">
+          <div className="space-y-2 mb-4">
+            {loadingContrats ? (
+              <div className="text-sm text-slate-400 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Chargement…</div>
+            ) : contrats.length === 0 ? (
+              <div className="text-sm text-slate-400">Aucun contrat enregistré.</div>
+            ) : contrats.map((c) => (
+              <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                <div className="text-sm">
+                  <span className="font-bold text-slate-700">{c.type}</span>
+                  <span className="text-slate-500"> · {c.date_debut}{c.date_fin ? ` → ${c.date_fin}` : " → en cours"}</span>
+                  {c.heures_hebdo != null && <span className="text-slate-500"> · {c.heures_hebdo}h/sem</span>}
+                  <span className="text-slate-400"> · {c.hotel_id ? (hotels.find((h) => h.id === c.hotel_id)?.nom || "hôtel") : "groupe"}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => editContrat(c)} className="p-1.5 text-slate-400 hover:text-[var(--brand)] rounded transition"><Pencil size={14} /></button>
+                  <button onClick={() => deleteContrat(c.id)} className="p-1.5 text-slate-400 hover:text-rose-600 rounded transition"><Trash2 size={14} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-3">
+            <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{editingContratId ? "Modifier le contrat" : "Nouveau contrat"}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Type">
+                <select value={cType} onChange={(e) => setCType(e.target.value as ContratType)} className="w-full h-9 px-3 text-sm bg-white border border-slate-200 rounded-md">
+                  <option value="CDI">CDI</option><option value="CDD">CDD</option><option value="Extra">Extra</option><option value="Alternance">Alternance</option>
+                </select>
+              </Field>
+              <Field label="Heures / semaine">
+                <Input type="number" value={cHeures} onChange={(e) => setCHeures(e.target.value)} placeholder={cType === "Extra" ? "—" : "35"} disabled={cType === "Extra"} />
+              </Field>
+              <Field label="Début"><Input type="date" value={cDebut} onChange={(e) => setCDebut(e.target.value)} /></Field>
+              <Field label="Fin (vide = en cours)"><Input type="date" value={cFin} onChange={(e) => setCFin(e.target.value)} /></Field>
+            </div>
+            <Field label="Hôtel">
+              <select value={cHotel} onChange={(e) => setCHotel(e.target.value)} className="w-full h-9 px-3 text-sm bg-white border border-slate-200 rounded-md">
+                <option value="">Groupe (tous les hôtels)</option>
+                {hotels.map((h) => (<option key={h.id} value={h.id}>{h.nom}</option>))}
+              </select>
+            </Field>
+            <div className="flex justify-end gap-2">
+              {editingContratId && <Button variant="ghost" onClick={resetContratForm}>Annuler</Button>}
+              <Button onClick={saveContrat} disabled={savingContrat} className="btn-brand hover:bg-indigo-700 text-white">
+                {savingContrat ? <><Loader2 size={14} className="animate-spin mr-2" />…</> : (editingContratId ? "Mettre à jour" : <><Plus size={14} className="mr-2" /> Ajouter</>)}
+              </Button>
+            </div>
           </div>
         </Modal>
       )}
