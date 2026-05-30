@@ -473,6 +473,7 @@ export default function HotelDashboard() {
     const { error } = await supabase.from('flash_infos').insert({
       hotel_id: hotelId || null, message: flashMsg.trim(), active: true,
       target_ids: flashTargets.length ? flashTargets : null, read_by: [],
+      push: false, // pop-up web silencieux : pas de notif mobile
     });
     setFlashSending(false);
     if (error) { toast.error(error.message); return; }
