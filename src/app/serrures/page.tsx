@@ -177,16 +177,34 @@ export default function SerruresPage() {
     }
   }, []);
 
+  // Rafraîchit chambres/pass/cartes toutes les 30s, et SEULEMENT quand l'onglet
+  // est visible (chaque appel = une fonction Netlify → on évite de poller dans le
+  // vide quand la page est en arrière-plan).
   useEffect(() => {
-    load();
-    loadPasses();
-    loadCartes();
-    const t = setInterval(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const tick = () => {
       load();
       loadPasses();
       loadCartes();
-    }, 10_000);
-    return () => clearInterval(t);
+    };
+    const start = () => {
+      if (timer) return;
+      tick();
+      timer = setInterval(tick, 30_000);
+    };
+    const stop = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    const onVisibility = () => (document.hidden ? stop() : start());
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [load, loadPasses, loadCartes]);
 
   // Alerte batterie faible (≤10%) pour les équipes : rafraîchi toutes les 30 min
@@ -241,7 +259,7 @@ export default function SerruresPage() {
       }
     };
     poll();
-    const t = setInterval(poll, 1500);
+    const t = setInterval(poll, 2500);
     return () => {
       stopped = true;
       clearInterval(t);
