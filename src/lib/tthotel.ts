@@ -141,9 +141,85 @@ export async function getHotelLocksMap(): Promise<Map<number, TTLock>> {
   return map;
 }
 
+export type GatewayInfo = { gatewayId: number; gatewayName: string; isOnline: number };
+
+/** Liste des passerelles du compte avec leur état en ligne. */
+export async function listGateways(): Promise<GatewayInfo[]> {
+  const res = await tthotelPost<{ list?: GatewayInfo[] }>('/v3/gateway/list', {
+    pageNo: 1,
+    pageSize: 100,
+  });
+  return res.list ?? [];
+}
+
+/** Teste si une serrure est joignable MAINTENANT via une passerelle en ligne. */
+export async function isLockReachable(lockId: number): Promise<boolean> {
+  try {
+    await tthotelPost('/v3/lock/queryOpenState', { lockId });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Couverture gateway par serrure (hasGateway), mise en cache : change rarement
+// et l'UI interroge souvent. TTL 60 s.
+let gwCache: { at: number; map: Map<number, boolean> } | null = null;
+
+// Niveau de batterie par serrure (electricQuantity), caché (change lentement).
+let batCache: { at: number; map: Map<number, number | null> } | null = null;
+
+export async function getLockBatteries(ttlMs = 300_000): Promise<Map<number, number | null>> {
+  if (batCache && Date.now() - batCache.at < ttlMs) return batCache.map;
+  const locks = await getHotelLocksMap();
+  const map = new Map<number, number | null>(
+    [...locks].map(([id, l]) => [id, typeof l.electricQuantity === 'number' ? l.electricQuantity : null]),
+  );
+  batCache = { at: Date.now(), map };
+  return map;
+}
+
+export async function getGatewayCoverage(ttlMs = 60_000): Promise<Map<number, boolean>> {
+  if (gwCache && Date.now() - gwCache.at < ttlMs) return gwCache.map;
+  const locks = await getHotelLocksMap();
+  const map = new Map([...locks].map(([id, l]) => [id, l.hasGateway === 1]));
+  gwCache = { at: Date.now(), map };
+  return map;
+}
+
 // Pour TTHotel, toutes les opérations doivent passer addType/changeType/deleteType=2
 // (cloud) sinon Tomcat répond 400 sans message. addType=1 = SDK Bluetooth local.
 const VIA_CLOUD = 2;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Réveille la serrure via le gateway (best-effort, ignore l'échec). */
+async function wakeLock(lockId: number) {
+  try {
+    await tthotelPost('/v3/lock/queryOpenState', { lockId });
+  } catch {
+    // serrure endormie / momentanément injoignable — on tente quand même la suite
+  }
+}
+
+/**
+ * Exécute une opération gateway→serrure avec réveil + retry. Les serrures
+ * dorment : le 1er appel renvoie souvent `errcode 1` (failed), ça passe après
+ * un queryOpenState (réveil). Vaut pour add/delete/change code ET carte.
+ */
+async function withGatewayRetry<T>(lockId: number, op: () => Promise<T>, attempts = 4): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    await wakeLock(lockId);
+    try {
+      return await op();
+    } catch (err) {
+      lastErr = err;
+      await sleep(1500);
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
 
 /** Génère un code numérique de `length` chiffres, en évitant les patterns triviaux. */
 function pickRandomShortCode(length = 4): string {
@@ -167,35 +243,58 @@ function pickRandomShortCode(length = 4): string {
 /**
  * Crée un code custom à 4 chiffres valide sur [startMs, endMs[ et le renvoie.
  *
- * On utilise /v3/keyboardPwd/add SANS addType : TTHotel enregistre le code côté
- * cloud avec une validité algorithmique → la serrure le valide LOCALEMENT,
- * sans gateway ni sync BLE. C'est l'astuce TTHotel pour les codes "online"
- * sur serrures non-gateway.
+ * On le POUSSE sur la serrure via la passerelle (`addType=2`). Un code custom
+ * (choisi par nous) n'est PAS validable par l'algorithme local de la serrure —
+ * seuls les codes générés par keyboardPwd/get le sont. Sans ce push, la serrure
+ * ne reçoit jamais le code et il n'ouvre pas. Nécessite donc une passerelle
+ * joignable sur la chambre.
  */
+/** Génère un code à 4 chiffres (sans patterns triviaux). */
+export function generatePasscode(): string {
+  return pickRandomShortCode(4);
+}
+
+/** Pousse un code donné sur UNE serrure via la passerelle. Renvoie son id. */
+export async function pushPasscode(
+  lockId: number,
+  code: string,
+  startMs: number,
+  endMs: number,
+  name?: string,
+): Promise<number> {
+  const res = await withGatewayRetry(lockId, () =>
+    tthotelPost<{ keyboardPwdId: number }>('/v3/keyboardPwd/add', {
+      lockId,
+      keyboardPwd: code,
+      keyboardPwdType: 3, // 3 = period passcode (valide sur [start, end])
+      startDate: startMs,
+      endDate: endMs,
+      addType: VIA_CLOUD, // pousse le code sur la serrure via la passerelle
+      ...(name ? { keyboardPwdName: name } : {}),
+    }),
+  );
+  return res.keyboardPwdId;
+}
+
 export async function addRandomPasscode(
   lockId: number,
   startMs: number,
   endMs: number,
   name?: string,
 ) {
-  const code = pickRandomShortCode(4);
-  const res = await tthotelPost<{ keyboardPwdId: number }>('/v3/keyboardPwd/add', {
-    lockId,
-    keyboardPwd: code,
-    keyboardPwdType: 3, // 3 = period passcode (valide sur [start, end])
-    startDate: startMs,
-    endDate: endMs,
-    ...(name ? { keyboardPwdName: name } : {}),
-  });
-  return { keyboardPwdId: res.keyboardPwdId, keyboardPwd: code };
+  const code = generatePasscode();
+  const keyboardPwdId = await pushPasscode(lockId, code, startMs, endMs, name);
+  return { keyboardPwdId, keyboardPwd: code };
 }
 
 export async function deletePasscode(lockId: number, keyboardPwdId: number) {
-  return tthotelPost('/v3/keyboardPwd/delete', {
-    lockId,
-    keyboardPwdId,
-    deleteType: VIA_CLOUD,
-  });
+  return withGatewayRetry(lockId, () =>
+    tthotelPost('/v3/keyboardPwd/delete', {
+      lockId,
+      keyboardPwdId,
+      deleteType: VIA_CLOUD,
+    }),
+  );
 }
 
 export async function changePasscodePeriod(
@@ -204,11 +303,137 @@ export async function changePasscodePeriod(
   startMs: number,
   endMs: number,
 ) {
-  return tthotelPost('/v3/keyboardPwd/change', {
-    lockId,
-    keyboardPwdId,
-    startDate: startMs,
-    endDate: endMs,
-    changeType: VIA_CLOUD,
-  });
+  return withGatewayRetry(lockId, () =>
+    tthotelPost('/v3/keyboardPwd/change', {
+      lockId,
+      keyboardPwdId,
+      startDate: startMs,
+      endDate: endMs,
+      changeType: VIA_CLOUD,
+    }),
+  );
+}
+
+// ─── Cartes IC (révocation via gateway) ──────────────────────────────────────
+// Nos cartes réception sont écrites par l'encodeur (secteurs hôtel) et ne sont
+// PAS connues du cloud. Pour révoquer une carte précise sans toucher au pass ni
+// aux autres cartes, on l'enregistre en IC par son numéro (add) puis on la
+// supprime (delete) — séquence validée en réel le 2026-06-01 sur la chambre 11.
+// Les deux ops passent par le gateway (addType/deleteType=2). La serrure peut
+// dormir : queryOpenState la réveille, et on retente (cf. withGatewayRetry).
+
+export type CardRevokeResult = { lockId: number; ok: boolean; error?: string };
+
+/** Cherche le cardId d'une carte (par son numéro) enregistrée sur une serrure. */
+async function findCardIdByNumber(lockId: number, cardNumber: string): Promise<number | null> {
+  const now = Date.now();
+  const res = await tthotelPost<{ list?: { cardId: number; cardNumber: string }[] }>(
+    '/v3/identityCard/list',
+    { lockId, pageNo: 1, pageSize: 100, startDate: now - 365 * 86_400_000, endDate: now + 400 * 86_400_000 },
+  );
+  const found = (res.list ?? []).find((c) => String(c.cardNumber) === String(cardNumber));
+  return found?.cardId ?? null;
+}
+
+/**
+ * Autorise une carte (par son numéro) sur UNE serrure, via gateway.
+ * Indispensable à l'encodage : révoquer une carte BLACKLISTE son UID sur la
+ * serrure, donc réutiliser plus tard cette carte physique échoue ("unauthorized")
+ * tant qu'on ne l'a pas ré-autorisée. Si la carte est déjà enregistrée, no-op.
+ */
+export async function authorizeCardOnLock(
+  lockId: number,
+  cardNumber: string,
+  endMs: number,
+): Promise<void> {
+  const existing = await findCardIdByNumber(lockId, cardNumber);
+  if (existing) {
+    // Déjà autorisée : on réaligne sa validité sur le séjour courant (évite
+    // qu'une carte réutilisée garde une ancienne validité plus longue).
+    await withGatewayRetry(lockId, () =>
+      tthotelPost('/v3/identityCard/changePeriod', {
+        lockId,
+        cardId: existing,
+        startDate: Date.now(),
+        endDate: endMs,
+        changeType: VIA_CLOUD,
+      }),
+    );
+    return;
+  }
+  await withGatewayRetry(lockId, () =>
+    tthotelPost('/v3/identityCard/add', {
+      lockId,
+      cardNumber,
+      cardName: 'GUEST',
+      startDate: Date.now(),
+      endDate: endMs,
+      addType: VIA_CLOUD,
+    }),
+  );
+}
+
+/** Autorise une carte sur plusieurs serrures, best-effort, sans s'arrêter au 1er échec. */
+export async function authorizeCardOnLocks(
+  lockIds: number[],
+  cardNumber: string,
+  endMs: number,
+): Promise<CardRevokeResult[]> {
+  const results: CardRevokeResult[] = [];
+  for (const lockId of lockIds) {
+    try {
+      await authorizeCardOnLock(lockId, cardNumber, endMs);
+      results.push({ lockId, ok: true });
+    } catch (err) {
+      results.push({ lockId, ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return results;
+}
+
+/**
+ * Révoque une carte (par son numéro) sur UNE serrure, via gateway.
+ * On supprime l'enregistrement IC existant (créé à l'autorisation) — ce delete
+ * blackliste l'UID sur la serrure. Si aucun enregistrement n'existe (carte
+ * encodée sans gateway), on l'ajoute d'abord pour pouvoir le supprimer.
+ * Réveil + retry sur le delete (la serrure peut dormir).
+ */
+export async function revokeCardOnLock(lockId: number, cardNumber: string): Promise<void> {
+  let cardId = await findCardIdByNumber(lockId, cardNumber);
+  if (!cardId) {
+    const now = Date.now();
+    const add = await withGatewayRetry(lockId, () =>
+      tthotelPost<{ cardId: number }>('/v3/identityCard/add', {
+        lockId,
+        cardNumber,
+        cardName: 'REVOKE',
+        startDate: now,
+        endDate: now + 86_400_000,
+        addType: VIA_CLOUD,
+      }),
+    );
+    cardId = add.cardId;
+    if (!cardId) throw new Error('identityCard/add: pas de cardId renvoyé');
+  }
+
+  await withGatewayRetry(lockId, () =>
+    tthotelPost('/v3/identityCard/delete', { lockId, cardId, deleteType: VIA_CLOUD }),
+  );
+}
+
+/** Révoque une carte sur plusieurs serrures, sans s'arrêter au 1er échec. */
+export async function revokeCardOnLocks(
+  lockIds: number[],
+  cardNumber: string,
+): Promise<CardRevokeResult[]> {
+  const results: CardRevokeResult[] = [];
+  for (const lockId of lockIds) {
+    try {
+      await revokeCardOnLock(lockId, cardNumber);
+      results.push({ lockId, ok: true });
+    } catch (err) {
+      results.push({ lockId, ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return results;
 }

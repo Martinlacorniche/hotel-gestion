@@ -32,6 +32,36 @@ export async function buildAllLocksMeta(): Promise<{ hotelId: string; locks: Loc
   return { hotelId: chambres[0].hotel_id as string, locks };
 }
 
+/**
+ * Numéros de carte ACTIFS d'un séjour : dérivés des jobs d'encodage `done`
+ * référençant ce séjour, moins ceux marqués révoqués (`sejours.cartes_revoquees`).
+ * Sert à savoir s'il reste une carte valide (ex. décider de clôturer le séjour).
+ */
+export async function sejourActiveCardNos(sejourId: string): Promise<string[]> {
+  const { data: sej } = await supabaseAdmin
+    .from('sejours')
+    .select('cartes_revoquees')
+    .eq('id', sejourId)
+    .single();
+  const revoked = new Set<string>(((sej?.cartes_revoquees as string[] | null) ?? []));
+
+  const { data: jobs } = await supabaseAdmin
+    .from('jobs_encodeur')
+    .select('payload, resultat')
+    .eq('action', 'write_card')
+    .eq('statut', 'done')
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  const cardNos = new Set<string>();
+  for (const j of jobs ?? []) {
+    const sids = (j.payload as { sejourIds?: string[] } | null)?.sejourIds ?? [];
+    const cn = (j.resultat as { card_no?: string } | null)?.card_no;
+    if (cn && sids.includes(sejourId) && !revoked.has(cn)) cardNos.add(cn);
+  }
+  return [...cardNos];
+}
+
 /** Date à `mois` mois dans le futur (par défaut la validité d'un pass = 12 mois). */
 export function dateInMonths(mois: number): Date {
   const d = new Date();

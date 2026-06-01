@@ -256,13 +256,13 @@ export default function HotelDashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showUserDropdown]);
 
-  const [hotels, setHotels] = useState([]);
+  const [hotels, setHotels] = useState<any[]>([]);
   const [selectedHotelId, setSelectedHotelId] = useState(() => {
     if (typeof window !== 'undefined') {
       const fromStorage = window.localStorage.getItem('selectedHotelId');
       if (fromStorage) return fromStorage;
     }
-    if (user && user.hotel_id) return user.hotel_id;
+    if (user && (user as any).hotel_id) return (user as any).hotel_id;
     return '';
   });
 
@@ -282,8 +282,8 @@ export default function HotelDashboard() {
     if ((user as any)?.hotel_id) setSelectedHotelId((user as any).hotel_id);
   }, [user, selectedHotelId]);
 
-  const [currentHotel, setCurrentHotel] = useState(null);
-  const hotelId = selectedHotelId || (user as any)?.default_hotel_id || user?.hotel_id;
+  const [currentHotel, setCurrentHotel] = useState<any | null>(null);
+  const hotelId = selectedHotelId || (user as any)?.default_hotel_id || (user as any)?.hotel_id;
 
   const formatNumber = (n: number | null, suffix: string = "") => {
   if (n === null || n === undefined || isNaN(n)) return "-";
@@ -816,7 +816,7 @@ export default function HotelDashboard() {
       const validationDate = t.date_validation ? new Date(t.date_validation) : null;
       const current = new Date(formatDate(selectedDate, 'yyyy-MM-dd'));
       if (!actionDate || isNaN(actionDate.getTime())) return false;
-      if (current < actionDate || current > endDate) return false;
+      if (!endDate || current < actionDate || current > endDate) return false;
       if (t.valide) {
         if (!showValidatedTickets) return false;
         return !!validationDate && current <= validationDate;
@@ -862,7 +862,7 @@ export default function HotelDashboard() {
       const validationDate = c.date_validation ? new Date(c.date_validation) : null;
       const current = new Date(formatDate(selectedDate, 'yyyy-MM-dd'));
       if (!creationDate || isNaN(creationDate.getTime())) return false;
-      if (current < creationDate || current > endDate) return false;
+      if (!endDate || current < creationDate || current > endDate) return false;
       if (c.valide) {
         if (!showValidatedConsignes) return false;
         return validationDate && current <= validationDate;

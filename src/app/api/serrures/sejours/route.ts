@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { addRandomPasscode, getHotelLocksMap } from '@/lib/tthotel';
+import { generatePasscode, pushPasscode, getHotelLocksMap } from '@/lib/tthotel';
 import { parseTime, tomorrowAtLocalTime } from '@/lib/checkout';
 import { requireRole } from '@/lib/apiAuth';
 
@@ -51,12 +51,6 @@ export async function POST(req: Request) {
   }
   if (!methode || !['code', 'carte'].includes(methode)) {
     return NextResponse.json({ ok: false, error: 'methode requise (code|carte)' }, { status: 400 });
-  }
-  if (methode === 'code' && chambre_ids.length > 1) {
-    return NextResponse.json(
-      { ok: false, error: 'Un code ne peut être lié qu’à une seule chambre' },
-      { status: 400 },
-    );
   }
 
   const nuits = Math.max(1, Math.min(30, Math.floor(nuitsRaw ?? 1)));
@@ -112,38 +106,49 @@ export async function POST(req: Request) {
   const fin = tomorrowAtLocalTime(hh, mm, undefined, nuits);
 
   // ─── Branche 'code' ───────────────────────────────────────────────────────
+  // Un seul code (mêmes 4 chiffres) poussé sur chaque serrure sélectionnée, à la
+  // manière d'une carte famille. 1 séjour par chambre, liés par parent_sejour_id.
   if (methode === 'code') {
-    const chambre = chambres[0]; // garanti taille 1 par la check ci-dessus
-    let passcode: { keyboardPwdId: number; keyboardPwd: string };
-    try {
-      passcode = await addRandomPasscode(
-        chambre.tthotel_lock_id,
-        debut.getTime(),
-        fin.getTime(),
-        `Chambre ${chambre.numero}`,
-      );
-    } catch (err) {
-      return NextResponse.json(
-        { ok: false, error: err instanceof Error ? err.message : String(err) },
-        { status: 502 },
-      );
+    const code = generatePasscode();
+    const sejoursOut: unknown[] = [];
+    let parentId: string | null = null;
+    for (let i = 0; i < chambres.length; i++) {
+      const c = chambres[i];
+      let keyboardPwdId: number;
+      try {
+        keyboardPwdId = await pushPasscode(
+          c.tthotel_lock_id,
+          code,
+          debut.getTime(),
+          fin.getTime(),
+          `Chambre ${c.numero}`,
+        );
+      } catch (err) {
+        return NextResponse.json(
+          { ok: false, error: `Chambre ${c.numero} : ${err instanceof Error ? err.message : String(err)}` },
+          { status: 502 },
+        );
+      }
+      const insRes = await supabaseAdmin
+        .from('sejours')
+        .insert({
+          chambre_id: c.id,
+          debut: debut.toISOString(),
+          fin: fin.toISOString(),
+          methode: 'code',
+          code,
+          tthotel_passcode_id: keyboardPwdId,
+          statut: 'actif',
+          parent_sejour_id: parentId,
+        })
+        .select()
+        .single();
+      if (insRes.error) return NextResponse.json({ ok: false, error: insRes.error.message }, { status: 500 });
+      const sejour = insRes.data as { id: string };
+      if (i === 0) parentId = sejour.id;
+      sejoursOut.push(insRes.data);
     }
-
-    const { data: sejour, error: eS } = await supabaseAdmin
-      .from('sejours')
-      .insert({
-        chambre_id: chambre.id,
-        debut: debut.toISOString(),
-        fin: fin.toISOString(),
-        methode: 'code',
-        code: passcode.keyboardPwd,
-        tthotel_passcode_id: passcode.keyboardPwdId,
-        statut: 'actif',
-      })
-      .select()
-      .single();
-    if (eS) return NextResponse.json({ ok: false, error: eS.message }, { status: 500 });
-    return NextResponse.json({ ok: true, sejours: [sejour], jobs: [] });
+    return NextResponse.json({ ok: true, sejours: sejoursOut, jobs: [], code });
   }
 
   // ─── Branche 'carte' ──────────────────────────────────────────────────────

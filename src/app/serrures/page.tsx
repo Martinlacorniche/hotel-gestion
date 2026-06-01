@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useState, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { ThemedBackground } from '@/components/ThemedBackground';
@@ -15,10 +15,10 @@ import {
   Plus,
   Users,
   RefreshCw,
-  Trash2,
   Bug,
   Wifi,
   WifiOff,
+  Ban,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
@@ -66,6 +66,26 @@ type Pass = {
   last_job_id: string | null;
   job_statut: string | null;
 };
+type CarteChambre = { lockId: number; numero: string; revocable: boolean | null };
+type Carte = {
+  cardNo: string;
+  fin: string;
+  sejourIds: string[];
+  chambres: CarteChambre[];
+};
+type RevokeResult = { lockId: number; numero: string; ok: boolean; error?: string };
+type CoverageRoom = {
+  numero: string;
+  lockId: number;
+  hasGateway: boolean;
+  battery: number | null;
+  reachable: boolean | null;
+};
+type Coverage = {
+  gateways: { name: string; online: boolean }[];
+  rooms: CoverageRoom[];
+  reachTested: boolean;
+};
 
 export default function SerruresPage() {
   const { user } = useAuth();
@@ -80,7 +100,15 @@ export default function SerruresPage() {
   const [checkoutTime, setCheckoutTime] = useState('11:00');
   const [passes, setPasses] = useState<Pass[]>([]);
   const [showPass, setShowPass] = useState(false);
+  const [cartes, setCartes] = useState<Carte[]>([]);
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const [revokeResults, setRevokeResults] = useState<Record<string, RevokeResult[]>>({});
+  const authorizedRef = useRef<Set<string>>(new Set());
+  const [lowBatteries, setLowBatteries] = useState<{ numero: string; battery: number }[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+  const [showCoverage, setShowCoverage] = useState(false);
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
   const [debug, setDebug] = useState<{ jobs: DebugJob[]; agent: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [encoding, setEncoding] = useState<{
@@ -104,6 +132,38 @@ export default function SerruresPage() {
     if (json.ok) setPasses(json.passes);
   }, []);
 
+  const loadCartes = useCallback(async () => {
+    const res = await fetch('/api/serrures/cartes', { cache: 'no-store', headers: await authHeaders() });
+    const json = await res.json();
+    if (json.ok) setCartes(json.cartes);
+  }, []);
+
+  const loadCoverage = useCallback(async (reach = false) => {
+    setCoverageLoading(true);
+    try {
+      const res = await fetch(`/api/serrures/gateways${reach ? '?reach=1' : ''}`, {
+        cache: 'no-store',
+        headers: await authHeaders(),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setCoverage({ gateways: json.gateways, rooms: json.rooms, reachTested: json.reachTested });
+      }
+    } finally {
+      setCoverageLoading(false);
+    }
+  }, []);
+
+  const loadBatteries = useCallback(async () => {
+    try {
+      const res = await fetch('/api/serrures/batteries', { cache: 'no-store', headers: await authHeaders() });
+      const json = await res.json();
+      if (json.ok) setLowBatteries(json.low);
+    } catch {
+      /* alerte non critique */
+    }
+  }, []);
+
   const loadDebug = useCallback(async () => {
     try {
       const res = await fetch('/api/serrures/jobs?limit=25', {
@@ -120,12 +180,22 @@ export default function SerruresPage() {
   useEffect(() => {
     load();
     loadPasses();
+    loadCartes();
     const t = setInterval(() => {
       load();
       loadPasses();
+      loadCartes();
     }, 10_000);
     return () => clearInterval(t);
-  }, [load, loadPasses]);
+  }, [load, loadPasses, loadCartes]);
+
+  // Alerte batterie faible (≤10%) pour les équipes : rafraîchi toutes les 30 min
+  // (la batterie bouge lentement ; lecture cloud, aucun impact sur les serrures).
+  useEffect(() => {
+    loadBatteries();
+    const t = setInterval(loadBatteries, 1_800_000);
+    return () => clearInterval(t);
+  }, [loadBatteries]);
 
   useEffect(() => {
     if (!encoding || encoding.jobIds.length === 0) return;
@@ -140,10 +210,34 @@ export default function SerruresPage() {
         }),
       );
       if (!stopped) setJobsStatut(next);
+      // Dès qu'un job carte est `done`, ré-autorise la carte sur ses serrures
+      // (sinon une carte physique déjà révoquée resterait blacklistée). Une fois
+      // par job.
+      for (const id of encoding.jobIds) {
+        if (next[id] === 'done' && !authorizedRef.current.has(id)) {
+          authorizedRef.current.add(id);
+          fetch('/api/serrures/cartes/authorize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+            body: JSON.stringify({ jobId: id }),
+          })
+            .then(() => loadCartes())
+            .catch(() => {});
+        }
+      }
       const allDone = encoding.jobIds.every((id) => ['done', 'error'].includes(next[id]));
       if (allDone) {
         await load();
         await loadPasses();
+        await loadCartes();
+        // Toutes les cartes prévues encodées sans erreur → on ferme l'encodage
+        // automatiquement et on retombe sur le détail de la chambre (pas de clic
+        // « Fermer » inutile). On laisse ouvert si erreur ou s'il reste des cartes.
+        const allOk = encoding.jobIds.every((id) => next[id] === 'done');
+        if (!stopped && allOk && encoding.carteIndex >= encoding.totalCartes) {
+          setEncoding(null);
+          setJobsStatut({});
+        }
       }
     };
     poll();
@@ -152,7 +246,7 @@ export default function SerruresPage() {
       stopped = true;
       clearInterval(t);
     };
-  }, [encoding, load, loadPasses]);
+  }, [encoding, load, loadPasses, loadCartes]);
 
   // Rafraîchit le panneau debug tant qu'il est ouvert.
   useEffect(() => {
@@ -169,6 +263,7 @@ export default function SerruresPage() {
   function openPasses() {
     setShowPass(true);
     setShowDebug(false);
+    setShowCoverage(false);
     setSelectedIds(new Set());
     setEncoding(null);
     setJobsStatut({});
@@ -177,14 +272,48 @@ export default function SerruresPage() {
   function openDebug() {
     setShowDebug(true);
     setShowPass(false);
+    setShowCoverage(false);
     setSelectedIds(new Set());
     setEncoding(null);
     setJobsStatut({});
   }
 
+  function openCoverage() {
+    setShowCoverage(true);
+    setShowDebug(false);
+    setShowPass(false);
+    setSelectedIds(new Set());
+    setEncoding(null);
+    setJobsStatut({});
+    loadCoverage();
+  }
+
+  async function revokeCarte(carte: Carte) {
+    setRevoking(carte.cardNo);
+    try {
+      const res = await fetch('/api/serrures/cartes/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ cardNo: carte.cardNo, sejourIds: carte.sejourIds }),
+      });
+      const json = await res.json();
+      if (json.results) setRevokeResults((prev) => ({ ...prev, [carte.cardNo]: json.results }));
+      const chambres = carte.chambres.map((c) => c.numero).join(', ');
+      if (json.ok) toast.success(`Carte révoquée (chambre${carte.chambres.length > 1 ? 's' : ''} ${chambres})`);
+      else toast.error('Révocation incomplète — voir le détail par chambre');
+      await load();
+      await loadCartes();
+    } catch {
+      toast.error('Erreur lors de la révocation');
+    } finally {
+      setRevoking(null);
+    }
+  }
+
   function handleChambreClick(c: Chambre, e: ReactMouseEvent<HTMLButtonElement>) {
     setShowPass(false);
     setShowDebug(false);
+    setShowCoverage(false);
     if (encoding) {
       setEncoding(null);
       setJobsStatut({});
@@ -218,7 +347,6 @@ export default function SerruresPage() {
 
   async function createSejour(methode: 'code' | 'carte') {
     if (selectedIds.size === 0) return;
-    if (methode === 'code' && selectedIds.size > 1) return;
     const [hStr, mStr] = checkoutTime.split(':');
     const checkout_hour = parseInt(hStr, 10);
     const checkout_min = parseInt(mStr ?? '0', 10);
@@ -244,17 +372,66 @@ export default function SerruresPage() {
       const newJobIds: string[] = (json.jobs ?? []).map((j: { id: string }) => j.id);
       await load();
       if (methode === 'carte') {
-        setSelectedIds(new Set());
+        // On garde la chambre sélectionnée : l'encodage s'affiche à droite, et une
+        // fois fini on retombe sur le détail de la chambre (sa carte + son code).
         setEncoding({
           sejours: newSejours,
           jobIds: newJobIds,
           carteIndex: 1,
           totalCartes: json.total_cartes ?? 1,
         });
-      } else if (newSejours[0]) {
-        // Code créé : on garde la chambre sélectionnée pour afficher son code/validité.
+      } else if (newSejours.length === 1 && newSejours[0]) {
+        // Code créé sur 1 chambre : on la garde sélectionnée pour voir le code.
         setSelectedIds(new Set([newSejours[0].chambre_id]));
+      } else {
+        // Code créé sur plusieurs chambres : on annonce le code et on désélectionne.
+        setSelectedIds(new Set());
+        if (json.code) toast.success(`Code ${json.code} créé sur ${newSejours.length} chambres`);
       }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addCode(sejourId: string) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/serrures/sejours/${sejourId}/code`, {
+        method: 'POST',
+        headers: await authHeaders(),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast.success(`Code ${json.code} créé`);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeCode(sejourId: string) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/serrures/sejours/${sejourId}/code`, {
+        method: 'DELETE',
+        headers: await authHeaders(),
+      });
+      const json = await res.json();
+      const results: { numero: string; ok: boolean }[] = json.results ?? [];
+      if (results.length) {
+        const okCount = results.filter((r) => r.ok).length;
+        if (json.ok) toast.success(`Code révoqué (${okCount} chambre${okCount > 1 ? 's' : ''})`);
+        else toast.error(`Code révoqué sur ${okCount}/${results.length} — serrure(s) injoignable(s)`);
+      } else if (!json.ok) {
+        throw new Error(json.error || 'échec');
+      } else {
+        toast.success('Code révoqué');
+      }
+      await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -312,9 +489,16 @@ export default function SerruresPage() {
         headers: await authHeaders(),
       });
       const json = await res.json();
-      if (!json.ok) throw new Error(json.error);
+      const results: { ok: boolean }[] = json.results ?? [];
       await loadPasses();
-      toast.success('Pass supprimé');
+      if (json.removed) {
+        toast.success('Pass révoqué sur toutes les serrures');
+      } else if (results.length) {
+        const okCount = results.filter((r) => r.ok).length;
+        toast.error(`Révoqué sur ${okCount}/${results.length} serrures — réessaie (serrures injoignables)`);
+      } else if (!json.ok) {
+        throw new Error(json.error || 'échec');
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -421,6 +605,15 @@ export default function SerruresPage() {
         {isAdmin && (
           <div className="flex items-center gap-1">
             <button
+              onClick={() => (showCoverage ? setShowCoverage(false) : openCoverage())}
+              className={`p-1.5 rounded-lg transition ${
+                showCoverage ? 'bg-stone-200 text-stone-800' : 'text-stone-400 hover:text-stone-800'
+              }`}
+              title="Couverture passerelles"
+            >
+              <Wifi className="w-5 h-5" />
+            </button>
+            <button
               onClick={() => (showDebug ? setShowDebug(false) : openDebug())}
               className={`p-1.5 rounded-lg transition ${
                 showDebug ? 'bg-stone-200 text-stone-800' : 'text-stone-400 hover:text-stone-800'
@@ -440,6 +633,15 @@ export default function SerruresPage() {
         )}
       </header>
 
+      {lowBatteries.length > 0 && (
+        <div className="bg-rose-50 border-b border-rose-200 px-8 py-2.5 text-sm text-rose-700 flex items-center gap-2 flex-wrap">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span className="font-medium">Batterie faible :</span>
+          <span>{lowBatteries.map((b) => `chambre ${b.numero} (${b.battery}%)`).join(' · ')}</span>
+          <span className="text-rose-500/80">— prévenir la maintenance</span>
+        </div>
+      )}
+
       <div className="flex min-h-[calc(100vh-57px)]">
         {/* 1) Sidebar chambres */}
         <aside className="w-64 border-r border-stone-200/60 bg-white/40 overflow-y-auto py-4 shrink-0">
@@ -456,43 +658,42 @@ export default function SerruresPage() {
               Pass équipes
             </button>
           </div>
-          <ul className="px-3 space-y-1">
+          <div className="px-3 grid grid-cols-3 gap-2">
             {chambres.map((c) => {
               const occ = isOccupied(c);
               const isSel = selectedIds.has(c.id);
               return (
-                <li key={c.id}>
-                  <button
-                    onClick={(e) => handleChambreClick(c, e)}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-left transition ring-1 ${
-                      isSel
-                        ? occ
-                          ? 'bg-emerald-100 ring-emerald-300 text-emerald-900'
-                          : 'bg-indigo-50 ring-indigo-200 text-indigo-900'
-                        : occ
-                        ? 'bg-emerald-50/60 ring-transparent hover:bg-emerald-50 text-emerald-900'
-                        : 'ring-transparent hover:bg-white text-stone-700'
-                    }`}
-                  >
-                    <span className="font-medium tabular-nums text-lg">{c.numero}</span>
-                    <span>
-                      {isSel ? (
-                        <Check className={`w-4 h-4 ${occ ? 'text-emerald-600' : 'text-[var(--brand)]'}`} />
-                      ) : occ && c.sejour ? (
-                        c.sejour.methode === 'code' ? (
-                          <KeyRound className="w-4 h-4" />
-                        ) : (
-                          <CreditCard className="w-4 h-4" />
-                        )
+                <button
+                  key={c.id}
+                  onClick={(e) => handleChambreClick(c, e)}
+                  className={`flex flex-col items-center justify-center py-2.5 rounded-xl transition ring-1 ${
+                    isSel
+                      ? occ
+                        ? 'bg-emerald-100 ring-emerald-300 text-emerald-900'
+                        : 'bg-indigo-50 ring-indigo-200 text-indigo-900'
+                      : occ
+                      ? 'bg-emerald-50/60 ring-transparent hover:bg-emerald-50 text-emerald-900'
+                      : 'ring-transparent hover:bg-white text-stone-700'
+                  }`}
+                >
+                  <span className="font-semibold tabular-nums text-lg leading-none">{c.numero}</span>
+                  <span className="mt-1.5 h-4 flex items-center justify-center">
+                    {isSel ? (
+                      <Check className={`w-3.5 h-3.5 ${occ ? 'text-emerald-600' : 'text-[var(--brand)]'}`} />
+                    ) : occ && c.sejour ? (
+                      c.sejour.methode === 'code' ? (
+                        <KeyRound className="w-3.5 h-3.5" />
                       ) : (
-                        <span className="text-xs text-stone-400">libre</span>
-                      )}
-                    </span>
-                  </button>
-                </li>
+                        <CreditCard className="w-3.5 h-3.5" />
+                      )
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-stone-300" />
+                    )}
+                  </span>
+                </button>
               );
             })}
-          </ul>
+          </div>
         </aside>
 
         {/* 2) Colonne paramètres (toujours visible) */}
@@ -500,6 +701,11 @@ export default function SerruresPage() {
           <ParamsPanel
             selectedChambres={selectedChambres}
             occupiedCount={selectedChambres.filter(isOccupied).length}
+            singleHasCarte={
+              !!detailChambre &&
+              cartes.some((c) => c.chambres.some((ch) => ch.lockId === detailChambre.tthotel_lock_id))
+            }
+            singleHasCode={!!detailChambre?.sejour?.code}
             nuits={nuits}
             setNuits={setNuits}
             nbCartes={nbCartes}
@@ -529,6 +735,13 @@ export default function SerruresPage() {
                   setJobsStatut({});
                 }}
               />
+            ) : showCoverage ? (
+              <CoveragePanel
+                coverage={coverage}
+                loading={coverageLoading}
+                onRefresh={() => loadCoverage(false)}
+                onTestReach={() => loadCoverage(true)}
+              />
             ) : showDebug ? (
               <DebugPanel debug={debug} onRefresh={loadDebug} />
             ) : showPass ? (
@@ -540,7 +753,18 @@ export default function SerruresPage() {
                 onDelete={deletePass}
               />
             ) : detailChambre && detailChambre.sejour ? (
-              <ChambreDetail chambre={detailChambre} />
+              <ChambreDetail
+                chambre={detailChambre}
+                cartes={cartes.filter((c) =>
+                  c.chambres.some((ch) => ch.lockId === detailChambre.tthotel_lock_id),
+                )}
+                revoking={revoking}
+                results={revokeResults}
+                busy={busy}
+                onRevoke={revokeCarte}
+                onAddCode={addCode}
+                onRevokeCode={revokeCode}
+              />
             ) : (
               <EmptyInfo />
             )}
@@ -562,6 +786,233 @@ function EmptyInfo() {
         <br />
         ou une occupée pour voir le code et la validité.
       </p>
+    </div>
+  );
+}
+
+// ─── Clés actives (cartes invité — ouvert via le bouton de la sidebar) ───────
+
+function formatCheckout(iso: string): string {
+  const d = new Date(iso);
+  return (
+    d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) +
+    ' ' +
+    d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  );
+}
+
+function CarteRow(props: {
+  carte: Carte;
+  revoking: boolean;
+  result?: RevokeResult[];
+  onRevoke: () => void;
+}) {
+  const { carte, revoking, result, onRevoke } = props;
+  const [confirm, setConfirm] = useState(false);
+  const noGateway = carte.chambres.some((c) => c.revocable === false);
+
+  return (
+    <li className="rounded-2xl bg-white border border-stone-200/60 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-1.5 mb-1">
+            {carte.chambres.map((ch) => (
+              <span
+                key={ch.lockId}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-sm font-medium tabular-nums ${
+                  ch.revocable === false ? 'bg-amber-50 text-amber-700' : 'bg-stone-100 text-stone-700'
+                }`}
+              >
+                {ch.numero}
+                {ch.revocable === false && <WifiOff className="w-3 h-3" />}
+              </span>
+            ))}
+          </div>
+          <p className="text-[11px] text-stone-400">
+            Checkout {formatCheckout(carte.fin)} · carte {carte.cardNo}
+          </p>
+        </div>
+
+        {!confirm ? (
+          <button
+            onClick={() => setConfirm(true)}
+            disabled={revoking}
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 transition"
+          >
+            {revoking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+            Révoquer
+          </button>
+        ) : (
+          <div className="shrink-0 flex items-center gap-1.5">
+            <button
+              onClick={() => {
+                setConfirm(false);
+                onRevoke();
+              }}
+              disabled={revoking}
+              className="px-3 py-2 rounded-xl text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 transition"
+            >
+              Confirmer
+            </button>
+            <button
+              onClick={() => setConfirm(false)}
+              className="px-2 py-2 rounded-xl text-sm text-stone-500 hover:bg-stone-100 transition"
+            >
+              Annuler
+            </button>
+          </div>
+        )}
+      </div>
+
+      {noGateway && (
+        <p className="mt-2 text-[11px] text-amber-600 flex items-center gap-1">
+          <WifiOff className="w-3 h-3 shrink-0" />
+          Chambre sans passerelle : la révocation n’aura pas d’effet (la carte expire au checkout).
+        </p>
+      )}
+
+      {result && (
+        <div className="mt-2 space-y-0.5 border-t border-stone-100 pt-2">
+          {result.map((r) => (
+            <p
+              key={r.lockId}
+              className={`text-[11px] flex items-center gap-1 ${r.ok ? 'text-emerald-600' : 'text-rose-600'}`}
+            >
+              {r.ok ? <Check className="w-3 h-3 shrink-0" /> : <AlertCircle className="w-3 h-3 shrink-0" />}
+              Chambre {r.numero} — {r.ok ? 'révoquée' : r.error ?? 'échec'}
+            </p>
+          ))}
+        </div>
+      )}
+    </li>
+  );
+}
+
+// ─── Couverture passerelles (admin, icône Wifi du header) ────────────────────
+
+function batteryColor(b: number): string {
+  if (b <= 20) return 'text-rose-600';
+  if (b <= 40) return 'text-amber-600';
+  return 'text-stone-500';
+}
+
+function CoveragePanel(props: {
+  coverage: Coverage | null;
+  loading: boolean;
+  onRefresh: () => void;
+  onTestReach: () => void;
+}) {
+  const { coverage, loading, onRefresh, onTestReach } = props;
+  const lowBat = (coverage?.rooms ?? []).filter((r) => r.battery != null && r.battery <= 20);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <Label>Couverture & batteries</Label>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          className="text-stone-400 hover:text-stone-600 transition disabled:opacity-50"
+          title="Rafraîchir"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {!coverage ? (
+        <p className="text-center text-xs text-stone-400 mt-10">
+          {loading ? 'Chargement…' : 'Aucune donnée.'}
+        </p>
+      ) : (
+        <>
+          {lowBat.length > 0 && (
+            <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2.5 mb-5 text-xs text-rose-700">
+              <div className="flex items-center gap-1.5 font-medium mb-1">
+                <AlertCircle className="w-3.5 h-3.5" />
+                {lowBat.length} serrure{lowBat.length > 1 ? 's' : ''} en batterie faible
+              </div>
+              <div className="text-rose-600/90">
+                {lowBat.map((r) => `${r.numero} (${r.battery}%)`).join(' · ')}
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-2xl bg-white border border-stone-200/60 p-4 mb-5">
+            <div className="text-xs uppercase tracking-wider text-stone-400 mb-2">Passerelles</div>
+            <div className="space-y-1.5">
+              {coverage.gateways.map((g) => (
+                <div key={g.name} className="flex items-center justify-between text-sm">
+                  <span className="text-stone-700">{g.name}</span>
+                  <span
+                    className={`inline-flex items-center gap-1 text-xs font-medium ${
+                      g.online ? 'text-emerald-600' : 'text-stone-400'
+                    }`}
+                  >
+                    {g.online ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+                    {g.online ? 'en ligne' : 'hors ligne'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-white border border-stone-200/60 overflow-hidden">
+            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-4 py-2 text-[11px] uppercase tracking-wider text-stone-400 border-b border-stone-100">
+              <span>Chambre</span>
+              <span>Batt.</span>
+              <span>GW</span>
+              <span>Joign.</span>
+            </div>
+            {coverage.rooms.map((r) => (
+              <div
+                key={r.lockId}
+                className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-4 py-2.5 items-center border-b border-stone-50 last:border-0"
+              >
+                <span className="font-medium tabular-nums text-stone-700">{r.numero}</span>
+                <span className="justify-self-center text-xs font-medium tabular-nums">
+                  {r.battery == null ? (
+                    <span className="text-stone-300">—</span>
+                  ) : (
+                    <span className={batteryColor(r.battery)}>{r.battery}%</span>
+                  )}
+                </span>
+                <span className="justify-self-center">
+                  {r.hasGateway ? (
+                    <Check className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <span className="text-stone-300 text-xs">—</span>
+                  )}
+                </span>
+                <span className="justify-self-center">
+                  {r.reachable == null ? (
+                    <span className="text-stone-300 text-xs">—</span>
+                  ) : r.reachable ? (
+                    <Wifi className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <WifiOff className="w-4 h-4 text-rose-400" />
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {!coverage.reachTested ? (
+            <button
+              onClick={onTestReach}
+              disabled={loading}
+              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 disabled:opacity-50 text-sm font-medium transition"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+              Tester la joignabilité (~20s)
+            </button>
+          ) : (
+            <p className="mt-4 text-[11px] text-stone-400 leading-relaxed">
+              « Joign. » = la serrure répond via une passerelle en ligne <em>maintenant</em> (le vrai
+              critère pour révoquer en temps réel). « GW » = passerelle associée, pas forcément joignable.
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -692,9 +1143,9 @@ function PassRow(props: {
             onClick={onAskDelete}
             disabled={busy}
             className="px-3 py-2.5 rounded-xl bg-white hover:bg-stone-100 text-stone-500 border border-stone-200 disabled:opacity-50 transition"
-            title="Supprimer de la liste"
+            title="Révoquer le pass (efface la carte des serrures)"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Ban className="w-3.5 h-3.5" />
           </button>
         </div>
       ) : (
@@ -711,7 +1162,7 @@ function PassRow(props: {
             disabled={busy}
             className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition text-sm font-medium"
           >
-            Supprimer
+            Révoquer
           </button>
         </div>
       )}
@@ -807,6 +1258,8 @@ function NumberPills({
 function ParamsPanel(props: {
   selectedChambres: Chambre[];
   occupiedCount: number;
+  singleHasCarte: boolean;
+  singleHasCode: boolean;
   nuits: number;
   setNuits: (n: number) => void;
   nbCartes: number;
@@ -823,6 +1276,8 @@ function ParamsPanel(props: {
   const {
     selectedChambres,
     occupiedCount,
+    singleHasCarte,
+    singleHasCode,
     nuits,
     setNuits,
     nbCartes,
@@ -928,9 +1383,8 @@ function ParamsPanel(props: {
             </button>
             <button
               onClick={onCode}
-              disabled={busy || multi}
-              title={multi ? 'Le code n’est possible que pour une seule chambre' : undefined}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition"
+              disabled={busy}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 disabled:opacity-50 text-sm font-medium transition"
             >
               <KeyRound className="w-4 h-4" />
               Code
@@ -941,28 +1395,47 @@ function ParamsPanel(props: {
         {singleOccupied && (
           <div className="space-y-3">
             <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-              Chambre déjà occupée — ré-encodage.
+              Chambre occupée — code et carte se gèrent à droite.
             </div>
-            <button
-              onClick={onReplace}
-              disabled={busy}
-              className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
-            >
-              <RefreshCw className="w-6 h-6" />
-              Remplacer ({nbCartes > 1 ? `${nbCartes} cartes` : '1 carte'}, {nuits} nuit{nuits > 1 ? 's' : ''})
-            </button>
-            <button
-              onClick={onAdd}
-              disabled={busy}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 disabled:opacity-50 text-sm font-medium transition"
-            >
-              <Plus className="w-4 h-4" />
-              Ajouter {nbCartes > 1 ? `${nbCartes} cartes` : 'une carte'} (mêmes dates)
-            </button>
-            <p className="text-[11px] text-stone-400 leading-relaxed">
-              « Remplacer » : nouvelle validité (nuits/checkout ci-dessus). « Ajouter » : garde les
-              dates actuelles, encode juste des cartes en plus.
-            </p>
+            {singleHasCarte ? (
+              <>
+                <button
+                  onClick={onReplace}
+                  disabled={busy}
+                  className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
+                >
+                  <RefreshCw className="w-6 h-6" />
+                  Remplacer la carte ({nbCartes > 1 ? `${nbCartes} cartes` : '1 carte'}, {nuits} nuit{nuits > 1 ? 's' : ''})
+                </button>
+                <button
+                  onClick={onAdd}
+                  disabled={busy}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 disabled:opacity-50 text-sm font-medium transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Ajouter {nbCartes > 1 ? `${nbCartes} cartes` : 'une carte'} (mêmes dates)
+                </button>
+                <p className="text-[11px] text-stone-400 leading-relaxed">
+                  « Remplacer » : nouvelle validité (nuits/checkout ci-dessus). « Ajouter » : garde les
+                  dates actuelles, encode juste des cartes en plus.
+                </p>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={onAdd}
+                  disabled={busy}
+                  className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
+                >
+                  <Plus className="w-6 h-6" />
+                  Ajouter {nbCartes > 1 ? `${nbCartes} cartes` : 'une carte'}
+                </button>
+                <p className="text-[11px] text-stone-400 leading-relaxed">
+                  Cette chambre a {singleHasCode ? 'un code' : 'une clé'} (géré à droite). Tu peux lui
+                  ajouter une carte ici.
+                </p>
+              </>
+            )}
           </div>
         )}
 
@@ -1078,8 +1551,17 @@ function DebugPanel({
 
 // ─── Détail chambre (col droite) ────────────────────────────────────────────
 
-function ChambreDetail(props: { chambre: Chambre }) {
-  const { chambre } = props;
+function ChambreDetail(props: {
+  chambre: Chambre;
+  cartes: Carte[];
+  revoking: string | null;
+  results: Record<string, RevokeResult[]>;
+  busy: boolean;
+  onRevoke: (c: Carte) => void;
+  onAddCode: (sejourId: string) => void;
+  onRevokeCode: (sejourId: string) => void;
+}) {
+  const { chambre, cartes, revoking, results, busy, onRevoke, onAddCode, onRevokeCode } = props;
   const sejour = chambre.sejour!;
   const fin = new Date(sejour.fin);
   const debut = new Date(sejour.debut);
@@ -1107,22 +1589,69 @@ function ChambreDetail(props: { chambre: Chambre }) {
       <Label>Occupée</Label>
       <div className="text-3xl font-light text-stone-800 mb-8">Chambre {chambre.numero}</div>
 
-      {sejour.methode === 'code' && sejour.code && (
-        <div className="text-center py-10 mb-6 rounded-3xl bg-white shadow-sm border border-stone-200/60">
-          <div className="text-xs uppercase tracking-wider text-stone-400 mb-3">Code</div>
-          <div className="text-6xl font-bold tracking-widest tabular-nums select-all text-stone-800">
-            {sejour.code}
+      {/* Code */}
+      <div className="mb-6">
+        <div className="text-xs uppercase tracking-wider text-stone-400 mb-3">Code</div>
+        {sejour.code ? (
+          <div className="rounded-2xl bg-white shadow-sm border border-stone-200/60 p-4">
+            <div className="text-center mb-3">
+              <div className="text-5xl font-bold tracking-widest tabular-nums select-all text-stone-800">
+                {sejour.code}
+                <span className="text-stone-400">#</span>
+              </div>
+              <div className="mt-2 text-xs text-stone-400">
+                Tape le code puis <span className="font-semibold text-stone-500">#</span> pour valider
+              </div>
+            </div>
+            <button
+              onClick={() => onRevokeCode(sejour.id)}
+              disabled={busy}
+              className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 transition"
+            >
+              <Ban className="w-4 h-4" />
+              Révoquer le code
+            </button>
           </div>
+        ) : (
+          <button
+            onClick={() => onAddCode(sejour.id)}
+            disabled={busy}
+            className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 disabled:opacity-50 text-sm font-medium transition"
+          >
+            <KeyRound className="w-4 h-4" />
+            Ajouter un code
+          </button>
+        )}
+      </div>
+
+      {/* Cartes */}
+      <div className="mb-6">
+        <div className="text-xs uppercase tracking-wider text-stone-400 mb-3">
+          Carte{cartes.length > 1 ? 's' : ''}
         </div>
-      )}
-      {sejour.methode === 'carte' && (
-        <div className="text-center py-10 mb-6 rounded-3xl bg-white shadow-sm border border-stone-200/60">
-          <CreditCard className="w-12 h-12 mx-auto mb-3 text-stone-700" />
-          <div className="text-sm text-stone-600">
-            {sejour.statut === 'pending' ? 'En attente d’encodage' : 'Carte active'}
+        {cartes.length > 0 ? (
+          <ul className="space-y-3">
+            {cartes.map((c) => (
+              <CarteRow
+                key={c.cardNo}
+                carte={c}
+                revoking={revoking === c.cardNo}
+                result={results[c.cardNo]}
+                onRevoke={() => onRevoke(c)}
+              />
+            ))}
+          </ul>
+        ) : sejour.statut === 'pending' ? (
+          <div className="text-center py-6 rounded-2xl bg-white border border-stone-200/60">
+            <Loader2 className="w-6 h-6 mx-auto mb-2 text-stone-400 animate-spin" />
+            <div className="text-sm text-stone-500">Carte en cours d’encodage…</div>
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-xs text-stone-400">
+            Aucune carte. Ajoute-en une via « Ajouter une carte » à gauche.
+          </p>
+        )}
+      </div>
 
       <div className="rounded-2xl bg-white border border-stone-200/60 p-5 mb-6">
         <div className="flex items-center justify-between text-xs text-stone-500 mb-2">
@@ -1162,8 +1691,7 @@ function ChambreDetail(props: { chambre: Chambre }) {
       </div>
 
       <p className="text-[11px] text-stone-400 leading-relaxed">
-        Pour prolonger, remplacer ou ajouter une carte : la chambre est déjà sélectionnée — utilise
-        les boutons de la colonne de gauche.
+        Le code se gère ici. Pour ajouter / remplacer une carte : boutons de la colonne de gauche.
       </p>
     </div>
   );

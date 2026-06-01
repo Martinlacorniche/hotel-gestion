@@ -15,6 +15,15 @@ export async function GET(req: Request) {
     .order('numero', { ascending: true });
   if (errC) return NextResponse.json({ ok: false, error: errC.message }, { status: 500 });
 
+  // Expiration paresseuse : un séjour 'actif' dont le checkout est passé libère
+  // la chambre (le code/la carte expirent d'eux-mêmes sur la serrure à `fin`).
+  const nowIso = new Date().toISOString();
+  await supabaseAdmin
+    .from('sejours')
+    .update({ statut: 'expire', updated_at: nowIso })
+    .eq('statut', 'actif')
+    .lt('fin', nowIso);
+
   const { data: sejours, error: errS } = await supabaseAdmin
     .from('sejours')
     .select('*')
