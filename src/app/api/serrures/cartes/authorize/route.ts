@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { authorizeCardOnLocks } from '@/lib/tthotel';
+import { authorizeCardOnLocks, revokeCardOnLocks } from '@/lib/tthotel';
+import { sejourActiveCardNos } from '@/lib/serruresLocks';
 import { requireRole } from '@/lib/apiAuth';
 
 // POST /api/serrures/cartes/authorize   body { jobId: string }
@@ -33,7 +34,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'job non éligible (write_card/done)' }, { status: 409 });
   }
 
-  const payload = (job.payload ?? {}) as { lockIds?: number[]; fin?: string };
+  const payload = (job.payload ?? {}) as {
+    lockIds?: number[];
+    sejourIds?: string[];
+    fin?: string;
+    supersede?: boolean;
+  };
   const resultat = (job.resultat ?? {}) as { card_no?: string };
   const cardNo = resultat.card_no;
   const lockIds = payload.lockIds ?? [];
@@ -43,5 +49,34 @@ export async function POST(req: Request) {
   const endMs = payload.fin ? new Date(payload.fin).getTime() : Date.now() + 2 * 86_400_000;
 
   const results = await authorizeCardOnLocks(lockIds, cardNo, endMs);
-  return NextResponse.json({ ok: results.every((r) => r.ok), results });
+
+  // 'Remplacer' : une fois la nouvelle carte autorisée, on révoque les ANCIENNES
+  // cartes du séjour (tout sauf la nouvelle). Si on a reposé la même carte
+  // physique (même numéro), il n'y a rien à révoquer.
+  let superseded: string[] = [];
+  if (payload.supersede) {
+    for (const sejourId of payload.sejourIds ?? []) {
+      const olds = (await sejourActiveCardNos(sejourId)).filter((c) => c !== cardNo);
+      const reallyRevoked: string[] = [];
+      for (const old of olds) {
+        const r = await revokeCardOnLocks(lockIds, old);
+        if (r.every((x) => x.ok)) reallyRevoked.push(old);
+      }
+      if (reallyRevoked.length) {
+        const { data: sj } = await supabaseAdmin
+          .from('sejours')
+          .select('cartes_revoquees')
+          .eq('id', sejourId)
+          .single();
+        const set = new Set<string>([
+          ...(((sj?.cartes_revoquees as string[] | null) ?? [])),
+          ...reallyRevoked,
+        ]);
+        await supabaseAdmin.from('sejours').update({ cartes_revoquees: [...set] }).eq('id', sejourId);
+        superseded = superseded.concat(reallyRevoked);
+      }
+    }
+  }
+
+  return NextResponse.json({ ok: results.every((r) => r.ok), results, superseded });
 }

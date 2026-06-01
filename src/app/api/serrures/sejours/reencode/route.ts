@@ -138,6 +138,9 @@ export async function POST(req: Request) {
         fin: finIso,
         carte_index: 1,
         total_cartes: nbCartes,
+        // 'replace' = la nouvelle carte remplace les précédentes → on révoque les
+        // anciennes cartes du séjour une fois la nouvelle encodée (cf. authorize).
+        supersede: mode === 'replace',
       },
     })
     .select()
