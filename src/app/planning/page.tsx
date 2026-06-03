@@ -56,26 +56,6 @@ const SHIFT_OPTIONS = [
 
 const getShiftColor = (shift) => SHIFT_OPTIONS.find(opt => opt.value === shift)?.color || 'bg-gray-50 border border-gray-200 text-gray-700';
 
-const getCellEntries = (entries, userId, dateStr) => {
-  if (!Array.isArray(entries)) return { draft: null, published: null };
-  const draft = entries.find(e => e.user_id === userId && e.date === dateStr && e.status === 'draft') || null;
-  const published = entries.find(e => e.user_id === userId && e.date === dateStr && e.status === 'published') || null;
-  return { draft, published };
-};
-
-const getEntry = (entries = [], userId, dateStr, preferDraft = false, isAdminFlag = false) => {
-  if (!Array.isArray(entries)) return null;
-  if (!isAdminFlag) {
-    return entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'published') || null;
-  }
-  if (preferDraft) {
-    const draft = entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'draft');
-    if (draft) return draft;
-  }
-  return entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'published') ||
-         entries.find(p => p.user_id === userId && p.date === dateStr && p.status === 'draft') || null;
-};
-
 // Jours fériés français d'une année (fixes + mobiles via Pâques Meeus).
 function feriesFR(year: number): Set<string> {
   const a = year % 19, b = Math.floor(year / 100), c = year % 100;
@@ -292,6 +272,22 @@ export default function PlanningPage() {
   }, [decidedCount, user, hotelId]);
 
   const entriesView = useMemo(() => (isAdmin ? planningEntries : planningEntries.filter(e => e.status === 'published')), [planningEntries, isAdmin]);
+
+  // Index `user_id|date` → { draft, published } construit UNE fois par lot d'entrées.
+  // Remplace les .find() linéaires (un par cellule + surveillance) par des lookups O(1).
+  const EMPTY_CELL = useMemo(() => ({ draft: null, published: null }), []);
+  const entryIndex = useMemo(() => {
+    const m = new Map<string, { draft: any; published: any }>();
+    for (const e of planningEntries) {
+      const k = `${e.user_id}|${e.date}`;
+      let cell = m.get(k);
+      if (!cell) { cell = { draft: null, published: null }; m.set(k, cell); }
+      if (e.status === 'draft') { if (!cell.draft) cell.draft = e; }
+      else if (e.status === 'published') { if (!cell.published) cell.published = e; }
+    }
+    return m;
+  }, [planningEntries]);
+  const cellAt = (uid: string, ds: string) => entryIndex.get(`${uid}|${ds}`) || EMPTY_CELL;
 
   const [showCpAdminModal, setShowCpAdminModal] = useState(false);
   const [showAllCp, setShowAllCp] = useState(false);
@@ -680,7 +676,7 @@ export default function PlanningPage() {
     const currentMonth = format(currentWeekStart, 'yyyy-MM');
 
     const effEntry = (uid: string, ds: string) => {
-      const { draft, published } = getCellEntries(planningEntries, uid, ds);
+      const { draft, published } = cellAt(uid, ds);
       return draft || published || null;
     };
     const isWork = (e: any) => e && e.shift && !['Repos', 'CP', 'Maladie', 'Injustifié'].includes(e.shift);
@@ -955,6 +951,159 @@ export default function PlanningPage() {
     await reloadEntries(); setEditingCell(null); setShiftInput(''); setShowShiftModal(false); setUseAsDefault(false); setDoNotTouch(false);
   };
 
+  // Corps de table mémoïsé : ne se recalcule QUE si ses vraies dépendances changent.
+  // La saisie dans la modale (shiftInput/startTime/endTime), le survol, etc. ne
+  // re-rendent plus les ~280 cellules → plus de latence sur les semaines pleines.
+  const tableBody = useMemo(() => rows.map((row, index) => {
+                  const rowBgClass = row.id && row.color ? row.color : 'bg-white';
+
+                  // Filtre services masqués (on garde l'index pour moveRow → return null).
+                  const rowHidden =
+                    ((row as any).id && hiddenServices.has((row as any).id)) ||
+                    ((row as any).id_auth && (row as any).service && hiddenServices.has((row as any).service));
+                  if (rowHidden) return null;
+
+                  return (
+                  <tr key={row.id || row.id_auth} className={`group transition-colors`}>
+                    {/* COLONNE SALARIÉ */}
+                    <td className={`px-6 py-4 whitespace-nowrap sticky left-0 z-10 border-r border-slate-100 ${rowBgClass}`}>
+                      <div className="flex items-center justify-between">
+                         <div className="flex flex-col">
+                            <span className={`font-bold text-sm ${row.id ? 'text-slate-900 uppercase tracking-wider' : 'text-slate-700'}`}>{(row as any).emoji ? `${(row as any).emoji} ` : ''}{row.name || row.email}</span>
+                            {row.id_auth && (
+                               <div className="flex items-center gap-2 mt-1">
+                                  <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
+                                     <Clock className="w-3 h-3"/> {getWeeklyHours(row.id_auth)}
+                                  </span>
+                                  {(() => {
+                                     const t = surveillance?.totals[(row as any).id_auth];
+                                     const ch = (row as any).contratHeures;
+                                     if (!t || !ch) return null;
+                                     const supMin = t.week - ch * 60;
+                                     if (supMin <= 0) return null;
+                                     return <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full" title={`Heures sup vs contrat ${ch}h/sem`}>+{Math.floor(supMin / 60)}h{String(supMin % 60).padStart(2, '0')} sup</span>;
+                                  })()}
+                                  {/* BOUTON DUPLIQUER CORRIGÉ ICI (Icône Copy) */}
+                                  {isAdmin && (
+                                    <button onClick={() => openDuplicationModal(row)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Dupliquer la semaine">
+                                        <Copy className="w-3.5 h-3.5"/>
+                                    </button>
+                                  )}
+                                  {isAdmin && isUnlocked && (
+                                    <select value={(row as any).service || ''} onChange={(e) => setUserService((row as any).id_auth, e.target.value)} onClick={(e) => e.stopPropagation()}
+                                       className="text-[10px] font-bold bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5 text-slate-500 outline-none cursor-pointer">
+                                       <option value="">— service —</option>
+                                       {SERVICE_ROWS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                  )}
+                               </div>
+                            )}
+                         </div>
+                         {isAdmin && isUnlocked && (
+                            <div className="opacity-0 group-hover:opacity-100 flex flex-col ml-2">
+                               <button onClick={() => moveRow(index, 'up')} className="text-slate-300 hover:text-slate-600"><ArrowUp className="w-4 h-4"/></button>
+                               <button onClick={() => moveRow(index, 'down')} className="text-slate-300 hover:text-slate-600"><ArrowDown className="w-4 h-4"/></button>
+                            </div>
+                         )}
+                      </div>
+                    </td>
+
+                    {/* CELLULES JOURS */}
+                    {displayDates.map((date, di) => {
+                       const formatted = format(date, 'yyyy-MM-dd');
+                       const cellLocked = isWriteBlocked(formatted);
+                       const isPrevCol = showPrevWeek && di < 7;
+                       const firstCurrentCol = showPrevWeek && di === 7;
+
+                       const renderBubble = (entry, icon, isDraft = false) => (
+                          <div
+                             draggable={isAdmin && !cellLocked}
+                             onDragStart={() => isAdmin && !cellLocked && setDraggedShift({ userId: row.id_auth, date: formatted })}
+                             onClick={() => isAdmin && handleCellClick(row.id_auth, formatted, entry)}
+                             title={cellLocked ? `Verrouillé (>${RETRO_LOCK_DAYS}j) — conservation légale` : undefined}
+                             // Pastille pleine douce — fill couleur + texte contrasté, arrondi propre.
+                             className={`
+                                relative group/shift select-none rounded-xl
+                                transition-all duration-200 hover:shadow-sm hover:z-10
+                                w-full flex flex-col items-center justify-center text-center min-h-[44px] px-2 py-1.5
+                                ${getShiftColor(entry?.shift || '')}
+                                ${cellLocked ? 'opacity-60 cursor-not-allowed grayscale-[40%]' : 'cursor-pointer hover:-translate-y-0.5'}
+                             `}
+                          >
+                             {/* Titre du shift */}
+                             <div className="font-bold text-[11px] leading-tight w-full break-words">
+                                {entry?.shift}
+                             </div>
+
+                             {/* Heures */}
+                             {entry?.shift !== 'Repos' && entry?.start_time && (
+                                <div className="text-[10px] opacity-70 mt-0.5 font-semibold tabular-nums">
+                                   {entry.start_time.slice(0,5)} - {entry.end_time.slice(0,5)}
+                                </div>
+                             )}
+
+                             {/* Icône Cadenas */}
+                             {entry?.do_not_touch && <span className="absolute top-0.5 right-1 text-[8px] opacity-60">🔒</span>}
+
+                             {/* Alerte surveillance (repos < 11h / journée > 10h) */}
+                             {surveillance?.cellFlags.has(`${(row as any).id_auth}|${formatted}`) && (
+                                <span className="absolute bottom-0.5 left-1 text-xs leading-none" title="Repos < 11h ou journée > 10h — voir le panneau Surveillance">🛑</span>
+                             )}
+
+                             {/* Bouton Suppression */}
+                             {isAdmin && entry?.id && !cellLocked && (
+                                <button
+                                   onClick={(e) => { e.stopPropagation(); handleDeleteShift(entry.id); }}
+                                   className="absolute -top-1.5 -right-1.5 bg-white text-red-500 rounded-full p-0.5 opacity-0 group-hover/shift:opacity-100 shadow-sm border border-red-100 transition-all hover:bg-red-50 hover:scale-110 z-20"
+                                >
+                                   <Trash2 className="w-3 h-3"/>
+                                </button>
+                             )}
+
+                             {/* Cadenas pour date verrouillée */}
+                             {cellLocked && (
+                                <Lock className="absolute top-0.5 right-1 w-2.5 h-2.5 opacity-70" />
+                             )}
+
+                        {isAdmin && isDraft && (
+                                <Pencil className="absolute top-1 left-1 w-2.5 h-2.5 opacity-45" />
+                             )}
+
+                          </div>
+                       );
+
+                       let content = null;
+                       if (row.id_auth) {
+                          if (isAdmin) {
+                             const { draft, published } = cellAt(row.id_auth, formatted);
+                             if (!draft && !published) {
+                                content = cellLocked
+                                  ? <div title={`Verrouillé (>${RETRO_LOCK_DAYS}j) — conservation légale`} className="h-full w-full min-h-[40px] rounded-lg flex items-center justify-center opacity-30"><Lock className="w-3 h-3 text-slate-400"/></div>
+                                  : <div onClick={() => handleCellClick(row.id_auth, formatted, null)} onDrop={() => handleShiftDrop(row.id_auth, formatted)} onDragOver={(e) => e.preventDefault()} className="h-full w-full min-h-[40px] rounded-lg border border-dashed border-slate-200 hover:bg-white/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer"><Plus className="w-4 h-4 text-slate-300"/></div>;
+                             } else {
+                                content = (
+    <div className="flex flex-col gap-1">
+        {draft && renderBubble(draft, '📝', true)} {/* <-- Passer true pour isDraft */}
+        {published && renderBubble(published, '')}
+    </div>
+);
+                             }
+                          } else {
+                             const entry = cellAt(row.id_auth, formatted).published;
+                             content = entry ? renderBubble(entry, '') : null;
+                          }
+                       }
+
+                       return (
+                          <td key={`${row.id || row.id_auth}-${date.toISOString()}`} className={`px-2 py-2 align-middle border-b border-slate-50 bg-opacity-30 min-h-[80px] ${rowBgClass} ${isPrevCol ? 'opacity-60' : ''} ${firstCurrentCol ? 'border-l-2 border-l-slate-300' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={() => handleShiftDrop(row.id_auth, formatted)}>
+                             {content}
+                          </td>
+                       );
+                    })}
+                  </tr>
+                );
+                }), [rows, hiddenServices, surveillance, isAdmin, isUnlocked, cutMode, draggedShift, displayDates, showPrevWeek, entryIndex, weekDates, entriesView, hotelId]);
+
   if (isLoading) return <div className="p-10 text-center text-gray-500">Chargement...</div>;
   if (!user) { router.push('/login'); return null; }
 
@@ -1164,155 +1313,7 @@ export default function PlanningPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.map((row, index) => {
-                  const rowBgClass = row.id && row.color ? row.color : 'bg-white';
-
-                  // Filtre services masqués (on garde l'index pour moveRow → return null).
-                  const rowHidden =
-                    ((row as any).id && hiddenServices.has((row as any).id)) ||
-                    ((row as any).id_auth && (row as any).service && hiddenServices.has((row as any).service));
-                  if (rowHidden) return null;
-
-                  return (
-                  <tr key={row.id || row.id_auth} className={`group transition-colors`}>
-                    {/* COLONNE SALARIÉ */}
-                    <td className={`px-6 py-4 whitespace-nowrap sticky left-0 z-10 border-r border-slate-100 ${rowBgClass}`}>
-                      <div className="flex items-center justify-between">
-                         <div className="flex flex-col">
-                            <span className={`font-bold text-sm ${row.id ? 'text-slate-900 uppercase tracking-wider' : 'text-slate-700'}`}>{(row as any).emoji ? `${(row as any).emoji} ` : ''}{row.name || row.email}</span>
-                            {row.id_auth && (
-                               <div className="flex items-center gap-2 mt-1">
-                                  <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
-                                     <Clock className="w-3 h-3"/> {getWeeklyHours(row.id_auth)}
-                                  </span>
-                                  {(() => {
-                                     const t = surveillance?.totals[(row as any).id_auth];
-                                     const ch = (row as any).contratHeures;
-                                     if (!t || !ch) return null;
-                                     const supMin = t.week - ch * 60;
-                                     if (supMin <= 0) return null;
-                                     return <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full" title={`Heures sup vs contrat ${ch}h/sem`}>+{Math.floor(supMin / 60)}h{String(supMin % 60).padStart(2, '0')} sup</span>;
-                                  })()}
-                                  {/* BOUTON DUPLIQUER CORRIGÉ ICI (Icône Copy) */}
-                                  {isAdmin && (
-                                    <button onClick={() => openDuplicationModal(row)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Dupliquer la semaine">
-                                        <Copy className="w-3.5 h-3.5"/>
-                                    </button>
-                                  )}
-                                  {isAdmin && isUnlocked && (
-                                    <select value={(row as any).service || ''} onChange={(e) => setUserService((row as any).id_auth, e.target.value)} onClick={(e) => e.stopPropagation()}
-                                       className="text-[10px] font-bold bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5 text-slate-500 outline-none cursor-pointer">
-                                       <option value="">— service —</option>
-                                       {SERVICE_ROWS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                    </select>
-                                  )}
-                               </div>
-                            )}
-                         </div>
-                         {isAdmin && isUnlocked && (
-                            <div className="opacity-0 group-hover:opacity-100 flex flex-col ml-2">
-                               <button onClick={() => moveRow(index, 'up')} className="text-slate-300 hover:text-slate-600"><ArrowUp className="w-4 h-4"/></button>
-                               <button onClick={() => moveRow(index, 'down')} className="text-slate-300 hover:text-slate-600"><ArrowDown className="w-4 h-4"/></button>
-                            </div>
-                         )}
-                      </div>
-                    </td>
-
-                    {/* CELLULES JOURS */}
-                    {displayDates.map((date, di) => {
-                       const formatted = format(date, 'yyyy-MM-dd');
-                       const cellLocked = isWriteBlocked(formatted);
-                       const isPrevCol = showPrevWeek && di < 7;
-                       const firstCurrentCol = showPrevWeek && di === 7;
-
-                       const renderBubble = (entry, icon, isDraft = false) => (
-                          <div
-                             draggable={isAdmin && !cellLocked}
-                             onDragStart={() => isAdmin && !cellLocked && setDraggedShift({ userId: row.id_auth, date: formatted })}
-                             onClick={() => isAdmin && handleCellClick(row.id_auth, formatted, entry)}
-                             title={cellLocked ? `Verrouillé (>${RETRO_LOCK_DAYS}j) — conservation légale` : undefined}
-                             // Pastille pleine douce — fill couleur + texte contrasté, arrondi propre.
-                             className={`
-                                relative group/shift select-none rounded-xl
-                                transition-all duration-200 hover:shadow-sm hover:z-10
-                                w-full flex flex-col items-center justify-center text-center min-h-[44px] px-2 py-1.5
-                                ${getShiftColor(entry?.shift || '')}
-                                ${cellLocked ? 'opacity-60 cursor-not-allowed grayscale-[40%]' : 'cursor-pointer hover:-translate-y-0.5'}
-                             `}
-                          >
-                             {/* Titre du shift */}
-                             <div className="font-bold text-[11px] leading-tight w-full break-words">
-                                {entry?.shift}
-                             </div>
-
-                             {/* Heures */}
-                             {entry?.shift !== 'Repos' && entry?.start_time && (
-                                <div className="text-[10px] opacity-70 mt-0.5 font-semibold tabular-nums">
-                                   {entry.start_time.slice(0,5)} - {entry.end_time.slice(0,5)}
-                                </div>
-                             )}
-
-                             {/* Icône Cadenas */}
-                             {entry?.do_not_touch && <span className="absolute top-0.5 right-1 text-[8px] opacity-60">🔒</span>}
-
-                             {/* Alerte surveillance (repos < 11h / journée > 10h) */}
-                             {surveillance?.cellFlags.has(`${(row as any).id_auth}|${formatted}`) && (
-                                <span className="absolute bottom-0.5 left-1 text-xs leading-none" title="Repos < 11h ou journée > 10h — voir le panneau Surveillance">🛑</span>
-                             )}
-
-                             {/* Bouton Suppression */}
-                             {isAdmin && entry?.id && !cellLocked && (
-                                <button
-                                   onClick={(e) => { e.stopPropagation(); handleDeleteShift(entry.id); }}
-                                   className="absolute -top-1.5 -right-1.5 bg-white text-red-500 rounded-full p-0.5 opacity-0 group-hover/shift:opacity-100 shadow-sm border border-red-100 transition-all hover:bg-red-50 hover:scale-110 z-20"
-                                >
-                                   <Trash2 className="w-3 h-3"/>
-                                </button>
-                             )}
-
-                             {/* Cadenas pour date verrouillée */}
-                             {cellLocked && (
-                                <Lock className="absolute top-0.5 right-1 w-2.5 h-2.5 opacity-70" />
-                             )}
-
-                        {isAdmin && isDraft && (
-                                <Pencil className="absolute top-1 left-1 w-2.5 h-2.5 opacity-45" />
-                             )}
-
-                          </div>
-                       );
-
-                       let content = null;
-                       if (row.id_auth) {
-                          if (isAdmin) {
-                             const { draft, published } = getCellEntries(planningEntries, row.id_auth, formatted);
-                             if (!draft && !published) {
-                                content = cellLocked
-                                  ? <div title={`Verrouillé (>${RETRO_LOCK_DAYS}j) — conservation légale`} className="h-full w-full min-h-[40px] rounded-lg flex items-center justify-center opacity-30"><Lock className="w-3 h-3 text-slate-400"/></div>
-                                  : <div onClick={() => handleCellClick(row.id_auth, formatted, null)} onDrop={() => handleShiftDrop(row.id_auth, formatted)} onDragOver={(e) => e.preventDefault()} className="h-full w-full min-h-[40px] rounded-lg border border-dashed border-slate-200 hover:bg-white/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer"><Plus className="w-4 h-4 text-slate-300"/></div>;
-                             } else {
-                                content = (
-    <div className="flex flex-col gap-1">
-        {draft && renderBubble(draft, '📝', true)} {/* <-- Passer true pour isDraft */}
-        {published && renderBubble(published, '')}
-    </div>
-);
-                             }
-                          } else {
-                             const entry = getEntry(entriesView, row.id_auth, formatted, false, false);
-                             content = entry ? renderBubble(entry, '') : null;
-                          }
-                       }
-
-                       return (
-                          <td key={`${row.id || row.id_auth}-${date.toISOString()}`} className={`px-2 py-2 align-middle border-b border-slate-50 bg-opacity-30 min-h-[80px] ${rowBgClass} ${isPrevCol ? 'opacity-60' : ''} ${firstCurrentCol ? 'border-l-2 border-l-slate-300' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={() => handleShiftDrop(row.id_auth, formatted)}>
-                             {content}
-                          </td>
-                       );
-                    })}
-                  </tr>
-                );
-                })}
+                {tableBody}
               </tbody>
             </table>
           </div>
