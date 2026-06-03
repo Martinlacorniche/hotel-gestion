@@ -105,16 +105,17 @@ function RoomCard({ room, onClick, onDelete }: { room: Room; onClick: () => void
       {/* Supprimer */}
       <button
         onClick={onDelete}
-        className="absolute top-2 right-2 text-slate-200 hover:text-red-400 transition-colors"
+        className="absolute top-1 right-1 p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 transition-colors"
         title="Supprimer"
+        aria-label="Supprimer"
       >
-        <Trash2 className="w-3 h-3" />
+        <Trash2 className="w-4 h-4" />
       </button>
     </div>
   );
 }
 
-function RoomPopup({ room, onClose }: { room: Room; onClose: () => void }) {
+function RoomPopup({ room, onClose, onDelete }: { room: Room; onClose: () => void; onDelete: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
@@ -151,6 +152,13 @@ function RoomPopup({ room, onClose }: { room: Room; onClose: () => void }) {
             </div>
           )}
         </div>
+
+        <button
+          onClick={onDelete}
+          className="mt-6 w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-red-50 text-red-600 font-semibold hover:bg-red-100 active:bg-red-200 transition-colors"
+        >
+          <Trash2 className="w-4 h-4" /> Supprimer cette chromecast
+        </button>
       </div>
     </div>
   );
@@ -371,15 +379,20 @@ export default function ChromecastDashboard() {
     document.title = 'Chromecast';
   }, []);
 
-  const handleDelete = async (room: Room, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDelete = async (room: Room, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (!(await confirmDialog(`Supprimer ${room.name} ?`))) return;
     setDeletingId(room.id);
     try {
-      await apiFetch(`/api/rooms/${room.id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/rooms/${room.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(detail || `HTTP ${res.status}`);
+      }
       await fetchStatus();
-    } catch {
-      toast.error('Erreur lors de la suppression.');
+      toast.success(`${room.name} supprimée.`);
+    } catch (err) {
+      toast.error(`Suppression impossible : ${err instanceof Error ? err.message : 'erreur serveur'}`);
     } finally {
       setDeletingId(null);
     }
@@ -497,7 +510,17 @@ export default function ChromecastDashboard() {
       </div>
 
       {/* Modals */}
-      {selectedRoom && <RoomPopup room={selectedRoom} onClose={() => setSelectedRoom(null)} />}
+      {selectedRoom && (
+        <RoomPopup
+          room={selectedRoom}
+          onClose={() => setSelectedRoom(null)}
+          onDelete={() => {
+            const r = selectedRoom;
+            setSelectedRoom(null);
+            handleDelete(r);
+          }}
+        />
+      )}
       {showAddModal && (
         <AddRoomModal
           onClose={() => setShowAddModal(false)}
