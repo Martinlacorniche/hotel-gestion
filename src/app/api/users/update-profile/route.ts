@@ -3,9 +3,11 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/apiAuth';
 
 // POST /api/users/update-profile
-// Body: { user_id: uuid (id_auth), name?: string, birth_date?: string | null }
+// Body: { user_id: uuid (id_auth), name?: string, birth_date?: string | null, hotel_id?: string | null }
 //
-// Met à jour le nom et/ou la date de naissance d'un user.
+// Met à jour le nom, la date de naissance et/ou l'hôtel de rattachement d'un user.
+// L'hôtel de rattachement (users.hotel_id) détermine dans quel planning le salarié
+// apparaît (cf. /planning, filtre .eq('hotel_id', ...)).
 // Réservé aux admin + superadmin. Refuse la modif d'un superadmin
 // (cohérent avec les autres actions de la page /users).
 
@@ -22,10 +24,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'JSON invalide' }, { status: 400 });
   }
 
-  const { user_id, name, birth_date } = body as {
+  const { user_id, name, birth_date, hotel_id } = body as {
     user_id?: string;
     name?: string;
     birth_date?: string | null;
+    hotel_id?: string | null;
   };
 
   if (!user_id || typeof user_id !== 'string') {
@@ -42,6 +45,12 @@ export async function POST(req: Request) {
   }
   if (birth_date === null || typeof birth_date === 'string') {
     update.birth_date = birth_date || null;
+  }
+  if (typeof hotel_id === 'string') {
+    if (!hotel_id.trim()) {
+      return NextResponse.json({ ok: false, error: 'hotel_id ne peut pas être vide' }, { status: 400 });
+    }
+    update.hotel_id = hotel_id;
   }
 
   if (Object.keys(update).length === 0) {

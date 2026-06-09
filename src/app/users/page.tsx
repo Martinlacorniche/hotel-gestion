@@ -165,6 +165,7 @@ export default function UsersPage() {
   const [editTarget, setEditTarget] = useState<UserRow | null>(null);
   const [editName, setEditName] = useState("");
   const [editBirth, setEditBirth] = useState("");
+  const [editHotel, setEditHotel] = useState("");
   const [editingProfile, setEditingProfile] = useState(false);
 
   // Contrats
@@ -271,16 +272,19 @@ export default function UsersPage() {
     setEditTarget(u);
     setEditName(u.name || "");
     setEditBirth(u.birth_date || "");
+    setEditHotel(u.hotel_id || "");
   };
 
   const doEditProfile = async () => {
     if (!editTarget) return;
     if (!editName.trim()) { toast.error("Le nom est requis"); return; }
+    if (!editHotel) { toast.error("L'hôtel est requis"); return; }
     setEditingProfile(true);
     const res = await apiCall("/api/users/update-profile", {
       user_id: editTarget.id_auth,
       name: editName.trim(),
       birth_date: editBirth || null,
+      hotel_id: editHotel,
     });
     setEditingProfile(false);
     if (!res.ok) { toast.error(res.error || "Erreur"); return; }
@@ -620,6 +624,16 @@ export default function UsersPage() {
             </Field>
             <Field label="Date de naissance">
               <Input type="date" value={editBirth} onChange={(e) => setEditBirth(e.target.value)} />
+            </Field>
+            <Field label="Hôtel de rattachement">
+              <select
+                value={editHotel}
+                onChange={(e) => setEditHotel(e.target.value)}
+                className="w-full h-9 px-3 text-sm bg-white border border-slate-200 rounded-md"
+              >
+                {hotels.map((h) => (<option key={h.id} value={h.id}>{h.nom}</option>))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Détermine dans quel planning le salarié apparaît.</p>
             </Field>
           </div>
           <div className="flex justify-end gap-2 mt-6">

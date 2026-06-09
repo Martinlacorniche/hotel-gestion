@@ -39,7 +39,10 @@ const SHIFT_OPTIONS = [
 
   // F&B (Ambre / Orange)
   { label: "Petit Déjeuner", value: "Petit Déjeuner", color: "bg-amber-200 text-amber-900" },
+
+  // INTER-HÔTELS (travaille sur l'autre établissement) — comptés comme du travail
   { label: "Les Voiles", value: "Les Voiles", color: "bg-blue-200 text-blue-900" },
+  { label: "Corniche", value: "Corniche", color: "bg-cyan-200 text-cyan-900" },
 
   // MAINTENANCE & DIVERS
   { label: "Maintenance", value: "Maintenance", color: "bg-orange-200 text-orange-900" },
@@ -51,6 +54,7 @@ const SHIFT_OPTIONS = [
   { label: "CP", value: "CP", color: "bg-pink-200 text-pink-900" },
   { label: "Maladie", value: "Maladie", color: "bg-rose-200 text-rose-900" },
   { label: "Injustifié", value: "Injustifié", color: "bg-red-500 text-white" },
+  { label: "Sans solde", value: "Sans solde", color: "bg-stone-300 text-stone-700" },
   { label: "Repos", value: "Repos", color: "bg-slate-100 text-slate-400 border border-dashed border-slate-200" },
 ];
 
@@ -428,7 +432,11 @@ export default function PlanningPage() {
   const WEEKS_M = 52 / 12;
   const overlapMin = (a1: number, a2: number, b1: number, b2: number) => Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
   const nightMinOf = (e: any) => { if (!e.start_time || !e.end_time) return 0; const [sh, sm] = e.start_time.split(':').map(Number); const [eh, em] = e.end_time.split(':').map(Number); let s = sh * 60 + sm, en = eh * 60 + em; if (en <= s) en += 1440; return overlapMin(s, en, 1320, 1860) + overlapMin(s, en, 0, 420); };
-  const contratActifOf = (uid: string) => contrats.filter((c: any) => c.user_id === uid).find((c: any) => { const deb = new Date(c.date_debut), fin = c.date_fin ? new Date(c.date_fin) : null; return deb <= monthEnd && (!fin || fin >= monthStart); });
+  // Contrats de CET hôtel (match explicite, ou "groupe"/null rattaché à l'hôtel
+  // de rattachement) — pour que la paie d'un salarié multi-hôtels soit ventilée
+  // par établissement (heures comptées par hotel_id des planning_entries).
+  const contratsHereM = (u: any) => contrats.filter((c: any) => c.user_id === u.id_auth && (c.hotel_id === hotelId || (c.hotel_id == null && u.hotel_id === hotelId)));
+  const contratActifOf = (u: any) => contratsHereM(u).find((c: any) => { const deb = new Date(c.date_debut), fin = c.date_fin ? new Date(c.date_fin) : null; return deb <= monthEnd && (!fin || fin >= monthStart); });
 
   const sourceEntries = monthErr ? entriesView : (monthEntries ?? []);
   const filtered = sourceEntries.filter(e => {
@@ -462,8 +470,16 @@ export default function PlanningPage() {
     return true;
   };
 
+  // Rattachement à l'hôtel sur le mois : a un contrat de cet hôtel actif ce mois,
+  // sinon (aucun contrat) hôtel de rattachement. Évite de faire apparaître un
+  // salarié dans la paie d'un hôtel où il n'a pas de contrat ce mois-là.
+  const belongsMonth = (u: any) => {
+    const userContrats = contrats.filter((c: any) => c.user_id === u.id_auth);
+    return userContrats.length > 0 ? !!contratActifOf(u) : u.hotel_id === hotelId;
+  };
+
   const orderedUsersByOrd = [...users].sort((a, b) => (a.ordre ?? 9999) - (b.ordre ?? 9999));
-  const exportUsers = orderedUsersByOrd.filter(overlapsMonth);
+  const exportUsers = orderedUsersByOrd.filter(u => overlapsMonth(u) && belongsMonth(u));
 
   const shiftColors: any = {
     'Réception matin': [173, 216, 230], 'Réception soir': [30, 144, 255], 'Night': [0, 0, 0],
@@ -471,11 +487,12 @@ export default function PlanningPage() {
     'Petit Déjeuner': [255, 255, 102], 'Extra': [216, 191, 216], 'CP': [255, 182, 193],
     'Maladie': [255, 99, 71], 'Injustifié': [255, 165, 0], 'Repos': [220, 220, 220],
     'Les Voiles': [0, 0, 0], 'École': [102, 205, 170], 'Maintenance': [255, 215, 180],
+    'Corniche': [103, 232, 249], 'Sans solde': [214, 211, 209],
   };
 
   const abbreviateShift = (shift: string) => {
     if(!shift) return '';
-    const map:any = { 'Réception matin':'RM', 'Réception soir':'RS', 'Night':'N', 'Présence':'P', 'Housekeeping Chambre':'HC', 'Housekeeping Communs':'HCo', 'Petit Déjeuner':'PD', 'Extra':'E', 'CP':'CP', 'Maladie':'M', 'Injustifié':'I', 'Repos':'R', 'Les Voiles':'LV', 'École':'ECO', 'Maintenance':'MAI' };
+    const map:any = { 'Réception matin':'RM', 'Réception soir':'RS', 'Night':'N', 'Présence':'P', 'Housekeeping Chambre':'HC', 'Housekeeping Communs':'HCo', 'Petit Déjeuner':'PD', 'Extra':'E', 'CP':'CP', 'Maladie':'M', 'Injustifié':'I', 'Repos':'R', 'Les Voiles':'LV', 'Corniche':'CO', 'École':'ECO', 'Maintenance':'MAI', 'Sans solde':'SS' };
     return map[shift] || shift.substring(0,2).toUpperCase();
   };
 
@@ -483,7 +500,7 @@ export default function PlanningPage() {
     const uEntries = entriesForMonth.filter(e => e.user_id === user.id_auth);
     let workedDays = 0, workedHours = 0, cp = 0, maladie = 0, injustifie = 0, repas = 0, nuitMin = 0, dimFerie = 0;
     for (const entry of uEntries) {
-      if (!['Repos', 'CP', 'Maladie', 'Injustifié', 'École'].includes(entry.shift)) {
+      if (!['Repos', 'CP', 'Maladie', 'Injustifié', 'École', 'Sans solde'].includes(entry.shift)) {
         workedDays++;
         repas++; // 1 repas / jour travaillé (hors École, déjà exclu)
         if (feries.has(entry.date)) dimFerie++; // jours fériés travaillés (dimanche = jour normal en HCR)
@@ -501,7 +518,7 @@ export default function PlanningPage() {
       if (entry.shift === 'Injustifié') injustifie++;
     }
     // Heures sup du mois par tranche HCR (au-delà du contrat mensuel ; récup absorbée).
-    const ac = contratActifOf(user.id_auth);
+    const ac = contratActifOf(user);
     let t10 = 0, t20 = 0, t50 = 0;
     if (ac && ac.type !== 'Extra' && ac.heures_hebdo) {
       const base = Math.max(ac.heures_hebdo, 35);
@@ -652,7 +669,7 @@ export default function PlanningPage() {
 
   const getWeeklyHours = (userId) => {
     const userEntries = entriesView.filter(e => e.user_id === userId && weekDates.some(d => format(d, 'yyyy-MM-dd') === e.date));
-    const total = userEntries.filter(e => !['Repos', 'Injustifié'].includes(e.shift)).reduce((acc, e) => {
+    const total = userEntries.filter(e => !['Repos', 'Injustifié', 'Sans solde'].includes(e.shift)).reduce((acc, e) => {
       if (!e.start_time || !e.end_time) return acc;
       const [sh, sm] = e.start_time.split(':').map(Number); const [eh, em] = e.end_time.split(':').map(Number);
       let m = (eh * 60 + em) - (sh * 60 + sm); if (m < 0) m += 1440;
@@ -663,7 +680,7 @@ export default function PlanningPage() {
 
   const getWorkingDays = (userId) => {
     const userEntries = entriesView.filter(e => e.user_id === userId && weekDates.some(d => format(d, 'yyyy-MM-dd') === e.date));
-    return new Set(userEntries.filter(e => e.shift && !['Repos', 'Maladie', 'CP', 'Injustifié'].includes(e.shift)).map(e => e.date)).size;
+    return new Set(userEntries.filter(e => e.shift && !['Repos', 'Maladie', 'CP', 'Injustifié', 'Sans solde'].includes(e.shift)).map(e => e.date)).size;
   };
 
   // ── SURVEILLANCE (admin) : garde-fous légaux + compteurs semaine/mois. ──
@@ -679,7 +696,7 @@ export default function PlanningPage() {
       const { draft, published } = cellAt(uid, ds);
       return draft || published || null;
     };
-    const isWork = (e: any) => e && e.shift && !['Repos', 'CP', 'Maladie', 'Injustifié'].includes(e.shift);
+    const isWork = (e: any) => e && e.shift && !['Repos', 'CP', 'Maladie', 'Injustifié', 'Sans solde'].includes(e.shift);
     const minutesOf = (e: any) => {
       if (!e?.start_time || !e?.end_time) return 0;
       const [sh, sm] = e.start_time.split(':').map(Number);
@@ -842,7 +859,7 @@ export default function PlanningPage() {
     const entriesQuery = supabase.from('planning_entries').select('*').eq('hotel_id', hotelId).in('status', isAdmin ? ['draft', 'published'] : ['published']).gte('date', fetchFrom).lte('date', fetchTo).order('date', { ascending: true });
     
     const [usersRes, configRes, entriesRes, cpRes, defRes, contratsRes] = await Promise.all([
-      supabase.from('users').select('id_auth, name, email, hotel_id, role, ordre, employment_start_date, employment_end_date, active, emoji').eq('hotel_id', hotelId),
+      supabase.from('users').select('id_auth, name, email, hotel_id, role, ordre, employment_start_date, employment_end_date, active, emoji'),
       supabase.from('planning_config').select('*').eq('hotel_id', hotelId),
       entriesQuery,
       supabase.from('cp_requests').select('*').eq('hotel_id', hotelId),
@@ -858,32 +875,43 @@ export default function PlanningPage() {
     const contratsData = contratsRes.data || [];
 
     const weekStartD = atNoon(weekStart), weekEndD = atNoon(weekEnd);
-    // Contrat actif sur la semaine affichée (couvre [début, fin] ∩ semaine).
-    const activeContrat = (uid: string) => (contratsData as any[])
-      .filter(c => c.user_id === uid)
-      .find(c => {
-        const deb = new Date(c.date_debut);
-        const fin = c.date_fin ? new Date(c.date_fin) : null;
-        return deb <= weekEndD && (!fin || fin >= weekStartD);
-      });
+    // Rattachement par contrat. Les contrats de CET hôtel : match explicite sur
+    // hotel_id, ou contrat "groupe" (hotel_id null) compté pour l'hôtel de
+    // rattachement (users.hotel_id). Un salarié multi-hôtels (un contrat par
+    // établissement) apparaît ainsi sur chaque planning concerné.
+    const contratsHere = (u: any) => (contratsData as any[]).filter(c =>
+      c.user_id === u.id_auth && (c.hotel_id === hotelId || (c.hotel_id == null && u.hotel_id === hotelId)));
+    // Contrat de cet hôtel actif sur la semaine affichée (couvre [début, fin] ∩ semaine).
+    const activeContrat = (u: any) => contratsHere(u).find(c => {
+      const deb = new Date(c.date_debut);
+      const fin = c.date_fin ? new Date(c.date_fin) : null;
+      return deb <= weekEndD && (!fin || fin >= weekStartD);
+    });
+    // Membre de l'hôtel (toutes dates) : a un contrat ici, ou aucun contrat du
+    // tout + hôtel de rattachement (pont rétroactif).
+    const belongsHere = (u: any) => {
+      const userContrats = (contratsData as any[]).filter(c => c.user_id === u.id_auth);
+      return userContrats.length > 0 ? contratsHere(u).length > 0 : u.hotel_id === hotelId;
+    };
 
-    const usersWithOrder = usersData.map(u => {
+    const hotelUsers = usersData.filter(u => u.role !== 'superadmin' && belongsHere(u));
+
+    const usersWithOrder = hotelUsers.map(u => {
       const cfg = configData.find(c => c.user_id === u.id_auth);
-      const ac = activeContrat(u.id_auth);
+      const ac = activeContrat(u);
       return { ...u, ordre: cfg?.ordre ?? 9999, service: cfg?.service ?? null,
                contratType: ac?.type ?? null, contratHeures: ac?.heures_hebdo ?? null };
     });
 
-    // Règle d'apparition : a des shifts cette semaine → visible (filet). Sinon,
-    // a des contrats → visible seulement si un contrat actif couvre la semaine.
-    // Aucun contrat → pont rétroactif : comportement historique (visible sauf
+    // Règle d'apparition dans la grille (semaine affichée) : a des shifts cette
+    // semaine → visible (filet). Sinon, a des contrats → visible si un contrat de
+    // CET hôtel couvre la semaine. Aucun contrat → pont rétroactif (visible sauf
     // clôturé via employment_end_date), le temps que Martin saisisse les contrats.
     const usersVisible = usersWithOrder.filter(u => {
-       if (u.role === 'superadmin') return false;
        const hasEntries = entriesData.some(e => e.user_id === u.id_auth && new Date(e.date) >= weekStartD && new Date(e.date) <= weekEndD);
        if (hasEntries) return true;
        const userContrats = (contratsData as any[]).filter(c => c.user_id === u.id_auth);
-       if (userContrats.length > 0) return !!activeContrat(u.id_auth);
+       if (userContrats.length > 0) return !!activeContrat(u);
        const end = u.employment_end_date ? new Date(u.employment_end_date) : null;
        return !(end && end < weekStartD);
     });
