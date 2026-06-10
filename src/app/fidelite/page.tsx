@@ -8,9 +8,9 @@ import { supabase } from '@/lib/supabaseClient';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { 
-  Search, User, Briefcase, Mail, Plus, Trophy, Calendar, 
-  CreditCard, MessageSquare, Trash2, Edit2, ChevronLeft, 
-  Check, Star, Crown, AlertCircle, Save, Stamp
+  Search, User, Briefcase, Mail, Plus, Trophy, Calendar,
+  CreditCard, MessageSquare, Trash2, Edit2, ChevronLeft,
+  Check, Star, Crown, AlertCircle, Save, Stamp, CalendarClock
 } from 'lucide-react';
 
 // --- TYPES ---
@@ -50,6 +50,14 @@ export default function FidelitePage() {
   const [aboEdit, setAboEdit] = useState(false);
   const [savingAbo, setSavingAbo] = useState(false);
   const abonnementActif = Boolean(abonnement);
+
+  // Liste de tous les abonnements (pour la vue dashboard "en cours")
+  const [allAbos, setAllAbos] = useState<Abonnement[]>([]);
+  const fetchAbos = async () => {
+    const { data, error } = await supabase.from('abonnements').select('*');
+    if (!error && data) setAllAbos(data as Abonnement[]);
+  };
+  useEffect(() => { fetchAbos(); }, []);
 
   useEffect(() => {
     document.title = 'Co-Work';
@@ -135,6 +143,7 @@ export default function FidelitePage() {
     setSavingAbo(false);
     if (error) { toast.error("Impossible d'enregistrer l'abonnement"); return; }
     setAboEdit(false);
+    fetchAbos();
   };
 
   const deleteAbonnement = async () => {
@@ -143,11 +152,23 @@ export default function FidelitePage() {
     await supabase.from('abonnements').delete().eq('client_id', selectedClient.id);
     setAbonnement(null);
     setAboEdit(false);
+    fetchAbos();
   };
 
   const filteredClients = clients
     .filter((c) => `${c.nom} ${c.prenom}`.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }));
+
+  // Abonnements en cours (date de fin >= aujourd'hui), triés par échéance la plus proche
+  const todayStr = new Date().toISOString().split('T')[0];
+  const abosEnCours = allAbos
+    .filter((a) => a.date_fin && a.date_fin >= todayStr)
+    .map((a) => {
+      const client = clients.find((c) => c.id === a.client_id);
+      const joursRestants = Math.ceil((new Date(a.date_fin).getTime() - new Date(todayStr).getTime()) / 86400000);
+      return { ...a, client, joursRestants };
+    })
+    .sort((a, b) => a.date_fin.localeCompare(b.date_fin));
 
   return (
     <div className="flex h-screen font-sans overflow-hidden text-slate-900">
@@ -390,9 +411,9 @@ export default function FidelitePage() {
 
                 </div>
             ) : (
-                // --- DASHBOARD / TOP 10 ---
-                <div className="h-full flex flex-col items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 w-full max-w-2xl max-h-full flex flex-col">
+                // --- DASHBOARD / TOP 10 + ABONNEMENTS ---
+                <div className="h-full flex flex-col lg:flex-row items-stretch justify-center gap-6 p-4 max-w-5xl mx-auto">
+                    <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 w-full lg:w-1/2 max-h-full flex flex-col">
                         <div className="text-center mb-6 shrink-0">
                             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-50 text-amber-500 mb-4 ring-4 ring-amber-50/50">
                                 <Trophy className="w-8 h-8" />
@@ -429,6 +450,54 @@ export default function FidelitePage() {
                                     );
                                 })
                             }
+                        </div>
+                    </div>
+
+                    {/* ABONNEMENTS EN COURS */}
+                    <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 w-full lg:w-1/2 max-h-full flex flex-col">
+                        <div className="text-center mb-6 shrink-0">
+                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-violet-50 text-violet-500 mb-4 ring-4 ring-violet-50/50">
+                                <CalendarClock className="w-8 h-8" />
+                            </div>
+                            <h2 className="text-3xl font-extrabold text-slate-800">Abonnements en cours</h2>
+                            <p className="text-slate-500">{abosEnCours.length} actif{abosEnCours.length > 1 ? 's' : ''}</p>
+                        </div>
+
+                        <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar">
+                            {abosEnCours.length === 0 ? (
+                                <div className="text-center text-slate-400 text-sm py-10">Aucun abonnement en cours.</div>
+                            ) : (
+                                abosEnCours.map((a) => {
+                                    const bientot = a.joursRestants <= 7;
+                                    return (
+                                        <div
+                                            key={a.client_id}
+                                            onClick={() => a.client && selectClient(a.client)}
+                                            className="group flex items-center gap-4 p-3 rounded-2xl hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200 transition-all"
+                                        >
+                                            <div className="w-10 h-10 shrink-0 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold">
+                                                {a.client ? `${a.client.prenom[0] ?? ''}${a.client.nom[0] ?? ''}` : '?'}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-bold text-slate-800 group-hover:text-[var(--brand)] transition truncate">
+                                                    {a.client ? `${a.client.nom} ${a.client.prenom}` : 'Client inconnu'}
+                                                </div>
+                                                {a.client?.societe && (
+                                                    <div className="text-xs text-slate-400 truncate">{a.client.societe}</div>
+                                                )}
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <div className={`text-sm font-bold ${bientot ? 'text-amber-600' : 'text-slate-700'}`}>
+                                                    {format(new Date(a.date_fin), 'dd MMM yyyy', { locale: fr })}
+                                                </div>
+                                                <div className={`text-xs font-medium ${bientot ? 'text-amber-500' : 'text-slate-400'}`}>
+                                                    {a.joursRestants <= 0 ? "dernier jour" : `${a.joursRestants} j restants`}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
                         </div>
                     </div>
                 </div>
