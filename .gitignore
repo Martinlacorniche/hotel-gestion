@@ -40,3 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 agent_encodeur/lib/*.dll
+
+# Local Netlify folder
+.netlify

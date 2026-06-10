@@ -2,8 +2,10 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter, Poppins, DM_Sans, Lora, Playfair_Display, Kalam } from 'next/font/google';
 import { AuthProvider } from '@/context/AuthContext';
+import { ShiftProvider } from '@/context/ShiftContext';
 import { Toaster } from 'react-hot-toast';
 import { ConfirmHost } from '@/components/ConfirmDialog';
+import CaptureBar from '@/components/CaptureBar';
 
 // Polices chargées en parallèle, chaque exposée via une variable CSS
 // (--font-inter, --font-poppins, ...) que `applyFont()` peut activer.
@@ -29,7 +31,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="fr" className={fontVars}>
       <body>
         <AuthProvider>
-          {children}
+          <ShiftProvider>
+            {children}
+            <CaptureBar />
+          </ShiftProvider>
           <ConfirmHost />
           <Toaster
             position="top-right"
