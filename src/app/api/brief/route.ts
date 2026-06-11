@@ -36,9 +36,11 @@ const SYSTEM = `Tu rédiges le brief de prise de poste d'un salarié d'hôtel (f
 Tu reçois TOUT ce qui s'est passé pendant son absence + l'état du jour. Ton travail : DIGÉRER, pas lister.
 Règles strictes :
 - Le champ "maintenant" du contexte est LA référence temporelle. Les textes contiennent des dates relatives ("demain", "ce soir", "avant 12h") écrites À LEUR DATE DE RÉDACTION (champ "ecrit_le") : convertis-les en dates absolues avant de raisonner. Ne présente JAMAIS comme à venir un événement antérieur à maintenant — s'il est passé, il va dans "Pendant ton absence" (au passé) ou disparaît s'il n'apporte rien.
-- "consignes_passees_ou_traitees_pendant_absence" = matière pour la section "Pendant ton absence" UNIQUEMENT (c'est expiré ou réglé) — jamais dans "À savoir pour aujourd'hui".
+- "consignes_actives_en_ce_moment" = l'état opérationnel COURANT, c'est la matière PRINCIPALE de "À savoir pour aujourd'hui". Certaines durent tout un séjour ("à laisser tourner jusqu'à leur départ") : même si elles ne sont pas nouvelles, rappelle-les si elles conditionnent le travail du jour (instructions client, accessibilité, médical, séjour en cours). Les nouvelles (nouvelle_depuis_ton_dernier_shift=true) d'abord et en détail, les autres en rappel compact.
+- "consignes_passees_ou_traitees_pendant_absence" = matière pour "Pendant ton absence" UNIQUEMENT — jamais dans "À savoir pour aujourd'hui".
+- "Pendant ton absence" ne contient QUE ce qui éclaire la prise de poste : incidents notables, situations client qui continuent, pannes encore ouvertes. UNE ROUTINE RÉGLÉE NE S'Y MENTIONNE JAMAIS (un Chromecast réparé, une monnaie refaite, un groupe parti sans accroc : la personne s'en fiche). Section vide → saute-la. 3 puces max.
 - "abonnements_cowork_en_cours" contient les VRAIES dates de fin : si un texte de consigne contredit ces dates, ce sont ces dates qui font foi.
-- "chromecasts_deconnectes_en_ce_moment" est l'état TEMPS RÉEL : il fait foi sur tout texte qui parle de Chromecast. [] = tout est reconnecté (si un texte signalait une panne, dis qu'elle est résolue) ; null = état non relevé, ne rien affirmer.
+- "chromecasts_deconnectes_en_ce_moment" est l'état TEMPS RÉEL : il sert UNIQUEMENT à alerter sur ce qui est déconnecté MAINTENANT. [] = tout marche → n'en parle PAS DU TOUT, même si des textes signalaient des pannes (résolu = silence) ; null = état non relevé, ne rien affirmer.
 - DATE chaque fait de "Pendant ton absence" (ex : "(lun 09/06)") et précise son sort : traité/réglé (champs traitee, reglee, faite) ou resté sans suite. Jamais de fait passé sans date ni statut.
 - Si un texte est ambigu ou contradictoire (ex : une échéance relative déjà dépassée au moment où tu écris), ne tranche pas : signale-le en "à clarifier" avec les dates connues.
 - 3 sections markdown maximum : "## Pendant ton absence" (ce qui s'est passé ET réglé — continuité), "## À savoir pour aujourd'hui" (ce qui va impacter SON shift, priorisé selon son service), "## Ta journée" (l'agenda opérationnel, en une ou deux lignes).
@@ -46,6 +48,7 @@ Règles strictes :
 - Fusionne ce qui se rapporte à la même chambre / au même client / au même sujet. Ne répète jamais une info dans deux sections.
 - Priorise selon le service du salarié (service-front = réception : clients, délais, taxis, consignes ; service-housekeeping : chambres, maintenance, objets ; service-fb : petit-déjeuner, stocks, salles).
 - Mets en gras (**) les noms de clients, numéros de chambre et échéances datées.
+- Convention maison : un texte qui commence par "pour <Prénom> :" désigne le COLLÈGUE destinataire de l'instruction (ex. "pour Vanessa :" = message à Vanessa, femme de chambre), jamais un client. Les clients sont cités par nom de famille ou numéro de chambre.
 - N'invente RIEN, ne déduis pas au-delà des données. Catégorie vide = on n'en parle pas. Si globalement calme, dis-le en une phrase et garde juste l'agenda du jour.
 - Parle comme un collègue efficace, zéro emphase corporate.`;
 
@@ -109,9 +112,14 @@ export async function POST(req: Request) {
   // 3. Tout ce qui a bougé dans la fenêtre (hôtel sélectionné)
   const [consNew, consDone, tickNew, tickDone, maintNew, maintDone, demToday, flash, lib, consRepl, abos] =
     await Promise.all([
+      // TOUTES les consignes non validées (pas seulement celles de la fenêtre) :
+      // les consignes "séjour" créées avant l'absence mais toujours actives
+      // (ex. "à laisser tourner jusqu'à leur départ") sont l'état opérationnel
+      // courant — les rater était le défaut n°1 relevé par Martin.
       supabaseAdmin.from('consignes').select('texte, auteur, valide, created_at, date_creation, date_fin')
-        .eq('hotel_id', hotelId).gte('created_at', sinceIso)
-        .order('created_at', { ascending: false }).limit(30),
+        .eq('hotel_id', hotelId)
+        .or(`valide.eq.false,created_at.gte.${sinceIso}`)
+        .order('created_at', { ascending: false }).limit(80),
       supabaseAdmin.from('consignes').select('texte, auteur')
         .eq('hotel_id', hotelId).eq('valide', true)
         .gte('date_validation', sinceDay).lt('created_at', sinceIso).limit(20),
@@ -143,22 +151,25 @@ export async function POST(req: Request) {
       .map((r) => ({ sur: c.texte?.slice(0, 60), de: r.auteur, texte: r.texte })));
 
   // Une consigne sans date_fin ne vit que le jour de sa création (même règle
-  // que les dashboards) : passée ou validée → matière "pendant ton absence",
-  // jamais "aujourd'hui" (sinon le brief annonce des événements déjà passés).
+  // que les dashboards). Actives = l'état opérationnel courant, quelle que
+  // soit leur date de création ; le reste de la fenêtre = matière "pendant
+  // ton absence" (le modèle filtre les routines réglées sans intérêt).
   const stillCurrent = (c: { valide: boolean; date_creation: string | null; date_fin: string | null }) => {
     if (c.valide) return false;
     const dAction = c.date_creation;
     if (!dAction) return false;
     return dAction <= today && today <= (c.date_fin || dAction);
   };
-  const consCurrent = (consNew.data ?? []).filter(stillCurrent);
-  const consPast = (consNew.data ?? []).filter((c) => !stillCurrent(c));
+  const allCons = consNew.data ?? [];
+  const consCurrent = allCons.filter(stillCurrent);
+  const consPast = allCons.filter((c) => !stillCurrent(c) && c.created_at >= sinceIso);
 
   const ctx = {
     salarie: { prenom: me?.name ?? '', service: cfg?.service ?? 'inconnu' },
     absence: { depuis: since.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }), maintenant: now.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }) },
-    consignes_valables_aujourdhui: consCurrent.map((c) => ({
+    consignes_actives_en_ce_moment: consCurrent.map((c) => ({
       texte: c.texte, auteur: c.auteur, ecrit_le: c.date_creation, jusqu_au: c.date_fin ?? c.date_creation,
+      nouvelle_depuis_ton_dernier_shift: c.created_at >= sinceIso,
     })),
     consignes_passees_ou_traitees_pendant_absence: consPast.map((c) => ({
       texte: c.texte, auteur: c.auteur, ecrit_le: c.date_creation, reglee: c.valide,
