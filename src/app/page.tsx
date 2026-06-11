@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { confirmDialog } from '@/components/ConfirmDialog';
+import BriefingModal from '@/components/BriefingModal';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -1042,6 +1043,9 @@ const birthdayMessage = useMemo(() => {
           {birthdayMessage.text}
         </div>
       )}
+
+      {/* Brief de prise de poste — pastille "Mon brief" en bas à gauche */}
+      <BriefingModal user={user as any} hotelId={hotelId} />
 
       {/* --- HEADER : 3 zones (gauche / centre date / droite actions) --- */}
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center w-full mb-8 gap-4">
