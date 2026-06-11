@@ -7,6 +7,7 @@ export type CaptureType =
   | 'ticket'
   | 'maintenance'
   | 'objet_trouve'
+  | 'chambres_libres'
   | 'cloture'
   | 'inconnu';
 
@@ -71,6 +72,9 @@ export interface CaptureProposal {
     nom_client: string;
     objet: string;
   };
+  chambres_libres?: {
+    chambres: string[];
+  };
   cloture?: {
     target_index: number;
     temps_travail: number | null;
@@ -90,7 +94,16 @@ const PROPOSAL_SCHEMA = {
   properties: {
     type: {
       type: 'string',
-      enum: ['consigne', 'demande', 'ticket', 'maintenance', 'objet_trouve', 'cloture', 'inconnu'],
+      enum: [
+        'consigne',
+        'demande',
+        'ticket',
+        'maintenance',
+        'objet_trouve',
+        'chambres_libres',
+        'cloture',
+        'inconnu',
+      ],
       description: 'Le module cible de la note capturée, ou "cloture" pour clôturer un élément ouvert.',
     },
     resume: {
@@ -159,6 +172,18 @@ const PROPOSAL_SCHEMA = {
         chambre: { type: 'string', description: 'Chambre, "" si non précisée.' },
         nom_client: { type: 'string', description: 'Nom du client, "" si non précisé.' },
         objet: { type: 'string', description: 'Description de l’objet.' },
+      },
+    },
+    chambres_libres: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['chambres'],
+      properties: {
+        chambres: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Numéros des chambres libérées, dans l’ordre de la note.',
+        },
       },
     },
     cloture: {

@@ -37,6 +37,7 @@ const TYPE_LABELS: Record<string, string> = {
   ticket: 'Tâche',
   maintenance: 'Maintenance',
   objet_trouve: 'Objet trouvé',
+  chambres_libres: 'Chambres libérées',
   cloture: 'Clôture',
   inconnu: 'Non reconnu',
 };
@@ -47,6 +48,7 @@ const EXAMPLES = [
   'VIP suite 5 arrive jeudi',
   'réveil 17 samedi 6h30 + taxi gare 7h15',
   'fuite chambre 24 réparée en 2h',
+  'chambres libres 12 14 22',
 ];
 
 interface CaptureImage {
@@ -187,7 +189,14 @@ function Select({
 }
 
 type PatchFn = <
-  K extends 'consigne' | 'demande' | 'ticket' | 'maintenance' | 'objet_trouve' | 'cloture',
+  K extends
+    | 'consigne'
+    | 'demande'
+    | 'ticket'
+    | 'maintenance'
+    | 'objet_trouve'
+    | 'chambres_libres'
+    | 'cloture',
 >(
   key: K,
   update: Partial<NonNullable<CaptureProposal[K]>>,
@@ -380,6 +389,24 @@ function ProposalFields({ p, patch }: { p: CaptureProposal; patch: PatchFn }) {
           />
         </Field>
       </div>
+    );
+  }
+
+  if (p.type === 'chambres_libres' && p.chambres_libres) {
+    return (
+      <Field label={`Chambres libérées (${p.chambres_libres.chambres.length})`}>
+        <Input
+          value={p.chambres_libres.chambres.join(', ')}
+          onChange={(e) =>
+            patch('chambres_libres', {
+              chambres: e.target.value
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </Field>
     );
   }
 
@@ -613,6 +640,14 @@ export default function CaptureBar() {
           date_creation: today,
         })),
       );
+      return error?.message ?? null;
+    }
+    if (p.type === 'chambres_libres' && p.chambres_libres) {
+      const { error } = await supabase.from('chambres_liberees').insert({
+        hotel_id: hotelId,
+        chambres: p.chambres_libres.chambres,
+        auteur,
+      });
       return error?.message ?? null;
     }
     if (p.type === 'objet_trouve' && p.objet_trouve) {

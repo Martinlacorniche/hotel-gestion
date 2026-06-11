@@ -17,7 +17,8 @@ import {
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
   Wrench, Tv2, Wifi, Package, Star, Thermometer, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP
   MessageCircle, Send, // Conversation consignes
-  Euro // Caisse
+  Euro, // Caisse
+  X // Chambres libérées
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
@@ -301,6 +302,11 @@ export default function HotelDashboard() {
   const [consignes, setConsignes] = useState<any[]>([]);
   const [consignesLoading, setConsignesLoading] = useState(false);
   const [taxis, setTaxis] = useState<any[]>([]);
+  // Chambres libérées — mini champ "au checkout je tape 12" → transmis aux
+  // équipes (bandeau du jour dans l'app). Éphémère : affiché le jour même
+  // uniquement, purge auto en base après 48h.
+  const [liberations, setLiberations] = useState<any[]>([]);
+  const [liberationInput, setLiberationInput] = useState('');
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [newTicket, setNewTicket] = useState({
     titre: '',
@@ -396,6 +402,46 @@ export default function HotelDashboard() {
   const formatSafeDate = (dateStr: string | undefined) => {
     if (!dateStr || isNaN(Date.parse(dateStr))) return 'Date invalide';
     return formatDate(new Date(dateStr), 'dd MMMM', { locale: frLocale });
+  };
+
+  // --- CHAMBRES LIBÉRÉES -----------------------------------------------------
+  useEffect(() => {
+    if (!hotelId) return;
+    const today = formatDate(new Date(), 'yyyy-MM-dd');
+    supabase
+      .from('chambres_liberees')
+      .select('*')
+      .eq('hotel_id', hotelId)
+      .gte('created_at', `${today}T00:00:00`)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setLiberations(data ?? []));
+    // Purge paresseuse : un post-it, pas un registre — rien ne traîne > 48h.
+    supabase
+      .from('chambres_liberees')
+      .delete()
+      .lt('created_at', new Date(Date.now() - 48 * 3600 * 1000).toISOString())
+      .then(() => {});
+  }, [hotelId]);
+
+  const sendLiberation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const rooms = liberationInput.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
+    if (!rooms.length || !hotelId) return;
+    const { data, error } = await supabase
+      .from('chambres_liberees')
+      .insert({ hotel_id: hotelId, chambres: rooms, auteur: user?.name || 'Anonyme' })
+      .select()
+      .single();
+    if (error) { toast.error('Envoi impossible : ' + error.message); return; }
+    setLiberations((prev) => [data, ...prev]);
+    setLiberationInput('');
+    toast.success(`Chambre${rooms.length > 1 ? 's' : ''} ${rooms.join(', ')} transmise${rooms.length > 1 ? 's' : ''} aux équipes`);
+  };
+
+  const deleteLiberation = async (id: string) => {
+    const { error } = await supabase.from('chambres_liberees').delete().eq('id', id);
+    if (error) { toast.error('Suppression impossible : ' + error.message); return; }
+    setLiberations((prev) => prev.filter((l) => l.id !== id));
   };
 
   const [objetsTrouves, setObjetsTrouves] = useState<any[]>([]);
@@ -1404,6 +1450,52 @@ const birthdayMessage = useMemo(() => {
                         </div>
                     </div>
                  ) : ( <div className="text-xs text-center py-2 text-slate-400">Chargement...</div>)}
+            </div>
+
+            {/* CHAMBRES LIBÉRÉES */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+                 <h3 className="font-bold text-slate-800 mb-3">🚪 Chambres libérées</h3>
+                 <form onSubmit={sendLiberation} className="flex gap-2">
+                    <input
+                      value={liberationInput}
+                      onChange={(e) => setLiberationInput(e.target.value)}
+                      placeholder="12 ou 12 14 22"
+                      className="min-w-0 flex-1 h-9 rounded-lg border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!liberationInput.trim()}
+                      className="h-9 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40"
+                    >
+                      Envoyer
+                    </button>
+                 </form>
+                 {liberations.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {liberations.map((l) => (
+                        <div key={l.id} className="flex items-center gap-1.5 flex-wrap text-sm">
+                          {(l.chambres ?? []).map((num: string, i: number) => (
+                            <span key={`${num}-${i}`} className="rounded-md bg-emerald-50 border border-emerald-200 px-2 py-0.5 font-bold text-emerald-800">
+                              {num}
+                            </span>
+                          ))}
+                          <span className="text-[10px] text-slate-400">
+                            {new Date(l.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <button
+                            onClick={() => deleteLiberation(l.id)}
+                            className="ml-auto text-slate-300 transition hover:text-red-500"
+                            title="Retirer"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                 )}
+                 <p className="mt-2 text-[10px] text-slate-400">
+                    Visible par les équipes dans l’app · se vide chaque jour
+                 </p>
             </div>
 
             {/* TAXIS / REVEILS */}
