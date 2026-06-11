@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   type CaptureProposal,
+  type OpenItem,
   DEMANDE_TYPES,
   TICKET_SERVICES,
   TICKET_PRIORITES,
@@ -36,6 +37,7 @@ const TYPE_LABELS: Record<string, string> = {
   ticket: 'Tâche',
   maintenance: 'Maintenance',
   objet_trouve: 'Objet trouvé',
+  cloture: 'Clôture',
   inconnu: 'Non reconnu',
 };
 
@@ -44,6 +46,7 @@ const EXAMPLES = [
   'fuite douche chambre 24',
   'VIP suite 5 arrive jeudi',
   'réveil 17 samedi 6h30 + taxi gare 7h15',
+  'fuite chambre 24 réparée en 2h',
 ];
 
 interface CaptureImage {
@@ -55,6 +58,71 @@ interface CaptureImage {
 interface EditableItem {
   p: CaptureProposal;
   hotelId: string;
+  // Élément ouvert visé quand p.type === 'cloture' (résolu via target_index)
+  target?: OpenItem;
+}
+
+// Éléments ouverts (toutes catégories, tous hôtels du groupe) que le routeur
+// peut proposer de clôturer. Labels compacts : le modèle ne voit que ça.
+async function fetchOpenItems(
+  hotels: { id: string; nom: string }[],
+): Promise<OpenItem[]> {
+  const hotelName = (id: string | null) =>
+    hotels.length > 1 ? hotels.find((h) => h.id === id)?.nom ?? '' : '';
+  const suffix = (id: string | null) => {
+    const n = hotelName(id);
+    return n ? ` — ${n}` : '';
+  };
+
+  const [consignes, demandes, tickets, maintenance] = await Promise.all([
+    supabase
+      .from('consignes')
+      .select('id, texte, hotel_id')
+      .eq('valide', false)
+      .order('date_creation', { ascending: false })
+      .limit(40),
+    supabase
+      .from('demandes')
+      .select('id, type, chambre, date, heure, hotel_id')
+      .eq('valide', false)
+      .order('date', { ascending: false })
+      .limit(30),
+    supabase
+      .from('tickets')
+      .select('id, titre, service, date_action, hotel_id')
+      .eq('valide', false)
+      .order('date_action', { ascending: false })
+      .limit(40),
+    supabase
+      .from('maintenance')
+      .select('id, titre, type, chambre, hotel_id')
+      .neq('statut', 'Fait')
+      .order('date_creation', { ascending: false })
+      .limit(40),
+  ]);
+
+  return [
+    ...(consignes.data ?? []).map((c): OpenItem => ({
+      kind: 'consigne',
+      id: c.id,
+      label: `[Consigne] ${String(c.texte ?? '').slice(0, 90)}${suffix(c.hotel_id)}`,
+    })),
+    ...(demandes.data ?? []).map((d): OpenItem => ({
+      kind: 'demande',
+      id: d.id,
+      label: `[${d.type}] chambre ${d.chambre || '?'} le ${d.date} à ${d.heure}${suffix(d.hotel_id)}`,
+    })),
+    ...(tickets.data ?? []).map((t): OpenItem => ({
+      kind: 'ticket',
+      id: t.id,
+      label: `[Tâche] ${String(t.titre ?? '').slice(0, 70)} (${t.service}, pour le ${t.date_action})${suffix(t.hotel_id)}`,
+    })),
+    ...(maintenance.data ?? []).map((m): OpenItem => ({
+      kind: 'maintenance',
+      id: m.id,
+      label: `[Maintenance] ${String(m.titre ?? '').slice(0, 70)} (${m.type}, chambre ${m.chambre || '?'})${suffix(m.hotel_id)}`,
+    })),
+  ];
 }
 
 // Redimensionne l'image côté client (max 1568px, JPEG) pour limiter le poids
@@ -118,7 +186,9 @@ function Select({
   );
 }
 
-type PatchFn = <K extends 'consigne' | 'demande' | 'ticket' | 'maintenance' | 'objet_trouve'>(
+type PatchFn = <
+  K extends 'consigne' | 'demande' | 'ticket' | 'maintenance' | 'objet_trouve' | 'cloture',
+>(
   key: K,
   update: Partial<NonNullable<CaptureProposal[K]>>,
 ) => void;
@@ -393,6 +463,9 @@ export default function CaptureBar() {
     if ((!text.trim() && !image) || loading) return;
     setLoading(true);
     try {
+      // Éléments ouverts rechargés à chaque analyse : les target_index du
+      // modèle référencent exactement cette liste.
+      const openItems = await fetchOpenItems(hotels).catch(() => [] as OpenItem[]);
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
       const res = await fetch('/api/capture', {
@@ -404,6 +477,7 @@ export default function CaptureBar() {
         body: JSON.stringify({
           text: text.trim(),
           hotels: hotels.map((h) => h.nom),
+          openItems: openItems.map((o) => o.label),
           image: image ? { media_type: image.mediaType, data: image.base64 } : undefined,
         }),
       });
@@ -415,6 +489,9 @@ export default function CaptureBar() {
       const proposals = json.proposals as CaptureProposal[];
       setItems(
         proposals.map((p) => {
+          if (p.type === 'cloture' && p.cloture) {
+            return { p, hotelId: '', target: openItems[p.cloture.target_index] };
+          }
           // Hôtel détecté dans la note, sinon l'hôtel sélectionné sur le site
           const detected = p.hotel
             ? hotels.find((h) => h.nom.toLowerCase() === p.hotel!.toLowerCase())
@@ -453,6 +530,30 @@ export default function CaptureBar() {
     const { p, hotelId } = it;
     const today = formatDate(new Date(), 'yyyy-MM-dd');
     const auteur = user.name || 'Anonyme';
+
+    if (p.type === 'cloture') {
+      const target = it.target;
+      if (!target) return 'Élément à clôturer introuvable';
+      // Mêmes updates que les pages des modules (page.tsx / maintenance/page.tsx)
+      if (target.kind === 'maintenance') {
+        const { error } = await supabase
+          .from('maintenance')
+          .update({
+            statut: 'Fait',
+            date_resolution: today,
+            temps_travail: p.cloture?.temps_travail ?? null,
+            budget: p.cloture?.budget ?? null,
+          })
+          .eq('id', target.id);
+        return error?.message ?? null;
+      }
+      const table = { consigne: 'consignes', demande: 'demandes', ticket: 'tickets' }[target.kind];
+      const { error } = await supabase
+        .from(table)
+        .update({ valide: true, date_validation: today })
+        .eq('id', target.id);
+      return error?.message ?? null;
+    }
 
     if (p.type === 'consigne' && p.consigne) {
       const { error } = await supabase.from('consignes').insert({
@@ -534,10 +635,21 @@ export default function CaptureBar() {
   };
 
   const creatable = (items ?? []).filter((it) => it.p.type !== 'inconnu');
+  const clotureCount = creatable.filter((it) => it.p.type === 'cloture').length;
+  const confirmLabel =
+    clotureCount && clotureCount === creatable.length
+      ? clotureCount > 1
+        ? `Clôturer les ${clotureCount}`
+        : 'Clôturer'
+      : clotureCount
+        ? 'Confirmer tout'
+        : creatable.length > 1
+          ? `Créer les ${creatable.length}`
+          : 'Créer';
 
   const createAll = async () => {
     if (!items || saving || !creatable.length) return;
-    if (creatable.some((it) => !it.hotelId)) {
+    if (creatable.some((it) => it.p.type !== 'cloture' && !it.hotelId)) {
       toast.error('Choisis l’hôtel pour chaque élément');
       return;
     }
@@ -552,12 +664,12 @@ export default function CaptureBar() {
         else created++;
       }
       if (failed.length) {
-        if (created) toast.success(`${created} élément${created > 1 ? 's' : ''} créé${created > 1 ? 's' : ''}`);
+        if (created) toast.success(`${created} élément${created > 1 ? 's' : ''} traité${created > 1 ? 's' : ''}`);
         toast.error(`${failed.length} échec${failed.length > 1 ? 's' : ''} — réessaie`);
         setItems(failed);
       } else {
         toast.success(
-          created > 1 ? `${created} éléments créés` : creatable[0].p.resume || 'Créé !',
+          created > 1 ? `${created} éléments traités` : creatable[0].p.resume || 'C’est fait !',
         );
         close();
       }
@@ -715,7 +827,42 @@ export default function CaptureBar() {
                       </button>
                     </div>
 
-                    {it.p.type !== 'inconnu' && hotels.length > 1 && (
+                    {it.p.type === 'cloture' && it.target && (
+                      <div className="grid gap-3">
+                        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+                          ✓ {it.target.label}
+                        </p>
+                        {it.target.kind === 'maintenance' && (
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="Temps de travail (h, optionnel)">
+                              <Input
+                                type="number"
+                                value={it.p.cloture?.temps_travail ?? ''}
+                                onChange={(e) =>
+                                  patchItem(index)('cloture', {
+                                    temps_travail:
+                                      e.target.value === '' ? null : Number(e.target.value),
+                                  })
+                                }
+                              />
+                            </Field>
+                            <Field label="Coût (€, optionnel)">
+                              <Input
+                                type="number"
+                                value={it.p.cloture?.budget ?? ''}
+                                onChange={(e) =>
+                                  patchItem(index)('cloture', {
+                                    budget: e.target.value === '' ? null : Number(e.target.value),
+                                  })
+                                }
+                              />
+                            </Field>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {it.p.type !== 'inconnu' && it.p.type !== 'cloture' && hotels.length > 1 && (
                       <Field label="Hôtel">
                         <select
                           value={it.hotelId}
@@ -758,7 +905,7 @@ export default function CaptureBar() {
                 {creatable.length > 0 && (
                   <Button onClick={createAll} disabled={saving} className="flex-1">
                     {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {creatable.length > 1 ? `Créer les ${creatable.length}` : 'Créer'}
+                    {confirmLabel}
                   </Button>
                 )}
               </div>

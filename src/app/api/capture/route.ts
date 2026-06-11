@@ -14,7 +14,9 @@ import { CAPTURE_SCHEMA, type CaptureProposal } from '@/lib/captureTypes';
 
 const MAX_INPUT_LENGTH = 500;
 
-function buildSystemPrompt(hotelNames: string[]): string {
+const MAX_OPEN_ITEMS = 150;
+
+function buildSystemPrompt(hotelNames: string[], openItems: string[]): string {
   const now = new Date();
   // fr-CA donne directement yyyy-MM-dd
   const fmtDate = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' });
@@ -43,7 +45,8 @@ Les types possibles :
 - "objet_trouve" : un objet oublié ou retrouvé appartenant à un client.
 - "ticket" : une tâche de service à faire (préparer, vérifier, commander, rappeler...) qui n'est ni technique ni un taxi/réveil. Choisis le service concerné ; priorité "Moyenne" par défaut, "Haute" seulement si l'urgence est explicite.
 - "consigne" : une information ou une instruction à transmettre aux équipes ou à un collègue précis ("dire à X de...", "pour Mariam : ...") — client VIP, situation particulière, sujet commercial, rappel à faire, instruction temporaire. C'est le type PAR DÉFAUT : si la note est compréhensible mais ne correspond à aucun autre module, c'est une consigne. Si la note vise un destinataire, le texte de la consigne DOIT commencer par "Pour <Prénom> : ".
-- "inconnu" : UNIQUEMENT si la note est réellement incompréhensible (charabia, vide de sens). Dans ce cas n'inclus aucun sous-objet et explique dans "resume" ce qui manque.
+- "cloture" : la note dit EXPLICITEMENT qu'une chose est FAITE, réparée, terminée, validée, annulée ou n'a plus lieu d'être ("fuite 12 réparée", "le taxi de la 5 c'est bon", "consigne VIP plus d'actualité") ET elle correspond clairement à UN élément de la liste des éléments ouverts ci-dessous. Renvoie "target_index" = l'index de cet élément. Si la note mentionne un temps de travail ou un coût (maintenance), remplis temps_travail (heures) / budget (euros), sinon null. ATTENTION : une note qui DÉCRIT un problème sans mot d'achèvement (réparé, fait, ok, terminé, rendu, annulé...) n'est JAMAIS une clôture, même si un élément ouvert identique existe — c'est une création normale. Si l'achèvement est exprimé mais qu'aucun élément ouvert ne correspond, renvoie "inconnu" : n'invente JAMAIS un index.
+- "inconnu" : UNIQUEMENT si la note est réellement incompréhensible (charabia, vide de sens), OU si elle annonce qu'une chose est faite mais qu'AUCUN élément ouvert ne correspond. Dans ce cas n'inclus aucun sous-objet et explique dans "resume" ce qui manque (ex : "Aucun élément ouvert ne correspond à ...").
 
 Règles :
 - Dates au format yyyy-MM-dd, heures au format HH:mm (24h). "demain" = le jour suivant ${today}. Si aucune date n'est précisée pour une demande ou un ticket, utilise ${today}.
@@ -53,8 +56,16 @@ Règles :
 - La reformulation ne doit perdre AUCUNE information de la note (détails, conditions, nuances, consignes de négociation...). Structure et corrige, mais ne résume pas.
 - "date_fin" d'une consigne : si la note indique que la situation se termine à une date identifiable (ex : "pas de clim avant vendredi" → la consigne reste utile jusqu'à vendredi), mets cette date. Sinon null.
 - Si une image est fournie (photo d'une note manuscrite, capture d'un mail, photo d'un problème...), utilise tout ce qui y est lisible ou visible comme si ça faisait partie de la note.
-- "resume" : une phrase courte du type "Créer un réveil pour la chambre 12 demain à 07:00".
-- Pour chaque item, remplis UNIQUEMENT le sous-objet correspondant au type choisi.`;
+- "resume" : une phrase courte du type "Créer un réveil pour la chambre 12 demain à 07:00" (ou "Clôturer : Fuite douche chambre 24" pour une clôture).
+- Pour chaque item, remplis UNIQUEMENT le sous-objet correspondant au type choisi.
+- Ne clôture JAMAIS dans le doute : si tu hésites entre plusieurs éléments ouverts ou si le rapprochement est incertain, renvoie "inconnu" avec une explication. Une note peut mélanger créations et clôtures ("fuite 12 réparée, par contre ampoule grillée couloir 2" = 1 clôture + 1 maintenance).
+
+${
+  openItems.length
+    ? `Éléments actuellement OUVERTS (pour le type "cloture", target_index = index dans cette liste) :
+${openItems.map((label, i) => `${i}. ${label}`).join('\n')}`
+    : `Aucun élément ouvert n'a été fourni : n'utilise JAMAIS le type "cloture".`
+}`;
 }
 
 export async function POST(req: Request) {
@@ -80,6 +91,12 @@ export async function POST(req: Request) {
   const text = typeof body.text === 'string' ? body.text.trim() : '';
   const hotelNames = Array.isArray(body.hotels)
     ? (body.hotels as unknown[]).filter((h): h is string => typeof h === 'string').slice(0, 10)
+    : [];
+  const openItems = Array.isArray(body.openItems)
+    ? (body.openItems as unknown[])
+        .filter((l): l is string => typeof l === 'string' && l.length > 0)
+        .map((l) => l.slice(0, 160))
+        .slice(0, MAX_OPEN_ITEMS)
     : [];
 
   const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -115,7 +132,7 @@ export async function POST(req: Request) {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 1024,
-      system: buildSystemPrompt(hotelNames),
+      system: buildSystemPrompt(hotelNames, openItems),
       output_config: {
         format: {
           type: 'json_schema',
@@ -157,7 +174,20 @@ export async function POST(req: Request) {
     }
 
     const parsed = JSON.parse(block.text) as { items: CaptureProposal[] };
-    const proposals = Array.isArray(parsed.items) ? parsed.items.slice(0, 10) : [];
+    let proposals = Array.isArray(parsed.items) ? parsed.items.slice(0, 10) : [];
+    // Garde-fou : une clôture doit référencer un index valide de la liste fournie.
+    proposals = proposals.map((p) => {
+      if (p.type !== 'cloture') return p;
+      const idx = p.cloture?.target_index;
+      if (idx == null || !Number.isInteger(idx) || idx < 0 || idx >= openItems.length) {
+        return {
+          type: 'inconnu' as const,
+          resume: `Aucun élément ouvert ne correspond — rien à clôturer. (${p.resume})`,
+          hotel: null,
+        };
+      }
+      return p;
+    });
     if (!proposals.length) {
       return NextResponse.json(
         { ok: false, error: 'Aucun élément reconnu, reformule la note' },

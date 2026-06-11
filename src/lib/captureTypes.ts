@@ -7,7 +7,19 @@ export type CaptureType =
   | 'ticket'
   | 'maintenance'
   | 'objet_trouve'
+  | 'cloture'
   | 'inconnu';
+
+// Élément ouvert proposable à la clôture. Le client le construit, n'envoie
+// que le label à l'API (le modèle référence par index), et garde id/kind
+// pour exécuter l'update après confirmation.
+export type OpenItemKind = 'consigne' | 'demande' | 'ticket' | 'maintenance';
+
+export interface OpenItem {
+  kind: OpenItemKind;
+  id: string | number;
+  label: string;
+}
 
 export const DEMANDE_TYPES = ['Taxi', 'Réveil', 'VTC'] as const;
 export const TICKET_SERVICES = ['Réception', 'Housekeeping', 'F&B', 'Maintenance'] as const;
@@ -59,6 +71,11 @@ export interface CaptureProposal {
     nom_client: string;
     objet: string;
   };
+  cloture?: {
+    target_index: number;
+    temps_travail: number | null;
+    budget: number | null;
+  };
 }
 
 const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
@@ -73,8 +90,8 @@ const PROPOSAL_SCHEMA = {
   properties: {
     type: {
       type: 'string',
-      enum: ['consigne', 'demande', 'ticket', 'maintenance', 'objet_trouve', 'inconnu'],
-      description: 'Le module cible de la note capturée.',
+      enum: ['consigne', 'demande', 'ticket', 'maintenance', 'objet_trouve', 'cloture', 'inconnu'],
+      description: 'Le module cible de la note capturée, ou "cloture" pour clôturer un élément ouvert.',
     },
     resume: {
       type: 'string',
@@ -142,6 +159,26 @@ const PROPOSAL_SCHEMA = {
         chambre: { type: 'string', description: 'Chambre, "" si non précisée.' },
         nom_client: { type: 'string', description: 'Nom du client, "" si non précisé.' },
         objet: { type: 'string', description: 'Description de l’objet.' },
+      },
+    },
+    cloture: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['target_index', 'temps_travail', 'budget'],
+      properties: {
+        target_index: {
+          type: 'integer',
+          description: 'Index (0-based) de l’élément ouvert à clôturer dans la liste fournie.',
+        },
+        temps_travail: {
+          ...nullableNumber,
+          description:
+            'Heures de travail mentionnées dans la note (maintenance uniquement), sinon null.',
+        },
+        budget: {
+          ...nullableNumber,
+          description: 'Coût en euros mentionné dans la note (maintenance uniquement), sinon null.',
+        },
       },
     },
   },
