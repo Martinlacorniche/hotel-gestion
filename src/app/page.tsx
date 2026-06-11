@@ -233,7 +233,9 @@ export default function HotelDashboard() {
           sunset: sunData.daily.sunset[0].slice(11, 16),
         });
       } catch (e) {
-        console.error("Erreur météo :", e);
+        // Open-Meteo injoignable (réseau) : le widget reste en "Chargement...",
+        // rien d'autre n'est impacté — pas une erreur applicative.
+        console.warn("Météo indisponible :", e);
         setMeteoMorning(null); setMeteoAfternoon(null); setSeaTemp(null); setSunTimes(null);
       }
     }
