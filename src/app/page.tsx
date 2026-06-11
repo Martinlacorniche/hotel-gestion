@@ -304,7 +304,9 @@ export default function HotelDashboard() {
   const [taxis, setTaxis] = useState<any[]>([]);
   // Chambres libérées — mini champ "au checkout je tape 12" → transmis aux
   // équipes (bandeau du jour dans l'app). Éphémère : affiché le jour même
-  // uniquement, purge auto en base après 48h.
+  // uniquement, purge auto en base après 48h. Masqué tant que la chaîne notif
+  // n'est pas activée (flag absent de Netlify, comme la capture à ses débuts).
+  const LIBERATIONS_ENABLED = process.env.NEXT_PUBLIC_LIBERATIONS_ENABLED === '1';
   const [liberations, setLiberations] = useState<any[]>([]);
   const [liberationInput, setLiberationInput] = useState('');
   const [showTicketModal, setShowTicketModal] = useState(false);
@@ -1452,9 +1454,42 @@ const birthdayMessage = useMemo(() => {
                  ) : ( <div className="text-xs text-center py-2 text-slate-400">Chargement...</div>)}
             </div>
 
-            {/* CHAMBRES LIBÉRÉES */}
+            {/* CHAMBRES LIBÉRÉES — compact : champ seul, liste du jour au survol */}
+            {LIBERATIONS_ENABLED && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-                 <h3 className="font-bold text-slate-800 mb-3">🚪 Chambres libérées</h3>
+                 <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-slate-800">🚪 Chambres libérées</h3>
+                    {liberations.length > 0 && (
+                      <div className="relative group">
+                        <span className="cursor-default rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
+                          {liberations.reduce((n, l) => n + (l.chambres?.length ?? 0), 0)} auj.
+                        </span>
+                        <div className="absolute right-0 top-full z-20 hidden w-60 rounded-xl border border-slate-200 bg-white p-3 shadow-lg group-hover:block">
+                          <div className="space-y-2">
+                            {liberations.map((l) => (
+                              <div key={l.id} className="flex items-center gap-1.5 flex-wrap text-sm">
+                                {(l.chambres ?? []).map((num: string, i: number) => (
+                                  <span key={`${num}-${i}`} className="rounded-md bg-emerald-50 border border-emerald-200 px-2 py-0.5 font-bold text-emerald-800">
+                                    {num}
+                                  </span>
+                                ))}
+                                <span className="text-[10px] text-slate-400">
+                                  {new Date(l.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                                <button
+                                  onClick={() => deleteLiberation(l.id)}
+                                  className="ml-auto text-slate-300 transition hover:text-red-500"
+                                  title="Retirer"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                 </div>
                  <form onSubmit={sendLiberation} className="flex gap-2">
                     <input
                       value={liberationInput}
@@ -1470,33 +1505,8 @@ const birthdayMessage = useMemo(() => {
                       Envoyer
                     </button>
                  </form>
-                 {liberations.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {liberations.map((l) => (
-                        <div key={l.id} className="flex items-center gap-1.5 flex-wrap text-sm">
-                          {(l.chambres ?? []).map((num: string, i: number) => (
-                            <span key={`${num}-${i}`} className="rounded-md bg-emerald-50 border border-emerald-200 px-2 py-0.5 font-bold text-emerald-800">
-                              {num}
-                            </span>
-                          ))}
-                          <span className="text-[10px] text-slate-400">
-                            {new Date(l.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          <button
-                            onClick={() => deleteLiberation(l.id)}
-                            className="ml-auto text-slate-300 transition hover:text-red-500"
-                            title="Retirer"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                 )}
-                 <p className="mt-2 text-[10px] text-slate-400">
-                    Visible par les équipes dans l’app · se vide chaque jour
-                 </p>
             </div>
+            )}
 
             {/* TAXIS / REVEILS */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
