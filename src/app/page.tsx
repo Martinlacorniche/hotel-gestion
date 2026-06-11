@@ -1046,9 +1046,6 @@ const birthdayMessage = useMemo(() => {
         </div>
       )}
 
-      {/* Brief de prise de poste — pastille "Mon brief" en bas à gauche */}
-      <BriefingModal user={user as any} hotelId={hotelId} />
-
       {/* --- HEADER : 3 zones (gauche / centre date / droite actions) --- */}
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center w-full mb-8 gap-4">
 
@@ -1057,9 +1054,11 @@ const birthdayMessage = useMemo(() => {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 truncate">
             Bonjour, {(user as any).emoji ? `${(user as any).emoji} ` : ''}{user.name}
           </h1>
-          <p className="text-sm text-slate-500">
-            Voici ce qui se passe aujourd'hui à l'hôtel.
-          </p>
+          <div className="flex items-center gap-2.5 text-sm text-slate-500">
+            <span>Voici ce qui se passe aujourd'hui à l'hôtel.</span>
+            {/* Brief de prise de poste — résumé IA à la demande */}
+            <BriefingModal user={user as any} hotelId={hotelId} />
+          </div>
         </div>
 
         {/* Zone centre : Date — largeur fixe, label centré, ne saute pas selon le jour */}

@@ -122,18 +122,18 @@ export default function BriefingModal({
 
   return (
     <>
-      {/* Pastille "Mon brief" — seul point d'entrée, jamais d'ouverture auto */}
-      {!open && (
-        <button
-          onClick={openBrief}
-          title="Mon brief de prise de poste"
-          disabled={loading}
-          className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-2 rounded-full bg-white border border-slate-200 px-3.5 py-2 text-sm font-semibold text-slate-600 shadow-md transition hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-70"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sunrise className="h-4 w-4" />}
-          {loading ? 'Je lis tout…' : 'Mon brief'}
-        </button>
-      )}
+      {/* Bouton discret (inline dans le header, sous le "Bonjour") — seul
+          point d'entrée, jamais d'ouverture auto. La mention "résumé IA" est
+          explicite (demande Martin). */}
+      <button
+        onClick={openBrief}
+        title="Ce qui a bougé depuis ton dernier shift — résumé généré par IA"
+        disabled={loading}
+        className="inline-flex w-fit items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 transition hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-70"
+      >
+        {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sunrise className="h-3.5 w-3.5" />}
+        {loading ? 'Je lis tout…' : 'Mon brief'}
+      </button>
 
       {open && brief && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
@@ -158,9 +158,14 @@ export default function BriefingModal({
 
             <BriefBody text={brief.brief} />
 
+            <p className="mt-4 border-t border-slate-100 pt-3 text-[11px] text-slate-400">
+              ✨ Résumé généré par IA à partir des consignes, fils de discussion, tickets et
+              modules — il peut se tromper : le tableau de bord fait foi.
+            </p>
+
             <button
               onClick={() => setOpen(false)}
-              className="mt-5 w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700"
+              className="mt-4 w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700"
             >
               C’est parti
             </button>
