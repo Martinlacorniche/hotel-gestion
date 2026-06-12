@@ -946,6 +946,30 @@ export default function PlanningPage() {
     await reloadEntries();
   };
 
+  // Vide tous les shifts (brouillons + publiés) d'UN salarié sur la semaine affichée.
+  const handleClearWeek = async (row) => {
+    if (!isAdmin || !hotelId || !row?.id_auth) return;
+    const dates = weekDates.map(d => format(d, 'yyyy-MM-dd'));
+    const deletableDates = dates.filter(d => !isWriteBlocked(d));
+    const toDelete = planningEntries.filter(e => e.user_id === row.id_auth && deletableDates.includes(e.date));
+    if (toDelete.length === 0) {
+      const hasLocked = planningEntries.some(e => e.user_id === row.id_auth && dates.includes(e.date));
+      toast(hasLocked ? "Semaine verrouillée (>" + RETRO_LOCK_DAYS + "j) — conservation légale" : "Aucun shift cette semaine.");
+      return;
+    }
+    const name = row.name || row.email;
+    const ok = await confirmDialog({
+      title: 'Vider la semaine',
+      message: `Supprimer ${toDelete.length > 1 ? `les ${toDelete.length} shifts` : 'le shift'} de ${name} sur la semaine du ${format(currentWeekStart, 'dd MMMM', { locale: fr })} ?`,
+      confirmLabel: 'Vider la semaine',
+    });
+    if (!ok) return;
+    const { error } = await supabase.from('planning_entries').delete().eq('hotel_id', hotelId).eq('user_id', row.id_auth).in('date', deletableDates);
+    if (error) { toast.error(error.message); return; }
+    await reloadEntries();
+    toast.success(`Semaine vidée pour ${name} ✅`);
+  };
+
   const handleCellClick = (userId, date, currentEntry) => {
     if (!isAdmin) return;
     if (isWriteBlocked(date)) {
@@ -1015,6 +1039,11 @@ export default function PlanningPage() {
                                   {isAdmin && (
                                     <button onClick={() => openDuplicationModal(row)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Dupliquer la semaine">
                                         <Copy className="w-3.5 h-3.5"/>
+                                    </button>
+                                  )}
+                                  {isAdmin && (
+                                    <button onClick={() => handleClearWeek(row)} className="text-slate-400 hover:text-red-600 transition-colors" title="Vider la semaine">
+                                        <Trash2 className="w-3.5 h-3.5"/>
                                     </button>
                                   )}
                                   {isAdmin && isUnlocked && (
