@@ -812,11 +812,25 @@ export default function PlanningPage() {
     });
   };
 
+  // planning_config est par (salarié, hôtel) : la ligne peut MANQUER pour un
+  // salarié multi-hôtels (seule celle de son hôtel de rattachement existe).
+  // Un update qui ne matche rien réussit en silence → update d'abord, insert si
+  // aucune ligne touchée.
+  const upsertUserConfig = async (userId: string, patch: Record<string, any>) => {
+    const { data, error } = await supabase.from('planning_config')
+      .update(patch).eq('user_id', userId).eq('hotel_id', hotelId).select('id');
+    if (error) { toast.error(error.message); return; }
+    if (!data || data.length === 0) {
+      const { error: insErr } = await supabase.from('planning_config').insert({ user_id: userId, hotel_id: hotelId, ...patch });
+      if (insErr) toast.error(insErr.message);
+    }
+  };
+
   // Assigne le service d'un salarié (planning_config.service, par hôtel).
   const setUserService = async (userId: string, service: string) => {
     if (!hotelId) return;
     setRows((prev: any[]) => sortGroupedRows(prev.map(r => r.id_auth === userId ? { ...r, service: service || null } : r)));
-    await supabase.from('planning_config').update({ service: service || null }).eq('user_id', userId).eq('hotel_id', hotelId);
+    await upsertUserConfig(userId, { service: service || null });
   };
 
   useEffect(() => {
@@ -840,7 +854,7 @@ export default function PlanningPage() {
     setRows(newRows);
     const updates = []; let ordre = 0;
     for (const row of newRows) {
-      if (row.id_auth) updates.push(supabase.from('planning_config').update({ ordre }).eq('user_id', row.id_auth).eq('hotel_id', hotelId));
+      if (row.id_auth) updates.push(upsertUserConfig(row.id_auth, { ordre }));
       else if (row.id) updates.push(supabase.from('planning_config').update({ ordre }).eq('service_id', row.id).eq('hotel_id', hotelId));
       ordre++;
     }
