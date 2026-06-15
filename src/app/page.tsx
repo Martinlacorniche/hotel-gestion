@@ -16,7 +16,7 @@ import {
   ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
   NotebookText, ShoppingCart, KeyRound, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
-  Wrench, Tv2, Wifi, Package, Star, Thermometer, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP
+  Wrench, Tv2, Wifi, Package, Star, Thermometer, Wind, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP + clim
   MessageCircle, Send, // Conversation consignes
   Euro, // Caisse
   X // Chambres libérées
@@ -38,7 +38,7 @@ import {
 
 // --- OUTILS / MENU ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolDef = { id: string; label: string; href: string | ((id: string) => string); icon: any; bg: string; text: string; condition?: "parking" | "coworking" | "corniche" };
+type ToolDef = { id: string; label: string; href: string | ((id: string) => string); icon: any; bg: string; text: string; condition?: "parking" | "coworking" | "corniche" | "voiles" };
 
 const TOOLS: ToolDef[] = [
   { id: "planning",    label: "Planning",     href: "/planning",                           icon: CalendarDays, bg: "bg-indigo-50",  text: "text-indigo-600" },
@@ -54,6 +54,7 @@ const TOOLS: ToolDef[] = [
   { id: "haccp",       label: "HACCP",        href: "/haccp",                              icon: Thermometer,  bg: "bg-rose-50",    text: "text-rose-700" },
   { id: "wifi-admin",  label: "Interface WiFi", href: (id: string) => `/wifi-admin?hotel_id=${id}`, icon: Wifi, bg: "bg-sky-50", text: "text-sky-700" },
   { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
+  { id: "clim",        label: "Clim",          href: "/clim",                               icon: Wind,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "voiles" },
 ];
 
 // --- TYPES & UTILITAIRES ---
@@ -1127,12 +1128,14 @@ const birthdayMessage = useMemo(() => {
            {/* Favoris épinglés — affichés directement dans le header */}
            {pinnedLoaded && (() => {
              const isCorniche = currentHotel?.nom?.toLowerCase().includes("corniche");
+             const isVoiles = currentHotel?.nom?.toLowerCase().includes("voiles");
              return pinnedTools.map(pid => {
                const t = TOOLS.find(t => t.id === pid);
                if (!t) return null;
                if (t.condition === "parking" && !currentHotel?.has_parking) return null;
                if (t.condition === "coworking" && !currentHotel?.has_coworking) return null;
                if (t.condition === "corniche" && !isCorniche) return null;
+               if (t.condition === "voiles" && !isVoiles) return null;
                const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;
                return (
                  <a key={t.id} href={href} target="_blank" title={t.label}
@@ -1155,10 +1158,12 @@ const birthdayMessage = useMemo(() => {
               <div className="grid grid-cols-3 gap-1.5">
                 {(() => {
                   const isCorniche = currentHotel?.nom?.toLowerCase().includes("corniche");
+                  const isVoiles = currentHotel?.nom?.toLowerCase().includes("voiles");
                   return TOOLS.filter(t => {
                     if (t.condition === "parking")  return currentHotel?.has_parking;
                     if (t.condition === "coworking") return currentHotel?.has_coworking;
                     if (t.condition === "corniche")  return isCorniche;
+                    if (t.condition === "voiles")    return isVoiles;
                     return true;
                   }).map(t => {
                     const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;
