@@ -1,0 +1,16 @@
+[Unit]
+Description=Relais ecran SmallTV (Supabase -> ecran)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=martin
+WorkingDirectory=/opt/screen-relay
+EnvironmentFile=/opt/screen-relay/.env
+ExecStart=/opt/screen-relay/venv/bin/python /opt/screen-relay/worker.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
