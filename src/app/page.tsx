@@ -16,7 +16,7 @@ import {
   ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
   NotebookText, ShoppingCart, KeyRound, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
-  Wrench, Tv2, Wifi, Package, Star, Thermometer, Wind, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP + clim
+  Wrench, Tv2, Wifi, Package, Star, Thermometer, Wind, Monitor, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP + clim + écran
   MessageCircle, Send, // Conversation consignes
   Euro, // Caisse
   X // Chambres libérées
@@ -38,7 +38,7 @@ import {
 
 // --- OUTILS / MENU ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolDef = { id: string; label: string; href: string | ((id: string) => string); icon: any; bg: string; text: string; condition?: "parking" | "coworking" | "corniche" | "voiles" };
+type ToolDef = { id: string; label: string; href: string | ((id: string) => string); icon: any; bg: string; text: string; condition?: "parking" | "coworking" | "corniche" | "voiles" | "superadmin" };
 
 const TOOLS: ToolDef[] = [
   { id: "planning",    label: "Planning",     href: "/planning",                           icon: CalendarDays, bg: "bg-indigo-50",  text: "text-indigo-600" },
@@ -55,6 +55,7 @@ const TOOLS: ToolDef[] = [
   { id: "wifi-admin",  label: "Interface WiFi", href: (id: string) => `/wifi-admin?hotel_id=${id}`, icon: Wifi, bg: "bg-sky-50", text: "text-sky-700" },
   { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
   { id: "clim",        label: "Clim",          href: "/clim",                               icon: Wind,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "voiles" },
+  { id: "ecran",       label: "Écran",         href: "/ecran",                              icon: Monitor,      bg: "bg-slate-100",  text: "text-slate-700",  condition: "superadmin" },
 ];
 
 // --- TYPES & UTILITAIRES ---
@@ -1136,6 +1137,7 @@ const birthdayMessage = useMemo(() => {
                if (t.condition === "coworking" && !currentHotel?.has_coworking) return null;
                if (t.condition === "corniche" && !isCorniche) return null;
                if (t.condition === "voiles" && !isVoiles) return null;
+               if (t.condition === "superadmin" && !isSuperadmin) return null;
                const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;
                return (
                  <a key={t.id} href={href} target="_blank" title={t.label}
@@ -1164,6 +1166,7 @@ const birthdayMessage = useMemo(() => {
                     if (t.condition === "coworking") return currentHotel?.has_coworking;
                     if (t.condition === "corniche")  return isCorniche;
                     if (t.condition === "voiles")    return isVoiles;
+                    if (t.condition === "superadmin") return isSuperadmin;
                     return true;
                   }).map(t => {
                     const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;
