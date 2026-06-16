@@ -3,13 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { Thermometer, FileText, FolderOpen, History, Settings } from 'lucide-react';
+import { Home, Thermometer, FileText, FolderOpen, Settings, SprayCan } from 'lucide-react';
 
 const BASE_TABS = [
-  { href: '/haccp',            label: 'Live',       icon: Thermometer },
-  { href: '/haccp/historique', label: 'Historique', icon: History },
-  { href: '/haccp/registre',   label: 'Registre',   icon: FileText },
-  { href: '/haccp/documents',  label: 'Documents',  icon: FolderOpen },
+  { href: '/haccp',              label: 'Accueil',      icon: Home },
+  { href: '/haccp/nettoyage',    label: 'Nettoyage',    icon: SprayCan },
+  { href: '/haccp/temperatures', label: 'Températures', icon: Thermometer },
+  { href: '/haccp/registre',     label: 'Registre',     icon: FileText },
+  { href: '/haccp/documents',    label: 'Documents',    icon: FolderOpen },
 ];
 
 const ADMIN_TAB = { href: '/haccp/admin', label: 'Admin', icon: Settings };
@@ -29,13 +30,13 @@ export function HaccpNav() {
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 active
                   ? 'border-foreground text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className="w-5 h-5" />
               {label}
             </Link>
           );

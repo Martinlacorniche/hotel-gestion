@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
+import { useHotelScope } from '@/hooks/useHotelScope';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,14 +19,13 @@ import {
   ALL_CATEGORIES, CATEGORY_LABELS, CATEGORY_GROUPS,
   type DocumentCategory,
 } from './categories';
-import type { HACCPDocument, Hotel } from './types';
+import type { HACCPDocument } from './types';
 
 const BUCKET = 'haccp-documents';
 
 export default function DocumentsPage() {
   const { user, isLoading: authLoading } = useAuth();
-  const [hotels, setHotels] = useState<Hotel[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
+  const { hotels, selectedHotelId, setSelectedHotelId } = useHotelScope();
 
   const [documents, setDocuments] = useState<HACCPDocument[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,22 +35,6 @@ export default function DocumentsPage() {
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [replaceTarget, setReplaceTarget] = useState<HACCPDocument | null>(null);
-
-  // Chargement hôtels
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const isSuperadmin = user.role === 'superadmin';
-      const baseQuery = supabase.from('hotels').select('id, nom').order('nom');
-      const userHotelId = user.hotel_id || user.default_hotel_id;
-      const { data } = isSuperadmin
-        ? await baseQuery
-        : await baseQuery.eq('id', userHotelId || '');
-      const list = (data || []) as Hotel[];
-      setHotels(list);
-      if (list.length > 0) setSelectedHotelId(userHotelId || list[0].id);
-    })();
-  }, [user]);
 
   const loadDocs = useCallback(async (hotelId: string) => {
     setLoading(true);

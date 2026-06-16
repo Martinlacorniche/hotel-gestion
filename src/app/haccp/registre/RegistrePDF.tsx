@@ -2,9 +2,15 @@ import {
   Document, Page, Text, View, StyleSheet,
   Svg, Polyline, Line,
 } from '@react-pdf/renderer';
-import { format, eachDayOfInterval, differenceInMinutes, isSameDay } from 'date-fns';
+import {
+  format, eachDayOfInterval, differenceInMinutes, isAfter, startOfQuarter,
+  startOfWeek, addWeeks, endOfMonth, addMonths,
+} from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Sensor, Reading, Alert, Hotel } from './types';
+import type {
+  CleaningZone, CleaningTask, CleaningLog, CleaningFrequency,
+} from '../admin/nettoyage/types';
 
 // ============================================================================
 // Palette
@@ -208,6 +214,7 @@ function formatDuration(min: number): string {
 // ============================================================================
 export function RegistrePDF({
   hotel, sensors, readings, alerts, periodStart, periodEnd,
+  cleaningZones = [], cleaningTasks = [], cleaningLogs = [],
 }: {
   hotel: Hotel;
   sensors: Sensor[];
@@ -215,6 +222,9 @@ export function RegistrePDF({
   alerts: Alert[];
   periodStart: Date;
   periodEnd: Date;
+  cleaningZones?: CleaningZone[];
+  cleaningTasks?: CleaningTask[];
+  cleaningLogs?: CleaningLog[];
 }) {
   const generatedAt = new Date();
 
@@ -315,6 +325,21 @@ export function RegistrePDF({
 
         <Footer />
       </Page>
+
+      {/* ================================================================ */}
+      {/* Page Plan de nettoyage (si configuré)                             */}
+      {/* ================================================================ */}
+      {cleaningZones.filter(z => z.active).length > 0 && cleaningTasks.filter(t => t.active).length > 0 && (
+        <CleaningPage
+          hotel={hotel}
+          zones={cleaningZones}
+          tasks={cleaningTasks}
+          logs={cleaningLogs}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          generatedAt={generatedAt}
+        />
+      )}
 
       {/* ================================================================ */}
       {/* Une page par sonde : stats + graphe + alertes                     */}
@@ -567,5 +592,190 @@ function TemperatureChart({
         ) : null
       )}
     </Svg>
+  );
+}
+
+// ============================================================================
+// Page Plan de nettoyage
+// ============================================================================
+const FREQ_PDF_LABEL: Record<CleaningFrequency, string> = {
+  daily: 'Quotidien',
+  weekly: 'Hebdo',
+  monthly: 'Mensuel',
+  quarterly: 'Trimestriel',
+};
+
+function windowsForPDF(freq: CleaningFrequency, periodStart: Date, periodEnd: Date): { key: string; start: Date; end: Date }[] {
+  if (freq === 'daily') {
+    return eachDayOfInterval({ start: periodStart, end: periodEnd })
+      .map(d => ({ key: format(d, 'yyyy-MM-dd'), start: d, end: d }));
+  }
+  if (freq === 'weekly') {
+    const out: { key: string; start: Date; end: Date }[] = [];
+    let cur = startOfWeek(periodStart, { weekStartsOn: 1 });
+    while (cur <= periodEnd) {
+      const weekEnd = new Date(cur);
+      weekEnd.setDate(cur.getDate() + 6);
+      if (weekEnd >= periodStart) {
+        out.push({ key: format(cur, 'yyyy-MM-dd'), start: new Date(cur), end: weekEnd });
+      }
+      cur = addWeeks(cur, 1);
+    }
+    return out;
+  }
+  if (freq === 'monthly') {
+    return [{ key: format(periodStart, 'yyyy-MM-dd'), start: periodStart, end: periodEnd }];
+  }
+  // quarterly
+  const qStart = startOfQuarter(periodStart);
+  return [{ key: format(qStart, 'yyyy-MM-dd'), start: qStart, end: endOfMonth(addMonths(qStart, 2)) }];
+}
+
+function CleaningPage({
+  hotel, zones, tasks, logs, periodStart, periodEnd, generatedAt,
+}: {
+  hotel: Hotel;
+  zones: CleaningZone[];
+  tasks: CleaningTask[];
+  logs: CleaningLog[];
+  periodStart: Date;
+  periodEnd: Date;
+  generatedAt: Date;
+}) {
+  const today = new Date();
+  const logByKey = new Map<string, CleaningLog>();
+  for (const l of logs) logByKey.set(`${l.task_id}|${l.period_key}`, l);
+
+  // Calcul par tâche : fenêtres dues / faites sur la période
+  const activeTasks = tasks.filter(t => t.active);
+  const activeZones = zones.filter(z => z.active);
+
+  type TaskStat = {
+    task: CleaningTask;
+    due: number;
+    done: number;
+    pct: number;
+  };
+  const statByTask = new Map<string, TaskStat>();
+  for (const t of activeTasks) {
+    let due = 0, done = 0;
+    for (const w of windowsForPDF(t.frequency, periodStart, periodEnd)) {
+      if (isAfter(w.start, today)) continue;
+      due++;
+      if (logByKey.has(`${t.id}|${w.key}`)) done++;
+    }
+    statByTask.set(t.id, {
+      task: t,
+      due,
+      done,
+      pct: due > 0 ? Math.round((done / due) * 100) : 100,
+    });
+  }
+
+  // Synthèse globale
+  let totalDue = 0, totalDone = 0;
+  for (const st of statByTask.values()) { totalDue += st.due; totalDone += st.done; }
+  const totalPct = totalDue > 0 ? Math.round((totalDone / totalDue) * 100) : 100;
+
+  const tasksByZone = new Map<string, CleaningTask[]>();
+  for (const t of activeTasks) {
+    const list = tasksByZone.get(t.zone_id) || [];
+    list.push(t);
+    tasksByZone.set(t.zone_id, list);
+  }
+
+  return (
+    <Page size="A4" style={s.page}>
+      <PageHeader hotel={hotel} periodStart={periodStart} periodEnd={periodEnd} generatedAt={generatedAt} />
+
+      <Text style={s.sectionTitle}>PLAN DE NETTOYAGE — SYNTHÈSE DU MOIS</Text>
+      <View style={s.synth}>
+        <View style={s.synthCol}>
+          <Text style={s.synthLabel}>ZONES</Text>
+          <Text style={s.synthValue}>{activeZones.length}</Text>
+        </View>
+        <View style={s.synthCol}>
+          <Text style={s.synthLabel}>TÂCHES</Text>
+          <Text style={s.synthValue}>{activeTasks.length}</Text>
+        </View>
+        <View style={s.synthCol}>
+          <Text style={s.synthLabel}>VALIDATIONS DUES</Text>
+          <Text style={s.synthValue}>{totalDue}</Text>
+        </View>
+        <View style={s.synthCol}>
+          <Text style={s.synthLabel}>FAITES</Text>
+          <Text style={s.synthValue}>{totalDone}</Text>
+        </View>
+        <View style={s.synthCol}>
+          <Text style={s.synthLabel}>COMPLÉTION</Text>
+          <Text style={[
+            s.synthValue,
+            ...(totalPct >= 90 ? [{ color: EMERALD }] : totalPct >= 70 ? [{ color: AMBER }] : [{ color: RED }]),
+          ]}>
+            {totalPct}%
+          </Text>
+        </View>
+      </View>
+
+      <Text style={s.sectionTitle}>DÉTAIL PAR ZONE</Text>
+
+      {/* Tableau header */}
+      <View style={s.sensorListHeader}>
+        <Text style={[s.th, { width: '45%' }]}>TÂCHE</Text>
+        <Text style={[s.th, { width: '17%' }]}>FRÉQUENCE</Text>
+        <Text style={[s.th, { width: '20%' }]}>PRODUIT</Text>
+        <Text style={[s.th, { width: '8%', textAlign: 'right' }]}>FAITES</Text>
+        <Text style={[s.th, { width: '10%', textAlign: 'right' }]}>%</Text>
+      </View>
+
+      {activeZones
+        .filter(z => tasksByZone.has(z.id))
+        .map(zone => {
+          const zoneTasks = tasksByZone.get(zone.id) || [];
+          return (
+            <View key={zone.id} wrap={false} style={{ marginTop: 6 }}>
+              <View style={{
+                backgroundColor: SLATE_50,
+                paddingVertical: 4,
+                paddingHorizontal: 8,
+                flexDirection: 'row',
+                alignItems: 'center',
+                borderLeftWidth: 2,
+                borderLeftColor: TEAL,
+              }}>
+                <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: SLATE_900 }}>
+                  {zone.icon ? `${zone.icon}  ` : ''}{zone.name}
+                </Text>
+                <Text style={{ fontSize: 7, color: SLATE_500, marginLeft: 8 }}>
+                  ({zoneTasks.length} tâche{zoneTasks.length > 1 ? 's' : ''})
+                </Text>
+              </View>
+              {zoneTasks.map(task => {
+                const st = statByTask.get(task.id)!;
+                const pctColor = st.pct >= 90 ? EMERALD : st.pct >= 70 ? AMBER : RED;
+                return (
+                  <View key={task.id} style={s.sensorListRow}>
+                    <Text style={[s.td, { width: '45%' }]}>{task.name}</Text>
+                    <Text style={[s.td, { width: '17%' }]}>{FREQ_PDF_LABEL[task.frequency]}</Text>
+                    <Text style={[s.td, { width: '20%', color: SLATE_500 }]}>{task.product || '—'}</Text>
+                    <Text style={[s.td, { width: '8%', textAlign: 'right' }]}>{st.done} / {st.due}</Text>
+                    <Text style={[s.td, { width: '10%', textAlign: 'right', fontFamily: 'Helvetica-Bold', color: pctColor }]}>
+                      {st.pct}%
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })}
+
+      <Text style={{ fontSize: 7, color: SLATE_400, marginTop: 12, fontStyle: 'italic' }}>
+        Le % de complétion compare les validations enregistrées aux fenêtres dues à ce jour
+        (fenêtres futures exclues). Une fenêtre = un jour pour les tâches quotidiennes,
+        une semaine ISO pour les hebdomadaires, un mois pour les mensuelles, un trimestre pour les trimestrielles.
+      </Text>
+
+      <Footer />
+    </Page>
   );
 }

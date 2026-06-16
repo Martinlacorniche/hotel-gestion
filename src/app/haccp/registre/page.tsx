@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
+import { useHotelScope } from '@/hooks/useHotelScope';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -13,33 +14,23 @@ import { fr } from 'date-fns/locale';
 
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { RegistrePDF } from './RegistrePDF';
-import type { Sensor, Reading, Alert, Hotel } from './types';
+import type { Sensor, Reading, Alert } from './types';
+import type {
+  CleaningZone, CleaningTask, CleaningLog,
+} from '../admin/nettoyage/types';
 
 export default function RegistrePage() {
   const { user, isLoading: authLoading } = useAuth();
-  const [hotels, setHotels] = useState<Hotel[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
+  const { hotels, selectedHotelId, setSelectedHotelId } = useHotelScope();
   const [period, setPeriod] = useState(() => startOfMonth(new Date()));
 
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [readings, setReadings] = useState<Reading[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [cleaningZones, setCleaningZones] = useState<CleaningZone[]>([]);
+  const [cleaningTasks, setCleaningTasks] = useState<CleaningTask[]>([]);
+  const [cleaningLogs, setCleaningLogs] = useState<CleaningLog[]>([]);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const isSuperadmin = user.role === 'superadmin';
-      const baseQuery = supabase.from('hotels').select('id, nom').order('nom');
-      const userHotelId = user.hotel_id || user.default_hotel_id;
-      const { data } = isSuperadmin
-        ? await baseQuery
-        : await baseQuery.eq('id', userHotelId || '');
-      const list = (data || []) as Hotel[];
-      setHotels(list);
-      if (list.length > 0) setSelectedHotelId(userHotelId || list[0].id);
-    })();
-  }, [user]);
 
   const loadData = useCallback(async (hotelId: string, periodStart: Date, periodEnd: Date) => {
     setLoading(true);
@@ -62,7 +53,12 @@ export default function RegistrePage() {
     // Pour le PDF mensuel on échantillonne raisonnablement : pas tous les relevés
     // (peut être 100k+ lignes / mois). On limite à 5000 relevés par requête, suffisant
     // pour des courbes pertinentes — Supabase impose 1000 par défaut, on monte à 5000.
-    const [readingsResult, alertsResult] = await Promise.all([
+    // On élargit la requête logs nettoyage : weekly/quarterly peuvent avoir des period_key
+    // en dehors du mois courant. On prend tout le trimestre englobant.
+    const lookbackStart = new Date(periodStart);
+    lookbackStart.setMonth(lookbackStart.getMonth() - 3);
+
+    const [readingsResult, alertsResult, zonesRes, tasksRes, logsRes] = await Promise.all([
       supabase
         .from('haccp_readings')
         .select('sensor_id, temperature, recorded_at')
@@ -78,10 +74,29 @@ export default function RegistrePage() {
         .gte('triggered_at', periodStart.toISOString())
         .lte('triggered_at', periodEnd.toISOString())
         .order('triggered_at', { ascending: true }),
+      supabase
+        .from('haccp_cleaning_zones')
+        .select('*')
+        .eq('hotel_id', hotelId)
+        .order('sort_order'),
+      supabase
+        .from('haccp_cleaning_tasks')
+        .select('*, haccp_cleaning_zones!inner(hotel_id)')
+        .eq('haccp_cleaning_zones.hotel_id', hotelId)
+        .order('sort_order'),
+      supabase
+        .from('haccp_cleaning_logs')
+        .select('*')
+        .eq('hotel_id', hotelId)
+        .gte('period_key', format(lookbackStart, 'yyyy-MM-dd'))
+        .lte('period_key', format(periodEnd, 'yyyy-MM-dd')),
     ]);
 
     setReadings((readingsResult.data || []) as Reading[]);
     setAlerts((alertsResult.data || []) as Alert[]);
+    setCleaningZones((zonesRes.data || []) as CleaningZone[]);
+    setCleaningTasks((tasksRes.data || []) as CleaningTask[]);
+    setCleaningLogs((logsRes.data || []) as CleaningLog[]);
     setLoading(false);
   }, []);
 
@@ -124,24 +139,26 @@ export default function RegistrePage() {
           <select
             value={selectedHotelId || ''}
             onChange={e => setSelectedHotelId(e.target.value)}
-            className="border rounded-md px-3 py-2 text-sm bg-background"
+            className="border rounded-md px-3 h-11 text-sm bg-background"
           >
             {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
           </select>
         )}
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPeriod(p => subMonths(p, 1))}>
-            <ChevronLeft className="w-4 h-4" />
+          <Button variant="outline" onClick={() => setPeriod(p => subMonths(p, 1))} aria-label="Mois précédent" className="h-11 w-11 p-0">
+            <ChevronLeft className="w-5 h-5" />
           </Button>
           <span className="font-medium min-w-[140px] text-center capitalize">
             {format(period, 'MMMM yyyy', { locale: fr })}
           </span>
           <Button
-            variant="outline" size="sm"
+            variant="outline"
             disabled={isCurrentOrFutureMonth}
             onClick={() => setPeriod(p => addMonths(p, 1))}
+            aria-label="Mois suivant"
+            className="h-11 w-11 p-0"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-5 h-5" />
           </Button>
         </div>
       </div>
@@ -179,12 +196,15 @@ export default function RegistrePage() {
                   alerts={alerts}
                   periodStart={period}
                   periodEnd={periodEnd}
+                  cleaningZones={cleaningZones}
+                  cleaningTasks={cleaningTasks}
+                  cleaningLogs={cleaningLogs}
                 />
               }
               fileName={`registre-haccp-${slug(selectedHotel.nom)}-${format(period, 'yyyy-MM')}.pdf`}
             >
               {({ loading: pdfLoading }) => (
-                <Button disabled={pdfLoading}>
+                <Button disabled={pdfLoading} className="h-11 px-5 text-base">
                   {pdfLoading
                     ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Génération du PDF…</>
                     : <><FileDown className="w-4 h-4 mr-2" /> Télécharger le registre PDF</>}
