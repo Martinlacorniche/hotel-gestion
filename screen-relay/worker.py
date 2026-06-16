@@ -27,7 +27,9 @@ import sys
 import time
 import io
 import requests
-from requests.exceptions import ConnectionError as ReqConnError, Timeout as ReqTimeout
+from requests.exceptions import (
+    ConnectionError as ReqConnError, Timeout as ReqTimeout, InvalidHeader,
+)
 from datetime import datetime, timezone
 from PIL import Image, ImageDraw, ImageFont
 
@@ -172,12 +174,17 @@ def render(text):
 def screen_push(jpeg_bytes):
     """Upload l'image puis demande son affichage. Lève une exception si échec."""
     base = f"http://{SCREEN_IP}"
-    up = requests.post(
-        f"{base}/doUpload?dir={IMAGE_DIR}",
-        files={"file": (FILENAME, jpeg_bytes, "image/jpeg")},
-        timeout=20,
-    )
-    up.raise_for_status()
+    try:
+        requests.post(
+            f"{base}/doUpload?dir={IMAGE_DIR}",
+            files={"file": (FILENAME, jpeg_bytes, "image/jpeg")},
+            timeout=20,
+        )
+    except InvalidHeader:
+        # Le firmware ESP8266 renvoie une réponse non conforme (double
+        # Content-Length) APRÈS avoir reçu l'image. requests lève, mais
+        # l'upload a bien eu lieu. Le GET /set ci-dessous valide (répond "OK").
+        pass
     show = requests.get(f"{base}/set?img={IMAGE_DIR}{FILENAME}", timeout=15)
     show.raise_for_status()
     if show.text.strip() != "OK":
