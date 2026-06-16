@@ -164,8 +164,12 @@ export default function ClimPage() {
   }
 
   function addFiles(files: FileList | null) {
-    if (!files) return;
-    setNewFiles(prev => [...prev, ...Array.from(files)]);
+    if (!files || files.length === 0) return;
+    // Snapshot synchrone : l'input fait `value = ''` juste après l'appel, ce qui
+    // vide e.target.files. Si on laissait Array.from(files) dans l'updater (lazy),
+    // il s'exécuterait après le reset et renverrait [] → aucune photo ajoutée.
+    const picked = Array.from(files);
+    setNewFiles(prev => [...prev, ...picked]);
   }
 
   async function uploadNewFiles(): Promise<string[]> {
