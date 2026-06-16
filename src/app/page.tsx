@@ -52,7 +52,7 @@ const TOOLS: ToolDef[] = [
   { id: "maintenance", label: "Maintenance",  href: (id) => `/maintenance?hotel_id=${id}`, icon: Wrench,       bg: "bg-yellow-50",  text: "text-yellow-700" },
   { id: "chromecast",  label: "Chromecasts",  href: "/chromecast",                         icon: Tv2,          bg: "bg-slate-100",  text: "text-slate-700",  condition: "corniche" },
   { id: "haccp",       label: "HACCP",        href: "/haccp",                              icon: Thermometer,  bg: "bg-rose-50",    text: "text-rose-700" },
-  { id: "wifi-admin",  label: "Interface WiFi", href: (id: string) => `/wifi-admin?hotel_id=${id}`, icon: Wifi, bg: "bg-sky-50", text: "text-sky-700" },
+  { id: "wifi-admin",  label: "Wifi Client", href: (id: string) => `/wifi-admin?hotel_id=${id}`, icon: Wifi, bg: "bg-sky-50", text: "text-sky-700" },
   { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
   { id: "clim",        label: "Clim",          href: "/clim",                               icon: Wind,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "voiles" },
   { id: "ecran",       label: "Écran",         href: "/ecran",                              icon: Monitor,      bg: "bg-slate-100",  text: "text-slate-700",  condition: "superadmin" },
