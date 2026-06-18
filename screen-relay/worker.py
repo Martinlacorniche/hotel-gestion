@@ -27,8 +27,19 @@ import sys
 import time
 import io
 import requests
+import urllib3
 from requests.exceptions import (
     ConnectionError as ReqConnError, Timeout as ReqTimeout, InvalidHeader,
+    ChunkedEncodingError,
+)
+
+# L'ESP8266 (firmware GeekMagic) renvoie une réponse HTTP non conforme
+# (double Content-Length) APRÈS avoir reçu/traité la requête : la requête a
+# réussi, seul le *parsing* de la réponse échoue. Selon le chemin urllib3, ça
+# se manifeste par l'une de ces exceptions — toutes bénignes ici.
+MALFORMED_RESPONSE = (
+    InvalidHeader, urllib3.exceptions.InvalidHeader, ChunkedEncodingError,
+    urllib3.exceptions.ProtocolError,
 )
 from datetime import datetime, timezone
 from PIL import Image, ImageDraw, ImageFont
@@ -180,12 +191,17 @@ def screen_push(jpeg_bytes):
             files={"file": (FILENAME, jpeg_bytes, "image/jpeg")},
             timeout=20,
         )
-    except InvalidHeader:
-        # Le firmware ESP8266 renvoie une réponse non conforme (double
-        # Content-Length) APRÈS avoir reçu l'image. requests lève, mais
-        # l'upload a bien eu lieu. Le GET /set ci-dessous valide (répond "OK").
+    except MALFORMED_RESPONSE:
+        # Réponse non conforme APRÈS réception de l'image : l'upload a bien eu
+        # lieu, on continue. (Une vraie coupure réseau lève ReqConnError/Timeout,
+        # qui n'est PAS rattrapée ici -> le message reste en file et sera réessayé.)
         pass
-    show = requests.get(f"{base}/set?img={IMAGE_DIR}{FILENAME}", timeout=15)
+    try:
+        show = requests.get(f"{base}/set?img={IMAGE_DIR}{FILENAME}", timeout=15)
+    except MALFORMED_RESPONSE:
+        # Même tolérance sur l'affichage : la requête est partie, l'écran a reçu
+        # l'ordre ; seule la réponse est illisible. On considère que c'est affiché.
+        return
     show.raise_for_status()
     if show.text.strip() != "OK":
         raise RuntimeError(f"l'écran a refusé l'affichage : {show.text.strip()!r}")
