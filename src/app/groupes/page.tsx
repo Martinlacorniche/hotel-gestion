@@ -20,9 +20,11 @@ import { fr } from 'date-fns/locale';
 const BUCKET = 'groupe-images';
 
 // Domaine du site public (Site-BW) où vit la page invité /groupe/[code].
-// Même domaine que la page WiFi (hotel-corniche.com/wifi). Surchargeable via env.
+// hotel-corniche.com fait une redirection Cloudflare qui jette le chemin → on
+// cible le domaine Netlify qui sert réellement la page. Surchargeable via env
+// (repasser à hotel-corniche.com quand il sera un vrai domaine custom Netlify).
 const SITE_BW_BASE =
-  process.env.NEXT_PUBLIC_SITE_BW_URL || 'https://hotel-corniche.com';
+  process.env.NEXT_PUBLIC_SITE_BW_URL || 'https://sitehtbm.netlify.app';
 
 // ----------------------------------------------------------------------------
 // Types
