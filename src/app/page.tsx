@@ -16,7 +16,7 @@ import {
   ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
   NotebookText, ShoppingCart, KeyRound, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
-  Wrench, Tv2, Wifi, Package, Star, Thermometer, Wind, Monitor, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP + clim + écran
+  Wrench, Tv2, Wifi, Package, Star, Thermometer, Wind, Monitor, Users, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP + clim + écran + groupes
   MessageCircle, Send, // Conversation consignes
   Euro, // Caisse
   X // Chambres libérées
@@ -56,6 +56,7 @@ const TOOLS: ToolDef[] = [
   { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
   { id: "clim",        label: "Clim",          href: "/clim",                               icon: Wind,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "voiles" },
   { id: "ecran",       label: "Écran",         href: "/ecran",                              icon: Monitor,      bg: "bg-slate-100",  text: "text-slate-700",  condition: "superadmin" },
+  { id: "groupes",     label: "Groupes",       href: "/groupes",                            icon: Users,        bg: "bg-rose-50",    text: "text-rose-700" },
 ];
 
 // --- TYPES & UTILITAIRES ---

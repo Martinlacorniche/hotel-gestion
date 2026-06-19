@@ -12,7 +12,7 @@ import {
   Search, PlusCircle, Clock,
   Edit2, Trash2, Layout, XCircle, CalendarDays, ChevronDown,
   MessageSquareText, Wallet, Check,
-  FileText, Copy, ScrollText
+  FileText, Copy, ScrollText, Users
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +44,7 @@ interface Lead {
   hotel_id?: string;
   besoin_gaetan?: 'Pas besoin' | 'À valider' | 'Validé' | 'Pas dispo';
   source?: string;
+  groupe_id?: string | null;
 }
 
 // Montant de référence d'un lead : le total devis s'il existe (réalité chiffrée),
@@ -268,8 +269,12 @@ export default function CommercialDashboard() {
     document.title = `Commercial${suffix}`;
   }, [selectedHotelId, hotels]);
 
+  // Modal dédié aux dossiers "groupe" (mariages)
+  const [groupeLead, setGroupeLead] = useState<Lead | null>(null);
+
   // --- MODAL ---
   const openLeadModal = async (lead?: Partial<Lead>, defaultDate?: string, defaultRoomName?: string) => {
+    if (lead && (lead as Lead).groupe_id) { setGroupeLead(lead as Lead); return; } // dossier groupe → modal dédié
     if (lead && lead.id) {
       setCurrentLead(lead);
       const { data } = await supabase.from('seminar_reservations').select('*').eq('lead_id', lead.id);
@@ -614,6 +619,13 @@ export default function CommercialDashboard() {
                 {tab === 'pipeline' ? 'Suivi Commercial' : tab === 'planning' ? 'Planning Salles' : 'Offres & Tarifs'}
               </button>
             ))}
+            <a
+              href="/groupes"
+              className="ml-auto mb-2 inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide px-3 h-8 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+              title="Blocs de chambres pour mariages & groupes"
+            >
+              Groupes & mariages →
+            </a>
           </div>
         </div>
 
@@ -949,7 +961,7 @@ export default function CommercialDashboard() {
                         const budget = lead.budget_estime || 0;
                         const paye = lead.montant_paye || 0;
                         const reste = Math.max(0, budget - paye);
-                        const accentColor = isLate ? '#e53935' : '#e67e00';
+                        const accentColor = lead.groupe_id ? '#6366f1' : (isLate ? '#e53935' : '#e67e00');
                         return (
                           <div key={lead.id} onClick={() => openLeadModal(lead)}
                             className="group relative nt-card rounded-2xl transition-all duration-200 cursor-pointer"
@@ -959,6 +971,9 @@ export default function CommercialDashboard() {
                               <div className="flex items-start justify-between gap-2 mb-1">
                                 <p className="font-black text-[14px] leading-snug tracking-tight text-gray-900">{lead.nom_client}</p>
                                 <div className="flex items-center gap-1.5 shrink-0">
+                                  {lead.groupe_id && (
+                                    <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-200">👥 GROUPE</span>
+                                  )}
                                   {lead.source === 'Site web' && (
                                     <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md bg-blue-50 text-blue-500 border border-blue-100">🌐 Web</span>
                                   )}
@@ -1087,7 +1102,7 @@ export default function CommercialDashboard() {
 
                           <div onClick={() => openLeadModal(lead)}
                            className="group relative nt-card rounded-2xl transition-all duration-200 cursor-pointer"
-                            style={{borderLeft: `3px solid ${NT_STATUS_COLOR[lead.statut]}`}}
+                            style={{borderLeft: `3px solid ${lead.groupe_id ? '#6366f1' : NT_STATUS_COLOR[lead.statut]}`}}
                           >
                             <div className="pl-4 pr-4 pt-4 pb-3.5 flex gap-4 items-start">
 
@@ -1118,6 +1133,9 @@ export default function CommercialDashboard() {
                                 <div className="flex items-start gap-2 mb-0.5">
                                   <p className="font-black text-[14px] leading-snug tracking-tight flex-1 min-w-0 truncate text-gray-900">{lead.nom_client}</p>
                                   <div className="flex items-center gap-1.5 shrink-0">
+                                    {lead.groupe_id && (
+                                      <span className="dm text-[9px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-200">👥 GROUPE</span>
+                                    )}
                                     {lead.source === 'Site web' && (
                                       <span className="dm text-[9px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-500 border border-blue-100">🌐 Web</span>
                                     )}
@@ -1465,6 +1483,39 @@ export default function CommercialDashboard() {
                 <button onClick={handleSave} disabled={isSaving} className="px-8 h-10 rounded-xl text-sm font-black bg-gray-900 text-white hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                   {isSaving ? 'Enregistrement…' : 'Enregistrer'}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal dédié GROUPE */}
+        {groupeLead && (
+          <div className="fixed inset-0 flex items-center justify-center z-[100] p-4 sm:p-6" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }} onClick={e => { if (e.target === e.currentTarget) setGroupeLead(null); }}>
+            <div className="w-full max-w-md rounded-2xl overflow-hidden bg-white">
+              <div className="p-5 border-b border-gray-100 flex items-start justify-between gap-3" style={{ background: '#eef2ff' }}>
+                <div>
+                  <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700">👥 GROUPE</span>
+                  <h2 className="text-base font-black tracking-tight text-gray-900 mt-2">{groupeLead.titre_demande || groupeLead.nom_client}</h2>
+                  {groupeLead.date_evenement && (
+                    <p className="dm text-[11px] text-gray-500 mt-1">
+                      {format(parseISO(groupeLead.date_evenement), 'dd MMM yyyy', { locale: fr })}
+                      {groupeLead.date_fin_evenement && groupeLead.date_fin_evenement !== groupeLead.date_evenement ? ` → ${format(parseISO(groupeLead.date_fin_evenement), 'dd MMM yyyy', { locale: fr })}` : ''}
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => setGroupeLead(null)} className="text-gray-400 hover:text-gray-700 shrink-0"><XCircle className="w-5 h-5" /></button>
+              </div>
+              <div className="p-5 space-y-3">
+                {groupeLead.nom_client && <div className="text-sm"><span className="text-gray-400 text-xs">Contact</span><div className="font-semibold text-gray-800">{groupeLead.nom_client}</div></div>}
+                {groupeLead.email && <a href={`mailto:${groupeLead.email}`} className="block text-sm text-indigo-600">{groupeLead.email}</a>}
+                <p className="text-xs text-gray-400">Le détail des chambres, des invités et le suivi PMS se gèrent dans l’app Groupes.</p>
+                <div className="grid grid-cols-1 gap-2 pt-1">
+                  <button onClick={() => window.open(`/groupes?g=${groupeLead.groupe_id}`, '_blank')} className="h-11 rounded-xl text-sm font-black text-white inline-flex items-center justify-center gap-2" style={{ background: '#6366f1' }}><Users className="w-4 h-4" /> Ouvrir la gestion du groupe</button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => window.open(`/devis?leadId=${groupeLead.id}`, '_blank')} className="h-10 rounded-xl text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center justify-center gap-1.5"><FileText className="w-4 h-4" /> Devis</button>
+                    <button onClick={() => window.open(`/fiche?leadId=${groupeLead.id}`, '_blank')} className="h-10 rounded-xl text-sm font-bold bg-violet-50 text-violet-700 border border-violet-200 inline-flex items-center justify-center gap-1.5"><ScrollText className="w-4 h-4" /> Fiche</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
