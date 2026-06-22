@@ -30,6 +30,7 @@ type CaisseShift = {
   user_name: string | null;
   pms_tpe: number; pms_especes: number; pms_ancv: number; pms_virement: number;
   reel_tpe: number; reel_especes: number; reel_ancv: number; reel_virement: number;
+  pms_consigne: number; reel_consigne: number | null;
   commentaire: string | null;
   fond_compte_fin: number | null;
   valide: boolean;
@@ -72,6 +73,7 @@ const emptyShift = (hotel_id: string, date_jour: string, shift_type: ShiftType):
   user_id: null, user_name: null,
   pms_tpe: 0, pms_especes: 0, pms_ancv: 0, pms_virement: 0,
   reel_tpe: 0, reel_especes: 0, reel_ancv: 0, reel_virement: 0,
+  pms_consigne: 0, reel_consigne: null,
   commentaire: "", fond_compte_fin: null, valide: false,
   signature_data: null, signed_by_user_id: null, signed_by_name: null, signed_at: null,
 });
@@ -98,6 +100,8 @@ function CaissePageInner() {
   const [hotelName, setHotelName] = useState<string>("");
   const [hotels, setHotels] = useState<{ id: string; nom: string }[]>([]);
   const [dateJour, setDateJour] = useState<string>(dfFormat(new Date(), "yyyy-MM-dd"));
+  // Encaissé Stripe NET du jour (réglés − remboursés), figé à l'ouverture de la page.
+  const [stripeDayNet, setStripeDayNet] = useState<number>(0);
 
   const [fondCible, setFondCible] = useState<number>(0);
   const [fondCibleDraft, setFondCibleDraft] = useState<number>(0);
@@ -237,6 +241,24 @@ function CaissePageInner() {
     })();
   }, [hotelId, dateJour]);
 
+  // --- Encaissé Stripe NET du jour (réglés − remboursés), snapshot à l'ouverture ---
+  useEffect(() => {
+    if (!hotelId || !dateJour) { setStripeDayNet(0); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("payments")
+        .select("amount, status, paid_at, refunded_at")
+        .eq("hotel_id", hotelId)
+        .in("status", ["paid", "refunded"]);
+      let net = 0;
+      (data || []).forEach((p: any) => {
+        if (p.paid_at && String(p.paid_at).slice(0, 10) === dateJour) net += Number(p.amount) || 0;
+        if (p.status === "refunded" && p.refunded_at && String(p.refunded_at).slice(0, 10) === dateJour) net -= Number(p.amount) || 0;
+      });
+      setStripeDayNet(round2(net));
+    })();
+  }, [hotelId, dateJour]);
+
   // --- Helpers ---
   const switchHotel = (newId: string) => {
     if (!newId || newId === hotelId) return;
@@ -258,17 +280,22 @@ function CaissePageInner() {
 
   // --- Computed totals per shift ---
   const totalsFor = (sh: CaisseShift) => {
-    const totalPmsBrut = sh.pms_tpe + sh.pms_especes + sh.pms_ancv + sh.pms_virement;
-    const totalReelBrut = sh.reel_tpe + sh.reel_especes + sh.reel_ancv + sh.reel_virement;
+    // € consigne : figé si shift validé, sinon net Stripe du jour en direct.
+    const consigneReel = sh.valide && sh.reel_consigne != null ? sh.reel_consigne : stripeDayNet;
+    const consignePms = sh.pms_consigne || 0;
+    const totalPmsBrut = sh.pms_tpe + sh.pms_especes + sh.pms_ancv + sh.pms_virement + consignePms;
+    const totalReelBrut = sh.reel_tpe + sh.reel_especes + sh.reel_ancv + sh.reel_virement + consigneReel;
     const ecartTpe = round2(sh.reel_tpe - sh.pms_tpe);
     const ecartEsp = round2(sh.reel_especes - sh.pms_especes);
     const ecartAncv = round2(sh.reel_ancv - sh.pms_ancv);
     const ecartVir = round2(sh.reel_virement - sh.pms_virement);
+    const ecartConsigne = round2(consigneReel - consignePms);
     const ecartTotal = round2(totalReelBrut - totalPmsBrut);
     return {
       totalPmsBrut: round2(totalPmsBrut),
       totalReelBrut: round2(totalReelBrut),
-      ecartTpe, ecartEsp, ecartAncv, ecartVir, ecartTotal,
+      consigneReel: round2(consigneReel),
+      ecartTpe, ecartEsp, ecartAncv, ecartVir, ecartConsigne, ecartTotal,
     };
   };
 
@@ -292,14 +319,15 @@ function CaissePageInner() {
   const dayTotals = useMemo(() => {
     const sum = (k: keyof CaisseShift) =>
       (shifts.matin[k] as number || 0) + (shifts.soir[k] as number || 0) + (shifts.cloture[k] as number || 0);
-    const totalReel = sum("reel_tpe") + sum("reel_especes") + sum("reel_ancv") + sum("reel_virement");
-    const totalPms = sum("pms_tpe") + sum("pms_especes") + sum("pms_ancv") + sum("pms_virement");
+    // Stripe = encaissement du jour, compté UNE SEULE FOIS (pas par shift).
+    const totalReel = sum("reel_tpe") + sum("reel_especes") + sum("reel_ancv") + sum("reel_virement") + stripeDayNet;
+    const totalPms = sum("pms_tpe") + sum("pms_especes") + sum("pms_ancv") + sum("pms_virement") + sum("pms_consigne");
     return {
       totalReel: round2(totalReel),
       totalPms: round2(totalPms),
       ecart: round2(totalReel - totalPms),
     };
-  }, [shifts]);
+  }, [shifts, stripeDayNet]);
 
   // --- Save shift ---
   // signature = dataURL PNG fourni par la modale au moment de la validation.
@@ -319,6 +347,9 @@ function CaissePageInner() {
       user_name: sh.user_name || meName,
       pms_tpe: sh.pms_tpe, pms_especes: sh.pms_especes, pms_ancv: sh.pms_ancv, pms_virement: sh.pms_virement,
       reel_tpe: sh.reel_tpe, reel_especes: sh.reel_especes, reel_ancv: sh.reel_ancv, reel_virement: sh.reel_virement,
+      pms_consigne: sh.pms_consigne,
+      // € consigne : figé au net Stripe du moment à la validation (sinon vit en direct)
+      reel_consigne: valide ? stripeDayNet : sh.reel_consigne,
       commentaire: sh.commentaire,
       // À la validation, on fige le fond compté = total comptage live
       fond_compte_fin: valide ? comptageTotals.totalCompte : sh.fond_compte_fin,
@@ -855,6 +886,26 @@ function CaissePageInner() {
                           </div>
                         );
                       })}
+                      {/* € consigne (encaissé Stripe / site consignes) — Réel auto, PMS à saisir */}
+                      {(() => {
+                        const okC = Math.abs(t.ecartConsigne) < 0.01;
+                        return (
+                          <div className="enc-row enc-grid items-center py-1 group">
+                            <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700 whitespace-nowrap">
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                              € consigne
+                            </span>
+                            <input
+                              type="number" step="0.01" inputMode="decimal" disabled={locked}
+                              value={sh.pms_consigne ?? 0}
+                              onChange={(e) => updateShift(sType, { pms_consigne: num(Number(e.target.value)) })}
+                              className="enc-input h-7 w-full text-right text-[13px] font-medium tabular-nums px-2 rounded-md outline-none transition border bg-slate-50 border-transparent group-hover:bg-white group-hover:border-slate-200 focus:bg-white focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 disabled:bg-transparent disabled:text-slate-500 disabled:border-transparent"
+                            />
+                            <span className="h-7 flex items-center justify-end text-right text-[13px] font-semibold tabular-nums px-2 text-indigo-600" title="Encaissé Stripe du jour — auto">{fmtEur(t.consigneReel)}</span>
+                            <span className={`ec-text text-[12px] font-medium tabular-nums text-right ${okC ? "text-slate-300" : t.ecartConsigne > 0 ? "text-emerald-700" : "text-rose-700"}`}>{okC ? "—" : fmtEur(t.ecartConsigne)}</span>
+                          </div>
+                        );
+                      })()}
                       {/* Total row */}
                       <div className="enc-row enc-grid items-center pt-2 mt-1 border-t border-slate-100 text-[12px] font-semibold">
                         <span className="text-slate-900">Total</span>

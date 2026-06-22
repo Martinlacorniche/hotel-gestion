@@ -16,7 +16,7 @@ import {
   ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
   NotebookText, ShoppingCart, KeyRound, Settings, LogOut,
   Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
-  Wrench, Tv2, Wifi, Package, Star, Thermometer, Wind, Monitor, Users, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP + clim + écran + groupes
+  Wrench, Tv2, Wifi, Package, Star, Thermometer, Wind, Monitor, CreditCard, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP + clim + écran + encaissement
   MessageCircle, Send, // Conversation consignes
   Euro, // Caisse
   X // Chambres libérées
@@ -38,7 +38,7 @@ import {
 
 // --- OUTILS / MENU ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolDef = { id: string; label: string; href: string | ((id: string) => string); icon: any; bg: string; text: string; condition?: "parking" | "coworking" | "corniche" | "voiles" | "superadmin" };
+type ToolDef = { id: string; label: string; href: string | ((id: string) => string); icon: any; bg: string; text: string; condition?: "parking" | "coworking" | "corniche" | "voiles" | "superadmin" | "admin" };
 
 const TOOLS: ToolDef[] = [
   { id: "planning",    label: "Planning",     href: "/planning",                           icon: CalendarDays, bg: "bg-indigo-50",  text: "text-indigo-600" },
@@ -56,7 +56,8 @@ const TOOLS: ToolDef[] = [
   { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
   { id: "clim",        label: "Clim",          href: "/clim",                               icon: Wind,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "voiles" },
   { id: "ecran",       label: "Écran",         href: "/ecran",                              icon: Monitor,      bg: "bg-slate-100",  text: "text-slate-700",  condition: "superadmin" },
-  { id: "groupes",     label: "Groupes",       href: "/groupes",                            icon: Users,        bg: "bg-rose-50",    text: "text-rose-700" },
+  { id: "encaissement", label: "Encaissement", href: "/encaissement",                       icon: CreditCard,   bg: "bg-emerald-50", text: "text-emerald-700", condition: "admin" },
+  // « Groupes & mariages » n'a plus de tuile : accès uniquement via la page Commercial.
 ];
 
 // --- TYPES & UTILITAIRES ---
@@ -1139,6 +1140,7 @@ const birthdayMessage = useMemo(() => {
                if (t.condition === "corniche" && !isCorniche) return null;
                if (t.condition === "voiles" && !isVoiles) return null;
                if (t.condition === "superadmin" && !isSuperadmin) return null;
+               if (t.condition === "admin" && !isAdmin) return null;
                const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;
                return (
                  <a key={t.id} href={href} target="_blank" title={t.label}
@@ -1168,6 +1170,7 @@ const birthdayMessage = useMemo(() => {
                     if (t.condition === "corniche")  return isCorniche;
                     if (t.condition === "voiles")    return isVoiles;
                     if (t.condition === "superadmin") return isSuperadmin;
+                    if (t.condition === "admin")     return isAdmin;
                     return true;
                   }).map(t => {
                     const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;

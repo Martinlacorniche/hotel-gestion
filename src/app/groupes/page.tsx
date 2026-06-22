@@ -6,12 +6,11 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, Plus, Trash2, Loader2, ArrowLeft, Pencil, X, Check, Copy, Link2,
   BedDouble, ImagePlus, Eye, EyeOff, Building2, CalendarDays, Hash, ExternalLink,
-  ChevronRight, Mail, Phone,
+  Mail, Phone,
 } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -87,6 +86,7 @@ interface Groupe {
   date_limite: string;
   conditions_annulation: string | null;
   plan_visible: boolean;
+  paiement_obligatoire?: boolean;
   cover_image_url: string | null;
   message_accueil: string | null;
   contact_nom: string | null;
@@ -146,9 +146,23 @@ export default function GroupesPage() {
   const [chambres, setChambres] = useState<Chambre[]>([]);
   const [groupes, setGroupes] = useState<Groupe[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('groupes');
 
   const isSuperadmin = user?.role === 'superadmin';
+  const isAdmin = isSuperadmin || user?.role === 'admin';
+
+  // Mode d'affichage piloté par l'URL :
+  //   ?g=<id>      → gestion d'un groupe (deep-link depuis Commercial)
+  //   ?new=<lead>  → création d'un bloc rattaché à un dossier commercial
+  //   (rien)       → paramétrage « Chambres & types » (admins uniquement)
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [newLeadId, setNewLeadId] = useState<string | null>(null);
+  const [urlReady, setUrlReady] = useState(false);
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    setDetailId(sp.get('g'));
+    setNewLeadId(sp.get('new'));
+    setUrlReady(true);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -194,41 +208,32 @@ export default function GroupesPage() {
   }
   if (!user) return <div className="p-8 text-center text-slate-500">Authentification requise.</div>;
 
+  const configMode = !detailId && !newLeadId;
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="p-4 md:p-6 max-w-6xl mx-auto">
         <header className="mb-6 flex items-center gap-3">
-          <Link href="/" className="text-slate-400 hover:text-slate-700 transition">
+          <Link href={configMode ? '/' : '/commercial'} className="text-slate-400 hover:text-slate-700 transition">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-rose-100 text-rose-700">
             <Users className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold text-slate-800">Groupes</h1>
-            <p className="text-sm text-slate-500">Blocs de chambres pour mariages &amp; groupes — inscription en ligne</p>
+            <h1 className="text-2xl font-semibold text-slate-800">Groupes &amp; mariages</h1>
+            <p className="text-sm text-slate-500">
+              {configMode
+                ? 'Paramétrage des chambres & types par hôtel'
+                : 'Bloc de chambres — inscription en ligne'}
+            </p>
           </div>
         </header>
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="mb-4">
-            <TabsTrigger value="groupes">Groupes</TabsTrigger>
-            <TabsTrigger value="chambres">Chambres &amp; types</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="groupes">
-            <GroupesTab
-              hotels={hotels}
-              roomTypes={roomTypes}
-              chambres={chambres}
-              groupes={groupes}
-              loading={loading}
-              hotelName={hotelName}
-              onChanged={loadAll}
-            />
-          </TabsContent>
-
-          <TabsContent value="chambres">
+        {!urlReady || (loading && !configMode) ? (
+          <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+        ) : configMode ? (
+          isAdmin ? (
             <ChambresTab
               hotels={hotels}
               roomTypes={roomTypes}
@@ -236,8 +241,24 @@ export default function GroupesPage() {
               user={user}
               onChanged={loadAll}
             />
-          </TabsContent>
-        </Tabs>
+          ) : (
+            <Card><CardContent className="p-8 text-center text-slate-500 text-sm">
+              Le paramétrage des chambres est réservé aux administrateurs.<br />
+              Les groupes se gèrent depuis la page <a href="/commercial" className="text-rose-600 underline">Commercial</a>.
+            </CardContent></Card>
+          )
+        ) : (
+          <GroupesTab
+            hotels={hotels}
+            roomTypes={roomTypes}
+            chambres={chambres}
+            groupes={groupes}
+            initialDetailId={detailId}
+            newLeadId={newLeadId}
+            hotelName={hotelName}
+            onChanged={loadAll}
+          />
+        )}
       </div>
     </div>
   );
@@ -247,27 +268,22 @@ export default function GroupesPage() {
 // Onglet GROUPES — liste + création / édition (allotement par chambre précise)
 // ============================================================================
 function GroupesTab({
-  hotels, roomTypes, chambres, groupes, loading, hotelName, onChanged,
+  hotels, roomTypes, chambres, groupes, initialDetailId, newLeadId, hotelName, onChanged,
 }: {
   hotels: Hotel[];
   roomTypes: RoomType[];
   chambres: Chambre[];
   groupes: Groupe[];
-  loading: boolean;
+  initialDetailId: string | null;
+  newLeadId: string | null;
   hotelName: (id: string) => string;
   onChanged: () => Promise<void>;
 }) {
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(!!newLeadId);
   const [editing, setEditing] = useState<Groupe | null>(null);
   const [saving, setSaving] = useState(false);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(initialDetailId);
   const formRef = useRef<HTMLDivElement>(null);
-
-  // Deep-link depuis Commercial : /groupes?g=<groupe_id> ouvre directement la gestion
-  useEffect(() => {
-    const g = new URLSearchParams(window.location.search).get('g');
-    if (g) setDetailId(g);
-  }, []);
 
   const [nom, setNom] = useState('');
   const [dateArrivee, setDateArrivee] = useState('');
@@ -275,6 +291,7 @@ function GroupesTab({
   const [dateLimite, setDateLimite] = useState('');
   const [conditions, setConditions] = useState('');
   const [planVisible, setPlanVisible] = useState(true);
+  const [paiementObligatoire, setPaiementObligatoire] = useState(false);
   const [messageAccueil, setMessageAccueil] = useState('');
   const [contactNom, setContactNom] = useState('');
   const [contactEmail, setContactEmail] = useState('');
@@ -287,6 +304,27 @@ function GroupesTab({
   const [tarifByType, setTarifByType] = useState<Record<string, string>>({});
   const coverInputRef = useRef<HTMLInputElement>(null);
 
+  // Création depuis un dossier commercial : /groupes?new=<leadId> ouvre le
+  // formulaire pré-rempli avec les infos du dossier (nom, contact, dates).
+  useEffect(() => {
+    if (!newLeadId) return;
+    (async () => {
+      const { data } = await supabase
+        .from('suivi_commercial')
+        .select('nom_client, titre_demande, email, date_evenement, date_fin_evenement')
+        .eq('id', newLeadId)
+        .single();
+      if (data) {
+        setNom(data.titre_demande || data.nom_client || '');
+        setContactNom(data.nom_client || '');
+        setContactEmail(data.email || '');
+        if (data.date_evenement) setDateArrivee(data.date_evenement);
+        if (data.date_fin_evenement) setDateDepart(data.date_fin_evenement);
+      }
+      setShowForm(true);
+    })();
+  }, [newLeadId]);
+
   const roomTypeName = useCallback(
     (id: string | null) => roomTypes.find(rt => rt.id === id)?.nom || 'Sans type',
     [roomTypes],
@@ -296,17 +334,21 @@ function GroupesTab({
   function resetForm() {
     setEditing(null);
     setNom(''); setDateArrivee(''); setDateDepart(''); setDateLimite('');
-    setConditions(''); setPlanVisible(true); setMessageAccueil('');
+    setConditions(''); setPlanVisible(true); setPaiementObligatoire(false); setMessageAccueil('');
     setContactNom(''); setContactEmail(''); setNotes('');
     setCoverUrl(null); setCoverFile(null);
     setSelected({}); setTarifByType({});
     if (coverInputRef.current) coverInputRef.current.value = '';
   }
 
-  function openNew() {
+  // Fermer le formulaire : en édition → retour au détail du groupe ;
+  // en création (depuis un dossier) → retour au pipeline commercial.
+  function closeForm() {
+    const back = editing?.id ?? null;
+    setShowForm(false);
     resetForm();
-    setShowForm(true);
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    if (back) { setDetailId(back); window.history.replaceState(null, '', `/groupes?g=${back}`); }
+    else window.location.href = '/commercial';
   }
 
   function startEdit(g: Groupe) {
@@ -317,6 +359,7 @@ function GroupesTab({
     setDateLimite(g.date_limite);
     setConditions(g.conditions_annulation || '');
     setPlanVisible(g.plan_visible);
+    setPaiementObligatoire(g.paiement_obligatoire ?? false);
     setMessageAccueil(g.message_accueil || '');
     setContactNom(g.contact_nom || '');
     setContactEmail(g.contact_email || '');
@@ -382,6 +425,7 @@ function GroupesTab({
     const missing = [...usedKeys].filter(k => { const v = tarifByType[k]; return v === undefined || v === '' || isNaN(parseFloat(v)); });
     if (missing.length) return toast.error('Indique un tarif pour chaque catégorie de chambre sélectionnée.');
 
+    const editingId = editing?.id ?? null;
     setSaving(true);
 
     const meta = {
@@ -391,6 +435,7 @@ function GroupesTab({
       date_limite: dateLimite,
       conditions_annulation: conditions.trim() || null,
       plan_visible: planVisible,
+      paiement_obligatoire: paiementObligatoire,
       message_accueil: messageAccueil.trim() || null,
       contact_nom: contactNom.trim() || null,
       contact_email: contactEmail.trim() || null,
@@ -472,18 +517,16 @@ function GroupesTab({
         const { error: chErr } = await supabase.from('groupe_chambres').insert(rows);
         if (chErr) throw chErr;
 
-        // Dossier commercial lié (apparaît dans le pipeline ; permet devis + fiche) — best-effort
+        // Rattachement au dossier commercial d'origine (créé en amont dans le
+        // pipeline ; c'est lui qui porte devis + fiche de fonction).
         const primaryHotelId = rows[0]?.hotel_id || null;
-        if (primaryHotelId) {
-          const { error: leadErr } = await supabase.from('suivi_commercial').insert([{
-            groupe_id: groupeId, hotel_id: primaryHotelId,
-            nom_client: nom.trim(), titre_demande: contactNom.trim() || 'Groupe',
-            email: contactEmail.trim() || null, statut: 'Confirmé', source: 'Groupe',
+        if (newLeadId) {
+          const { error: leadErr } = await supabase.from('suivi_commercial').update({
+            groupe_id: groupeId,
             date_evenement: dateArrivee, date_fin_evenement: dateDepart,
-            commentaires: 'Bloc de chambres (groupe) — géré dans l’app Groupes.',
-            created_at: new Date().toISOString(),
-          }]);
-          if (leadErr) console.warn('Dossier commercial non créé :', leadErr.message);
+            ...(primaryHotelId ? { hotel_id: primaryHotelId } : {}),
+          }).eq('id', newLeadId);
+          if (leadErr) console.warn('Dossier commercial non lié :', leadErr.message);
         }
         toast.success(`Groupe créé — code ${code}`);
       }
@@ -491,6 +534,9 @@ function GroupesTab({
       setShowForm(false);
       resetForm();
       await onChanged();
+      const targetId = editingId ?? groupeId;
+      setDetailId(targetId);
+      window.history.replaceState(null, '', `/groupes?g=${targetId}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erreur inconnue';
       toast.error('Enregistrement : ' + msg);
@@ -553,32 +599,34 @@ function GroupesTab({
     return (
       <GroupDetail
         group={detailGroup} chambres={chambres} roomTypes={roomTypes} hotelName={hotelName}
-        onBack={() => setDetailId(null)}
+        onBack={() => { window.location.href = '/commercial'; }}
         onEdit={() => { setDetailId(null); startEdit(detailGroup); }}
-        onDelete={async () => { await handleDelete(detailGroup); setDetailId(null); }}
+        onDelete={async () => { await handleDelete(detailGroup); window.location.href = '/commercial'; }}
         onCopyLink={() => copyLink(detailGroup.code_acces)}
         onChanged={onChanged}
       />
     );
   }
+  if (detailId && !detailGroup) {
+    return (
+      <Card><CardContent className="p-8 text-center text-slate-500 text-sm">
+        Groupe introuvable ou accès non autorisé.
+        <div className="mt-3"><a href="/commercial" className="text-rose-600 underline">Retour au commercial</a></div>
+      </CardContent></Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {!showForm && (
-        <div className="flex justify-end">
-          <Button onClick={openNew} className="h-11"><Plus className="w-4 h-4 mr-1" /> Nouveau groupe</Button>
-        </div>
-      )}
-
       {showForm && (
         <div ref={formRef}>
           <Card className={editing ? 'ring-2 ring-rose-300' : ''}>
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-slate-800 flex items-center gap-2">
-                  {editing ? <><Pencil className="w-4 h-4" /> Modifier le groupe</> : <><Plus className="w-4 h-4" /> Nouveau groupe</>}
+                  {editing ? <><Pencil className="w-4 h-4" /> Modifier le groupe</> : <><Plus className="w-4 h-4" /> Nouveau bloc de chambres</>}
                 </h2>
-                <button onClick={() => { setShowForm(false); resetForm(); }} className="text-slate-400 hover:text-slate-700" title="Fermer">
+                <button onClick={closeForm} className="text-slate-400 hover:text-slate-700" title="Fermer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -727,58 +775,25 @@ function GroupesTab({
                   </span>
                 </label>
 
+                <label className="flex items-center gap-2 cursor-pointer select-none rounded-lg border border-slate-200 p-3">
+                  <input type="checkbox" checked={paiementObligatoire} onChange={e => setPaiementObligatoire(e.target.checked)} className="w-5 h-5 accent-rose-600" />
+                  <span className="text-sm font-medium text-slate-700">
+                    Paiement en ligne <strong>obligatoire</strong> pour valider la réservation
+                    <span className="block text-xs font-normal text-slate-400">Sinon : l'invité s'engage à la signature, le paiement reste facultatif.</span>
+                  </span>
+                </label>
+
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={() => { setShowForm(false); resetForm(); }} className="h-11">Annuler</Button>
+                  <Button type="button" variant="outline" onClick={closeForm} className="h-11">Annuler</Button>
                   <Button type="submit" disabled={saving} className="flex-1 h-11">
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" />
                       : editing ? <><Check className="w-4 h-4 mr-1" /> Mettre à jour</>
-                      : <><Plus className="w-4 h-4 mr-1" /> Créer le groupe</>}
+                      : <><Plus className="w-4 h-4 mr-1" /> Créer le bloc</>}
                   </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
-        </div>
-      )}
-
-      {/* Liste des groupes */}
-      {loading ? (
-        <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
-      ) : groupes.length === 0 ? (
-        <Card><CardContent className="p-8 text-center text-slate-400 text-sm">Aucun groupe pour le moment.</CardContent></Card>
-      ) : (
-        <div className="space-y-3">
-          {groupes.map(g => {
-            const total = (g.groupe_chambres || []).length;
-            const reservees = new Set((g.groupe_reservations || []).filter(r => r.statut === 'confirmee').map(r => r.groupe_chambre_id)).size;
-            const todo = (g.groupe_reservations || []).filter(r => (r.statut === 'confirmee' || r.statut === 'annulee') && !r.pms_done).length;
-            const hotelsList = [...new Set((g.groupe_chambres || []).map(c => hotelName(c.hotel_id)))];
-            return (
-              <button key={g.id} onClick={() => setDetailId(g.id)} className="block w-full text-left">
-                <Card className="hover:shadow-md transition">
-                  <CardContent className="p-4 flex items-center gap-3">
-                    {g.cover_image_url
-                      ? <img src={g.cover_image_url} alt="" className="w-14 h-14 rounded-lg object-cover border shrink-0" />
-                      : <div className="w-14 h-14 rounded-lg shrink-0" style={{ background: 'linear-gradient(160deg,#004e7c,#009dc4)' }} />}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold text-slate-800">{g.nom}</h3>
-                        {todo > 0 && (
-                          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-[11px] font-semibold" title="À traiter dans le PMS">{todo}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1 text-xs text-slate-500">
-                        <span className="inline-flex items-center gap-1"><CalendarDays className="w-3 h-3" />{format(new Date(g.date_arrivee), 'dd/MM/yyyy', { locale: fr })} → {format(new Date(g.date_depart), 'dd/MM/yyyy', { locale: fr })}</span>
-                        {hotelsList.map(h => <span key={h} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200"><Building2 className="w-3 h-3" />{h}</span>)}
-                        <span>{reservees}/{total} réservées</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-slate-300 shrink-0" />
-                  </CardContent>
-                </Card>
-              </button>
-            );
-          })}
         </div>
       )}
     </div>
@@ -847,7 +862,7 @@ function GroupDetail({ group, chambres, roomTypes, hotelName, onBack, onEdit, on
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"><ArrowLeft className="w-4 h-4" /> Retour aux groupes</button>
+      <button onClick={onBack} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"><ArrowLeft className="w-4 h-4" /> Retour au commercial</button>
 
       {/* En-tête groupe */}
       <Card>

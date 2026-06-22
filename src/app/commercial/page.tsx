@@ -10,9 +10,9 @@ import { format, isBefore, isToday, parseISO, getYear } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { 
   Search, PlusCircle, Clock,
-  Edit2, Trash2, Layout, XCircle, CalendarDays, ChevronDown,
+  Trash2, Layout, XCircle, CalendarDays, ChevronDown,
   MessageSquareText, Wallet, Check,
-  FileText, Copy, ScrollText, Users
+  FileText, Copy, ScrollText, Users, ChefHat, Pencil, Plus, X, Loader2, CreditCard, Send, ExternalLink
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -96,62 +96,298 @@ const NT_STATUS_COLOR: Record<string, string> = {
   'Refus':        '#ef4444',
 };
 
-const NT_PAYMENT_COLOR: Record<string, string> = {
-  'Attente acompte': '#ff3b30',
-  'Acompte reçu':    '#f59e0b',
-  'RGT/P':           '#ff9f0a',
-  'Soldé':           '#3b82f6',
-  'Facture envoyée': '#8b5cf6',
-  'Finalisé':        '#10b981',
-};
-
 function CommentTooltip({ text }: { text: string }) {
   return (
-    <div className="relative inline-flex ml-auto group/tip" onClick={(e) => e.stopPropagation()}>
-      <MessageSquareText className="w-4 h-4 text-gray-300 hover:text-gray-800 transition-colors cursor-help" />
-      
-      {/* Bulle alignée à droite (right-0) */}
-      <div className="pointer-events-none absolute bottom-full right-0 mb-2.5 w-64 p-3.5 bg-white border border-gray-200 text-gray-700 text-[11px] leading-relaxed rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.08)] opacity-0 group-hover/tip:opacity-100 transition-all duration-200 z-[100] whitespace-pre-wrap">
+    <div className="relative inline-flex shrink-0 group/tip" onClick={(e) => e.stopPropagation()}>
+      <span className="inline-flex items-center justify-center rounded-md p-0.5 bg-amber-100 text-amber-600 border border-amber-200 hover:bg-amber-200 transition-colors cursor-help" title="Notes internes">
+        <MessageSquareText className="w-3 h-3" />
+      </span>
+
+      {/* Bulle alignée à gauche de l'icône */}
+      <div className="pointer-events-none absolute bottom-full left-0 mb-2.5 w-64 p-3.5 bg-white border border-gray-200 text-gray-700 text-[11px] leading-relaxed rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.08)] opacity-0 group-hover/tip:opacity-100 transition-all duration-200 z-[100] whitespace-pre-wrap">
         <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2 border-b border-gray-100 pb-1.5">
           Notes internes
         </div>
         {text}
-        
-        {/* Flèche vers le bas décalée sur la droite */}
-        <div className="absolute -bottom-[6px] right-2 w-3 h-3 bg-white border-b border-r border-gray-200 rotate-45" />
+
+        {/* Flèche vers le bas décalée sur la gauche */}
+        <div className="absolute -bottom-[6px] left-2 w-3 h-3 bg-white border-b border-r border-gray-200 rotate-45" />
       </div>
     </div>
   );
 }
 
-function NtStatusPill({ statut }: { statut: string }) {
-  const color = NT_STATUS_COLOR[statut] || '#888';
+const NT_STATUSES = ['Nouveau', 'Devis envoyé', 'Option', 'Confirmé', 'Refus'];
+
+const GAETAN_COLOR: Record<string, string> = {
+  'Pas besoin': '#94a3b8',
+  'À valider':  '#f59e0b',
+  'Validé':     '#10b981',
+  'Pas dispo':  '#ef4444',
+};
+// Libellés sans ambiguïté pour Gaétan (le chef), pour ne pas confondre avec le statut du dossier.
+const GAETAN_LABEL: Record<string, string> = {
+  'Pas besoin': 'Chef ?',
+  'À valider':  'Chef à valider',
+  'Validé':     'Chef OK',
+  'Pas dispo':  'Chef indispo',
+};
+
+// Pastille-menu réutilisable (dropdown custom stylé, pas de <select> natif).
+// Change une valeur en 1 clic ; le menu se ferme via le clic global de la page.
+function PillDropdown({ open, onToggle, onSelect, value, options, color, muted, icon, displayLabel, title }: {
+  open: boolean;
+  onToggle: () => void;
+  onSelect: (v: string) => void;
+  value: string;
+  options: { value: string; label: string; color: string }[];
+  color: string;
+  muted?: boolean;
+  icon?: React.ReactNode;
+  displayLabel: string;
+  title?: string;
+}) {
   return (
-    <span
-      className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg"
-      style={{ color, border: `1px solid ${color}30`, background: `${color}12` }}
-    >
-      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-      {statut}
-    </span>
+    <div className="relative inline-flex shrink-0" onClick={e => e.stopPropagation()} title={title}>
+      <button type="button" onClick={onToggle}
+        className="inline-flex items-center gap-1 cursor-pointer text-[9px] font-black uppercase tracking-wider pl-2 pr-1.5 py-1 rounded-lg outline-none transition-colors"
+        style={{ color: muted ? '#94a3b8' : color, border: `1px solid ${muted ? '#e5e7eb' : color + '33'}`, background: muted ? '#f8fafc' : color + '12' }}>
+        {icon}
+        <span className="truncate max-w-[92px]">{displayLabel}</span>
+        <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-50 min-w-[160px] rounded-xl bg-white border border-gray-200 shadow-[0_12px_40px_rgba(0,0,0,0.16)] p-1">
+          {options.map(o => (
+            <button key={o.value} type="button" onClick={() => onSelect(o.value)}
+              className="w-full text-left px-2.5 py-2 rounded-lg text-[11px] font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors"
+              style={{ color: o.color }}>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: o.color }} />
+              <span className="flex-1">{o.label}</span>
+              {o.value === value && <Check className="w-3 h-3 shrink-0 text-gray-400" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function NtPaymentPill({ etat }: { etat: string }) {
-  const color = NT_PAYMENT_COLOR[etat] || '#888';
+// ============================================================================
+// Onglet OFFRES & TARIFS — éditable par hôtel (admins), table commercial_tarifs
+// ============================================================================
+interface Tarif {
+  id: string;
+  hotel_id: string;
+  section: 'salle' | 'resto';
+  categorie: string;
+  nom: string;
+  detail: string | null;
+  prix: string | null;
+  ordre: number;
+}
+type TarifDraft = { id: string | null; section: 'salle' | 'resto'; categorie: string; nom: string; detail: string; prix: string };
+
+const TARIF_ACCENT: Record<string, string> = {
+  'Salles': '#0ea5e9',
+  'Menus à table': '#1aaa5a',
+  'Cocktails dinatoires': '#3b5bdb',
+  'Self service': '#e67e00',
+};
+const RESTO_CATS = ['Menus à table', 'Cocktails dinatoires', 'Self service'];
+
+const TARIF_DEFAULTS: Omit<TarifDraft, 'id'>[] = [
+  { section: 'salle', categorie: 'Salles', nom: 'Telo Segreto',  detail: '57m² · 30/40 pers.', prix: '239 € / 359 €' },
+  { section: 'salle', categorie: 'Salles', nom: 'Telo Maritimo', detail: '50m² · 30 pers.',    prix: '359 €' },
+  { section: 'salle', categorie: 'Salles', nom: 'Telo Intimo',   detail: '18m² · 5 pers.',     prix: '80 € / 160 €' },
+  { section: 'salle', categorie: 'Salles', nom: 'Patio Tropical', detail: '100m² · 60 pers.',  prix: 'Événementiel' },
+  { section: 'resto', categorie: 'Menus à table', nom: 'Menu Starter',     detail: '2 temps · sans alcool',              prix: '29 €' },
+  { section: 'resto', categorie: 'Menus à table', nom: 'Menu Confort',     detail: '3 temps · sans alcool',              prix: '41 €' },
+  { section: 'resto', categorie: 'Menus à table', nom: 'Menu Privilège',   detail: '3 temps · cocktail signature',       prix: '50 €' },
+  { section: 'resto', categorie: 'Menus à table', nom: 'Menu Privilège++', detail: '3 temps · cocktail · mises en bouche', prix: '55 €' },
+  { section: 'resto', categorie: 'Cocktails dinatoires', nom: 'Cocktail starter',   detail: '5 salés · eaux / café',           prix: '29 €' },
+  { section: 'resto', categorie: 'Cocktails dinatoires', nom: 'Cocktail starter++', detail: '5 salés · cocktail s.a.',         prix: '35 €' },
+  { section: 'resto', categorie: 'Cocktails dinatoires', nom: 'Cocktail confort',   detail: '5 salés · 3 sucrés',              prix: '44 €' },
+  { section: 'resto', categorie: 'Cocktails dinatoires', nom: 'Cocktail privilège', detail: '5 salés · 3 sucrés · animation',  prix: '50 €' },
+  { section: 'resto', categorie: 'Cocktails dinatoires', nom: 'Cocktail prestige',  detail: '5 salés · 13 sucrés · animation', prix: '60 €' },
+  { section: 'resto', categorie: 'Self service', nom: 'Self starter',       detail: '5 salés froids · eaux',         prix: '25 €' },
+  { section: 'resto', categorie: 'Self service', nom: 'Self intermédiaire', detail: '5 salés · 2 sucrés',            prix: '30 €' },
+  { section: 'resto', categorie: 'Self service', nom: 'Self ++',            detail: '5 salés · 2 sucrés · apéritif', prix: '35 €' },
+];
+
+function TarifsTab({ hotelId, isAdmin }: { hotelId: string; isAdmin: boolean }) {
+  const [rows, setRows] = useState<Tarif[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<TarifDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    if (!hotelId) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('commercial_tarifs').select('*')
+      .eq('hotel_id', hotelId)
+      .order('ordre');
+    if (error) toast.error(error.message);
+    setRows((data || []) as Tarif[]);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [hotelId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = async () => {
+    if (!editing) return;
+    if (!editing.nom.trim()) { toast.error('Indique un nom.'); return; }
+    setSaving(true);
+    const payload = { nom: editing.nom.trim(), detail: editing.detail.trim() || null, prix: editing.prix.trim() || null };
+    if (editing.id) {
+      const { error } = await supabase.from('commercial_tarifs').update(payload).eq('id', editing.id);
+      if (error) { toast.error(error.message); setSaving(false); return; }
+    } else {
+      const ordre = rows.filter(r => r.section === editing.section && r.categorie === editing.categorie).length;
+      const { error } = await supabase.from('commercial_tarifs').insert({
+        hotel_id: hotelId, section: editing.section, categorie: editing.categorie, ...payload, ordre,
+      });
+      if (error) { toast.error(error.message); setSaving(false); return; }
+    }
+    setSaving(false); setEditing(null); await load();
+  };
+
+  const remove = async (r: Tarif) => {
+    const ok = await confirmDialog(`Supprimer « ${r.nom} » ?`);
+    if (!ok) return;
+    const { error } = await supabase.from('commercial_tarifs').delete().eq('id', r.id);
+    if (error) { toast.error(error.message); return; }
+    await load();
+  };
+
+  const seedDefaults = async () => {
+    const toInsert = TARIF_DEFAULTS.map((d, i) => ({ hotel_id: hotelId, section: d.section, categorie: d.categorie, nom: d.nom, detail: d.detail, prix: d.prix, ordre: i }));
+    const { error } = await supabase.from('commercial_tarifs').insert(toInsert);
+    if (error) { toast.error(error.message); return; }
+    toast.success('Tarifs par défaut importés — à toi de les ajuster');
+    await load();
+  };
+
+  const editForm = (accent: string) => (
+    <div className="bg-white border-2 rounded-2xl p-3 space-y-2" style={{ borderColor: accent }}>
+      <input autoFocus value={editing!.nom} onChange={e => setEditing({ ...editing!, nom: e.target.value })}
+        placeholder="Nom" className="nt-input w-full h-9 rounded-lg px-3 text-sm font-bold border outline-none" />
+      <input value={editing!.detail} onChange={e => setEditing({ ...editing!, detail: e.target.value })}
+        placeholder="Détail (ex. 57m² · 30 pers.)" className="nt-input w-full h-9 rounded-lg px-3 text-sm border outline-none" />
+      <input value={editing!.prix} onChange={e => setEditing({ ...editing!, prix: e.target.value })}
+        placeholder="Prix (ex. 239 € / 359 €)" className="nt-input w-full h-9 rounded-lg px-3 text-sm border outline-none" />
+      <div className="flex gap-2 justify-end pt-0.5">
+        <button onClick={() => setEditing(null)} className="px-3 h-8 rounded-lg text-xs font-black text-gray-500 bg-gray-100 hover:bg-gray-200 transition">Annuler</button>
+        <button onClick={save} disabled={saving} className="px-4 h-8 rounded-lg text-xs font-black text-white bg-[var(--brand)] hover:bg-[var(--brand-hover)] transition disabled:opacity-50 inline-flex items-center gap-1">
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Enregistrer
+        </button>
+      </div>
+    </div>
+  );
+
+  const adminCtl = (r: Tarif) => isAdmin && (
+    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <button onClick={() => setEditing({ id: r.id, section: r.section, categorie: r.categorie, nom: r.nom, detail: r.detail || '', prix: r.prix || '' })}
+        className="p-1 rounded-md bg-white border border-gray-200 text-gray-400 hover:text-[var(--brand)] shadow-sm" title="Modifier"><Pencil className="w-3.5 h-3.5" /></button>
+      <button onClick={() => remove(r)}
+        className="p-1 rounded-md bg-white border border-gray-200 text-gray-400 hover:text-red-500 shadow-sm" title="Supprimer"><X className="w-3.5 h-3.5" /></button>
+    </div>
+  );
+
+  const addBtn = (section: 'salle' | 'resto', categorie: string) => isAdmin && (
+    <button onClick={() => setEditing({ id: null, section, categorie, nom: '', detail: '', prix: '' })}
+      className="w-full rounded-xl border border-dashed border-gray-300 text-gray-400 hover:border-[var(--brand)] hover:text-[var(--brand)] transition py-2.5 text-xs font-black inline-flex items-center justify-center gap-1">
+      <Plus className="w-3.5 h-3.5" /> Ajouter
+    </button>
+  );
+
+  if (loading) return <div className="py-20 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>;
+
+  const salles = rows.filter(r => r.section === 'salle');
+  const empty = rows.length === 0;
+
   return (
-    <span
-      className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg"
-      style={{ color, border: `1px solid ${color}30`, background: `${color}12` }}
-    >
-      {etat}
-    </span>
+    <div className="space-y-8">
+      {empty && (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center">
+          <p className="text-sm text-gray-500 mb-3">Aucun tarif renseigné pour cet hôtel.</p>
+          {isAdmin
+            ? <button onClick={seedDefaults} className="px-4 h-9 rounded-xl text-xs font-black text-white bg-[var(--brand)] hover:bg-[var(--brand-hover)] transition inline-flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Importer les tarifs par défaut</button>
+            : <p className="text-xs text-gray-400">Un administrateur doit renseigner les tarifs.</p>}
+        </div>
+      )}
+
+      {/* Location Salles */}
+      <section>
+        <h2 className="text-[9px] font-black uppercase tracking-[0.25em] mb-5 flex items-center gap-3 text-gray-400">
+          <CalendarDays className="w-4 h-4" /> Location Salles TTC
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {salles.map(r => (
+            editing && editing.id === r.id
+              ? <div key={r.id}>{editForm(TARIF_ACCENT['Salles'])}</div>
+              : <div key={r.id} className="group relative bg-white border border-gray-200 rounded-2xl p-4 hover:shadow-sm transition">
+                  <div className="font-black text-sm mb-1 text-gray-900 pr-12">{r.nom}</div>
+                  <div className="text-[10px] mb-3 text-gray-400">{r.detail}</div>
+                  <div className="font-bold text-sm" style={{ color: TARIF_ACCENT['Salles'] }}>{r.prix}</div>
+                  {adminCtl(r)}
+                </div>
+          ))}
+          {editing && editing.id === null && editing.section === 'salle' && <div>{editForm(TARIF_ACCENT['Salles'])}</div>}
+        </div>
+        {!(editing && editing.section === 'salle') && <div className="mt-3 max-w-xs">{addBtn('salle', 'Salles')}</div>}
+      </section>
+
+      {/* Restauration */}
+      <section>
+        <h2 className="text-[9px] font-black uppercase tracking-[0.25em] mb-5 flex items-center gap-3 text-gray-400">
+          <MessageSquareText className="w-4 h-4" /> Restauration TTC — With Gaétan
+        </h2>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {RESTO_CATS.map(cat => {
+            const accent = TARIF_ACCENT[cat];
+            const items = rows.filter(r => r.section === 'resto' && r.categorie === cat);
+            return (
+              <div key={cat} className="space-y-2">
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] mb-3 px-1 text-gray-400">{cat}</p>
+                {items.map(r => (
+                  editing && editing.id === r.id
+                    ? <div key={r.id}>{editForm(accent)}</div>
+                    : <div key={r.id} className="group relative bg-white border border-gray-200 rounded-xl p-3 flex justify-between items-center hover:shadow-sm transition" style={{ borderLeft: `3px solid ${accent}66` }}>
+                        <div className="overflow-hidden mr-3">
+                          <div className="text-sm font-black truncate text-gray-900">{r.nom}</div>
+                          <div className="text-[10px] truncate text-gray-400">{r.detail}</div>
+                        </div>
+                        <div className="font-bold text-sm whitespace-nowrap" style={{ color: accent }}>{r.prix}</div>
+                        {adminCtl(r)}
+                      </div>
+                ))}
+                {editing && editing.id === null && editing.section === 'resto' && editing.categorie === cat && <div>{editForm(accent)}</div>}
+                {!(editing && editing.section === 'resto' && editing.categorie === cat) && addBtn('resto', cat)}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Dispositions & Capacités (image statique) */}
+      <section className="bg-white border border-gray-200 p-6 rounded-2xl">
+        <h2 className="text-[9px] font-black uppercase tracking-[0.25em] mb-4 flex items-center gap-3 text-gray-400">
+          <Layout className="w-4 h-4" /> Dispositions & Capacités
+        </h2>
+        <div className="overflow-hidden rounded-xl border border-gray-100">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/disposition.png" alt="Capacités" className="w-full h-auto object-cover" />
+        </div>
+      </section>
+    </div>
   );
 }
 
 // --- COMPOSANT PRINCIPAL ---
 export default function CommercialDashboard() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'superadmin' || user?.role === 'admin';
 
   // États
   const [hotels, setHotels] = useState<Hotel[]>([]);
@@ -159,6 +395,8 @@ export default function CommercialDashboard() {
   const [activeTab, setActiveTab] = useState<'pipeline' | 'tarifs' | 'planning'>('pipeline');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  // Dropdown custom ouvert (clé `st-<id>` ou `ga-<id>`), null = aucun.
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -272,6 +510,45 @@ export default function CommercialDashboard() {
   // Modal dédié aux dossiers "groupe" (mariages)
   const [groupeLead, setGroupeLead] = useState<Lead | null>(null);
 
+  // Lien de paiement rattaché à un dossier (modale dédiée)
+  const [payFor, setPayFor] = useState<Lead | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payEmail, setPayEmail] = useState('');
+  const [payDesc, setPayDesc] = useState('');
+  const [paySending, setPaySending] = useState(false);
+  const [payLink, setPayLink] = useState<string | null>(null);
+
+  const sendPaymentLink = async () => {
+    if (!payFor) return;
+    const amt = parseFloat(payAmount.replace(',', '.'));
+    if (!amt || amt <= 0) { toast.error('Indique un montant.'); return; }
+    const mail = payEmail.trim();
+    setPaySending(true);
+    setPayLink(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/paiements/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
+        body: JSON.stringify({
+          hotelId: selectedHotelId, amount: amt, description: payDesc.trim(),
+          email: mail, clientNom: payFor.nom_client || '',
+          leadId: payFor.id, sendEmail: !!mail,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Erreur');
+      setPayLink(json.url);
+      if (mail && json.emailed) toast.success('Demande de paiement envoyée par email');
+      else if (mail && !json.emailed) toast.error('Lien créé, mais email NON envoyé : ' + (json.emailError || 'raison inconnue'), { duration: 8000 });
+      else toast.success('Lien de paiement créé');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erreur');
+    } finally {
+      setPaySending(false);
+    }
+  };
+
   // --- MODAL ---
   const openLeadModal = async (lead?: Partial<Lead>, defaultDate?: string, defaultRoomName?: string) => {
     if (lead && (lead as Lead).groupe_id) { setGroupeLead(lead as Lead); return; } // dossier groupe → modal dédié
@@ -332,6 +609,13 @@ export default function CommercialDashboard() {
     await supabase.from('suivi_commercial').update({ besoin_gaetan: value, ...trace }).eq('id', id);
   };
 
+  // Changement d'étape depuis la pastille de statut (mise à jour optimiste).
+  const handleStatusChange = async (id: string, value: string) => {
+    const trace = getUpdateTrace();
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, statut: value as Lead['statut'], ...trace } : l));
+    await supabase.from('suivi_commercial').update({ statut: value, ...trace }).eq('id', id);
+  };
+
   const handleSave = async () => {
     if (isSaving) return;
     if (!currentLead.nom_client || !currentLead.titre_demande) { toast.error('Nom et Titre obligatoires'); return; }
@@ -375,6 +659,7 @@ export default function CommercialDashboard() {
     setShowModal(false);
     fetchLeads();
     fetchPlanning();
+    return leadId; // permet d'enchaîner sur la création d'un bloc de chambres
   };
 
   const handleDelete = async (id: string) => {
@@ -454,7 +739,7 @@ export default function CommercialDashboard() {
   };
 
   const handleGlobalClick = () => {
-    // plus de dropdowns inline
+    setOpenDropdown(null);
   };
 
   // --- COMPUTED ---
@@ -521,20 +806,12 @@ export default function CommercialDashboard() {
       return 0;
     });
 
-  // Prochains événements pour l'Agenda
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const upcomingLeads = leads
-    .filter(l => l.date_evenement && new Date(l.date_evenement) >= today && l.statut !== 'Refus')
-    .sort((a, b) => new Date(a.date_evenement!).getTime() - new Date(b.date_evenement!).getTime())
-    .slice(0, 7);
-
   // --- RENDER ---
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
-        .dm { font-family: 'Share Tech Mono', 'Courier New', monospace; letter-spacing: 0.02em; }
+        /* .dm : ancienne police mono « Notion » neutralisée — on hérite de la police de l'app (charte). */
+        .dm { font-family: inherit; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; }
         .nt-card { background: #ffffff; border: 1px solid #ececec; }
         .nt-card:hover { border-color: #d0d0d0; box-shadow: 0 4px 24px rgba(0,0,0,0.06); }
         .nt-input { background: #f7f7f7 !important; border-color: #e8e8e8 !important; color: #111 !important; }
@@ -574,13 +851,13 @@ export default function CommercialDashboard() {
                 {stats.lateCount > 0 && (
                   <div>
                     <p className="text-[9px] font-black uppercase tracking-[0.2em] mb-1" style={{color: '#aaa'}}>En retard</p>
-                    <p className="dm text-4xl font-bold leading-none accent-red">{String(stats.lateCount).padStart(2,'0')}</p>
+                    <p className="text-4xl font-black leading-none accent-red">{String(stats.lateCount).padStart(2,'0')}</p>
                   </div>
                 )}
                 {stats.todayCount > 0 && (
                   <div>
                     <p className="text-[9px] font-black uppercase tracking-[0.2em] mb-1" style={{color: '#aaa'}}>Aujourd'hui</p>
-                    <p className="dm text-4xl font-bold leading-none accent-amber">{String(stats.todayCount).padStart(2,'0')}</p>
+                    <p className="text-4xl font-black leading-none accent-amber">{String(stats.todayCount).padStart(2,'0')}</p>
                   </div>
                 )}
 
@@ -590,15 +867,15 @@ export default function CommercialDashboard() {
 
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-[0.2em] mb-1" style={{color: '#aaa'}}>Pipeline</p>
-                  <p className="dm text-2xl font-bold leading-none" style={{color: '#555'}}>{stats.pipeline.toLocaleString()}<span className="text-base ml-1" style={{color: '#bbb'}}>€</span></p>
+                  <p className="text-2xl font-black leading-none" style={{color: '#555'}}>{stats.pipeline.toLocaleString()}<span className="text-base ml-1" style={{color: '#bbb'}}>€</span></p>
                 </div>
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-[0.2em] mb-1" style={{color: '#aaa'}}>Gagné</p>
-                  <p className="dm text-2xl font-bold leading-none accent-green">+{stats.won.toLocaleString()}<span className="text-base ml-1" style={{color: '#1aaa5a80'}}>€</span></p>
+                  <p className="text-2xl font-black leading-none accent-green">+{stats.won.toLocaleString()}<span className="text-base ml-1" style={{color: '#1aaa5a80'}}>€</span></p>
                 </div>
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-[0.2em] mb-1" style={{color: '#aaa'}}>Perdu</p>
-                  <p className="dm text-2xl font-bold leading-none" style={{color: '#e5393580'}}>−{stats.lost.toLocaleString()}<span className="text-base ml-1" style={{color: '#e5393540'}}>€</span></p>
+                  <p className="text-2xl font-black leading-none" style={{color: '#e5393580'}}>−{stats.lost.toLocaleString()}<span className="text-base ml-1" style={{color: '#e5393540'}}>€</span></p>
                 </div>
               </div>
             )}
@@ -612,20 +889,22 @@ export default function CommercialDashboard() {
                 onClick={() => setActiveTab(tab as any)}
                 className="pb-3 pr-8 text-sm font-black transition-all whitespace-nowrap border-b-2 -mb-px tracking-wide"
                 style={{
-                  color: activeTab === tab ? '#111' : '#bbb',
-                  borderBottomColor: activeTab === tab ? '#111' : 'transparent',
+                  color: activeTab === tab ? 'var(--brand)' : '#bbb',
+                  borderBottomColor: activeTab === tab ? 'var(--brand)' : 'transparent',
                 }}
               >
                 {tab === 'pipeline' ? 'Suivi Commercial' : tab === 'planning' ? 'Planning Salles' : 'Offres & Tarifs'}
               </button>
             ))}
-            <a
-              href="/groupes"
-              className="ml-auto mb-2 inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide px-3 h-8 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
-              title="Blocs de chambres pour mariages & groupes"
-            >
-              Groupes & mariages →
-            </a>
+            {isAdmin && (
+              <a
+                href="/groupes"
+                className="ml-auto mb-2 inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide px-3 h-8 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+                title="Paramétrage des chambres & types pour les blocs (groupes & mariages)"
+              >
+                Chambres & types →
+              </a>
+            )}
           </div>
         </div>
 
@@ -745,7 +1024,6 @@ export default function CommercialDashboard() {
                           </div>
                           {eventsWithRows.map(({l,si,ei,clL,clR,row})=>{
                             const st = getPStyle(l.statut);
-                            const multiDay = (l.date_fin_evenement || l.date_evenement) !== l.date_evenement;
                             return (
                               <div key={l.id}
                                 onClick={()=>openLeadModal(l)}
@@ -755,19 +1033,16 @@ export default function CommercialDashboard() {
                                   position:'relative',
                                   zIndex:2,
                                   margin:`4px ${clR?0:4}px 4px ${clL?0:4}px`,
-                                  background:st.bg,
-                                  border:`1.5px solid ${st.border}`,
-                                  borderLeft: clL ? 'none' : `1.5px solid ${st.border}`,
-                                  borderRight: clR ? 'none' : `1.5px solid ${st.border}`,
-                                  color:st.color,
-                                  borderRadius:`${clL?3:10}px ${clR?3:10}px ${clR?3:10}px ${clL?3:10}px`,
+                                  background:st.badge,
+                                  color:'#fff',
+                                  borderRadius:`${clL?3:9}px ${clR?3:9}px ${clR?3:9}px ${clL?3:9}px`,
                                   cursor:'pointer',
                                 }}
-                                className="p-2 text-[10px] font-bold leading-tight transition-all hover:opacity-75">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:st.badge}} />
+                                className="flex flex-col items-center justify-center text-center px-2.5 py-1.5 text-[10px] font-bold leading-tight transition-all hover:brightness-110 shadow-sm">
+                                <div className="flex items-center justify-center gap-1.5 w-full">
+                                  {clL && <span className="text-[9px] opacity-70 shrink-0">←</span>}
                                   <span className="font-black truncate">{l.nom_client}</span>
-                                  {multiDay && !clR && <span className="ml-auto text-[8px] opacity-40">→ {(l.date_fin_evenement||'').substring(8)}</span>}
+                                  {clR && <span className="text-[9px] opacity-70 shrink-0">→</span>}
                                 </div>
                               </div>
                             );
@@ -837,8 +1112,6 @@ export default function CommercialDashboard() {
                             });
                             return <>
                               {eventsWithRows.map(({res,si,ei,clL,clR,row})=>{
-                                const endDate = res.end_date ?? res.start_date;
-                                const multiDay = res.start_date !== endDate;
                                 const st = getPStyle(res.display_status);
                                 return (
                                   <div key={res.reservation_id}
@@ -849,26 +1122,22 @@ export default function CommercialDashboard() {
                                       position:'relative',
                                       zIndex:2,
                                       margin:`5px ${clR?0:4}px 5px ${clL?0:4}px`,
-                                      background:st.bg,
-                                      border:`1.5px solid ${st.border}`,
-                                      borderLeft: clL ? 'none' : `1.5px solid ${st.border}`,
-                                      borderRight: clR ? 'none' : `1.5px solid ${st.border}`,
-                                      color:st.color,
-                                      borderRadius:`${clL?3:10}px ${clR?3:10}px ${clR?3:10}px ${clL?3:10}px`,
+                                      background:st.badge,
+                                      color:'#fff',
+                                      borderRadius:`${clL?3:9}px ${clR?3:9}px ${clR?3:9}px ${clL?3:9}px`,
                                       cursor:'pointer',
                                     }}
-                                    className="p-2 text-[10px] font-bold leading-tight transition-all hover:opacity-75">
-                                    <div className="flex items-center gap-1.5 mb-0.5">
-                                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:st.badge}} />
-                                      <span className="text-[8px] font-black uppercase tracking-widest opacity-60">{res.display_status}</span>
-                                      {clL && <span className="text-[8px] opacity-40 ml-0.5">←</span>}
-                                      {multiDay && !clR && <span className="ml-auto text-[8px] opacity-40">→ {endDate.substring(8)}</span>}
-                                      {clR && <span className="ml-auto text-[8px] opacity-40">→</span>}
-                                    </div>
-                                    <div className="font-black truncate">{res.nom_client}</div>
-                                    <div className="truncate opacity-50 italic text-[9px]">{res.titre_demande||'—'}</div>
+                                    className="flex flex-col items-center justify-center text-center px-2.5 py-1.5 text-[10px] font-bold leading-tight transition-all hover:brightness-110 shadow-sm">
+                                    {(clL || clR) && (
+                                      <div className="flex items-center justify-center gap-1.5 mb-0.5 opacity-80">
+                                        {clL && <span className="text-[9px]">←</span>}
+                                        {clR && <span className="text-[9px]">→</span>}
+                                      </div>
+                                    )}
+                                    <div className="font-black truncate w-full">{res.nom_client}</div>
+                                    <div className="truncate w-full opacity-80 italic text-[9px]">{res.titre_demande||'—'}</div>
                                     {(res.start_time||res.end_time) && (
-                                      <div className="dm text-[9px] mt-1 opacity-60">{res.start_time?.substring(0,5)} – {res.end_time?.substring(0,5)}</div>
+                                      <div className="text-[9px] mt-1 opacity-80 font-semibold">{res.start_time?.substring(0,5)} – {res.end_time?.substring(0,5)}</div>
                                     )}
                                   </div>
                                 );
@@ -911,7 +1180,7 @@ export default function CommercialDashboard() {
                   <button key={st} onClick={(e) => { e.stopPropagation(); setFilterStatut(st); }}
                     className="px-3.5 py-1.5 rounded-lg text-[11px] font-black transition-all whitespace-nowrap tracking-wide"
                     style={{
-                      background: filterStatut === st ? (st === 'Débiteurs' ? '#e53935' : '#111') : 'transparent',
+                      background: filterStatut === st ? (st === 'Débiteurs' ? '#e53935' : 'var(--brand)') : 'transparent',
                       color: filterStatut === st ? '#fff' : '#999',
                     }}
                   >
@@ -925,8 +1194,7 @@ export default function CommercialDashboard() {
                   <input placeholder="Rechercher..." className="nt-input pl-9 text-sm h-9 w-52 rounded-xl outline-none border" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
                 <button onClick={(e) => { e.stopPropagation(); openLeadModal(); }}
-                  className="flex items-center gap-1.5 px-5 h-9 rounded-xl text-xs font-black tracking-wide transition-all hover:bg-gray-800"
-                  style={{background: '#111', color: '#fff'}}>
+                  className="flex items-center gap-1.5 px-5 h-9 rounded-xl text-xs font-black tracking-wide transition-all text-white bg-[var(--brand)] hover:bg-[var(--brand-hover)]">
                   <PlusCircle className="h-3.5 w-3.5" /> Nouveau
                 </button>
               </div>
@@ -934,310 +1202,186 @@ export default function CommercialDashboard() {
 
             {loading ? (
               <div className="text-center py-24 dm text-[11px] tracking-[0.4em] uppercase text-gray-300">Chargement…</div>
-            ) : (
-              <div className="grid pb-24" style={{gridTemplateColumns: '5fr 7fr', gap: '1.5rem', alignItems: 'start'}}>
+            ) : (() => {
+              const sp = searchTerm.toLowerCase();
+              const matchSearch = (l: Lead) =>
+                l.nom_client.toLowerCase().includes(sp) ||
+                l.titre_demande.toLowerCase().includes(sp) ||
+                (!!l.email && l.email.toLowerCase().includes(sp));
 
-                {/* ══ GAUCHE — À TRAITER ══ */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-baseline justify-between mb-4">
-                    <div className="flex items-baseline gap-2">
+              // date | client+objet | Gaétan | relance | étape | montant | actions
+              const GRID = '44px minmax(0,1fr) 122px 104px 134px 110px 152px';
+
+              const renderRow = (lead: Lead) => {
+                const rs = getRelanceStatus(lead.date_relance, lead.statut, lead.etat_paiement);
+                const isUrgent = rs === 'late' || rs === 'today';
+                const montant = effectiveAmount(lead);
+                const reste = Math.max(0, montant - (lead.montant_paye || 0));
+                const isDebtor = reste > 0 && lead.statut === 'Confirmé';
+                const accent = lead.groupe_id ? '#6366f1' : (NT_STATUS_COLOR[lead.statut] || '#888');
+                const stColor = NT_STATUS_COLOR[lead.statut] || '#888';
+                const gv = lead.besoin_gaetan || 'Pas besoin';
+                const gMuted = gv === 'Pas besoin';
+                const gPill = gv === 'Pas besoin' ? 'Chef' : gv === 'Pas dispo' ? 'Indispo' : gv;
+                return (
+                  <div key={lead.id} onClick={() => openLeadModal(lead)}
+                    className="group grid items-center gap-x-3 cursor-pointer border-b border-gray-200 hover:bg-gray-50/70 transition-colors"
+                    style={{ gridTemplateColumns: GRID, borderLeft: `3px solid ${accent}` }}>
+
+                    {/* Date */}
+                    <div className="flex flex-col items-center justify-center text-center py-2.5 pl-2">
+                      {lead.date_evenement ? (
+                        <>
+                          <span className="dm text-[8px] font-bold uppercase tracking-widest text-gray-400 leading-none">{format(parseISO(lead.date_evenement), 'MMM', { locale: fr })}</span>
+                          <span className="dm font-bold leading-none" style={{ fontSize: '19px', color: '#111' }}>{format(parseISO(lead.date_evenement), 'dd')}</span>
+                          <span className="dm text-[8px] font-bold text-gray-300 leading-none">{format(parseISO(lead.date_evenement), 'yy')}</span>
+                        </>
+                      ) : <span className="dm text-base text-gray-200">—</span>}
+                    </div>
+
+                    {/* Client + objet */}
+                    <div className="min-w-0 py-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-black text-[13.5px] tracking-tight text-gray-900 truncate">{lead.nom_client}</span>
+                        {lead.groupe_id && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-200 shrink-0">👥</span>}
+                        {lead.source === 'Site web' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 border border-blue-100 shrink-0">🌐</span>}
+                        {lead.commentaires?.trim() && <CommentTooltip text={lead.commentaires} />}
+                      </div>
+                      <p className="text-[11px] text-gray-400 truncate mt-0.5">{lead.titre_demande}</p>
+                    </div>
+
+                    {/* Gaétan (chef) */}
+                    <div className="flex justify-start">
+                      <PillDropdown
+                        open={openDropdown === `ga-${lead.id}`}
+                        onToggle={() => setOpenDropdown(openDropdown === `ga-${lead.id}` ? null : `ga-${lead.id}`)}
+                        onSelect={(v) => { setOpenDropdown(null); handleGaetanChange(lead.id, v); }}
+                        value={gv}
+                        options={['Pas besoin', 'À valider', 'Validé', 'Pas dispo'].map(s => ({ value: s, label: GAETAN_LABEL[s], color: GAETAN_COLOR[s] }))}
+                        color={GAETAN_COLOR[gv]}
+                        muted={gMuted}
+                        displayLabel={gPill}
+                        title="Besoin du chef Gaétan"
+                        icon={<ChefHat className="w-3 h-3 shrink-0" />}
+                      />
+                    </div>
+
+                    {/* Relance */}
+                    <div className="min-w-0">
+                      {lead.date_relance && (
+                        <span className="dm text-[10px] font-bold inline-flex items-center gap-1 whitespace-nowrap"
+                          style={{ color: isUrgent ? (rs === 'late' ? '#e53935' : '#e67e00') : '#94a3b8' }}>
+                          <Clock className="w-3 h-3 shrink-0" /> {format(parseISO(lead.date_relance), 'dd MMM', { locale: fr }).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Étape */}
+                    <div className="flex justify-start">
+                      <PillDropdown
+                        open={openDropdown === `st-${lead.id}`}
+                        onToggle={() => setOpenDropdown(openDropdown === `st-${lead.id}` ? null : `st-${lead.id}`)}
+                        onSelect={(v) => { setOpenDropdown(null); handleStatusChange(lead.id, v); }}
+                        value={lead.statut}
+                        options={NT_STATUSES.map(s => ({ value: s, label: s, color: NT_STATUS_COLOR[s] || '#888' }))}
+                        color={stColor}
+                        displayLabel={lead.statut}
+                        title="Changer l'étape"
+                        icon={<span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: stColor }} />}
+                      />
+                    </div>
+
+                    {/* Montant + solde */}
+                    <div className="text-right">
+                      <div className="dm text-[13px] font-bold text-gray-800 tabular-nums whitespace-nowrap">{montant > 0 ? `${montant.toLocaleString()} €` : '—'}</div>
+                      {isDebtor && <div className="dm text-[10px] font-bold whitespace-nowrap" style={{ color: '#e53935' }} title="Solde dû">− {reste.toLocaleString()} €</div>}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-end gap-1 pr-2">
+                      <button onClick={e => { e.stopPropagation(); window.open(`/devis?leadId=${lead.id}`, '_blank'); }} title="Devis"
+                        className="px-2 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-600 hover:text-white transition-all">Devis</button>
+                      <button onClick={e => { e.stopPropagation(); window.open(`/fiche?leadId=${lead.id}`, '_blank'); }} title="Fiche de fonctions"
+                        className="px-2 py-1 rounded-lg text-[10px] font-black bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-600 hover:text-white transition-all">Fiche</button>
+                      <button onClick={e => { e.stopPropagation(); handleDuplicate(lead); }} title="Dupliquer"
+                        className="p-1 rounded-lg text-slate-300 hover:bg-indigo-50 hover:text-indigo-500 transition-all opacity-0 group-hover:opacity-100"><Copy className="w-3.5 h-3.5" /></button>
+                      <button onClick={e => { e.stopPropagation(); handleDelete(lead.id); }} title="Supprimer"
+                        className="p-1 rounded-lg text-slate-300 hover:bg-red-50 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </div>
+                );
+              };
+
+              const monthSep = (label: string, key: string) => (
+                <div key={key} className="flex items-center gap-3 px-2 pt-5 pb-1.5">
+                  <span className="dm text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">{label}</span>
+                  <div className="flex-1 h-px bg-gray-100" />
+                </div>
+              );
+
+              const renderGrouped = (list: Lead[]) => list.map((lead, i, arr) => {
+                const cm = lead.date_evenement ? format(parseISO(lead.date_evenement), 'MMMM yyyy', { locale: fr }) : null;
+                const pm = i > 0 && arr[i - 1].date_evenement ? format(parseISO(arr[i - 1].date_evenement!), 'MMMM yyyy', { locale: fr }) : null;
+                const showSep = cm && cm !== pm;
+                return (
+                  <div key={lead.id}>
+                    {showSep && monthSep(cm!, 'sep-' + lead.id)}
+                    {renderRow(lead)}
+                  </div>
+                );
+              });
+
+              const emptyBox = (icon: React.ReactNode, label: string, action?: React.ReactNode) => (
+                <div className="flex flex-col items-center justify-center rounded-2xl py-12 gap-3 bg-white border border-dashed border-gray-200">
+                  {icon}
+                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-300">{label}</p>
+                  {action}
+                </div>
+              );
+
+              if (filterStatut === 'Pipeline') {
+                const urgent = urgentLeads.filter(matchSearch);
+                const urgentIds = new Set(urgentLeads.map(l => l.id));
+                const upcoming = sortedLeads.filter(l => !urgentIds.has(l.id));
+                return (
+                  <div className="pb-24 max-w-7xl">
+                    {/* À TRAITER */}
+                    <div className="flex items-baseline gap-2 mb-2.5">
                       <span className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-400">À traiter</span>
-                      {urgentLeads.length > 0 && <span className="dm text-sm font-bold accent-red">{urgentLeads.length}</span>}
+                      {urgent.length > 0
+                        ? <span className="dm text-sm font-bold accent-red">{urgent.length}</span>
+                        : <span className="text-[9px] font-black tracking-wider accent-green ml-1">✓ À jour</span>}
                     </div>
-                    {urgentLeads.length === 0 && <span className="text-[9px] font-black tracking-wider accent-green">✓ À jour</span>}
+                    {urgent.length === 0
+                      ? emptyBox(<Check className="w-5 h-5 text-emerald-400" />, 'Rien à traiter')
+                      : <div className="border-t border-gray-200">{urgent.map(renderRow)}</div>}
+
+                    {/* À VENIR */}
+                    <div className="flex items-baseline justify-between mt-9 mb-2.5">
+                      <span className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-400">À venir</span>
+                      <span className="dm text-[11px] font-bold text-gray-300">{String(upcoming.length).padStart(2, '0')}</span>
+                    </div>
+                    {upcoming.length === 0
+                      ? emptyBox(<PlusCircle className="w-5 h-5 text-gray-300" />, 'Aucun dossier à venir')
+                      : <div className="border-t border-gray-200">{renderGrouped(upcoming)}</div>}
                   </div>
+                );
+              }
 
-                  {urgentLeads.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-2xl py-16 gap-4 bg-white border border-dashed border-gray-200">
-                      <Check className="w-5 h-5 text-emerald-400" />
-                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-300">Rien à traiter</p>
-                    </div>
-                  ) : (
-                    urgentLeads
-                      .filter(l => l.nom_client.toLowerCase().includes(searchTerm.toLowerCase()) || l.titre_demande.toLowerCase().includes(searchTerm.toLowerCase()))
-                      .map(lead => {
-                        const rs = getRelanceStatus(lead.date_relance, lead.statut, lead.etat_paiement);
-                        const isLate = rs === 'late';
-                        const budget = lead.budget_estime || 0;
-                        const paye = lead.montant_paye || 0;
-                        const reste = Math.max(0, budget - paye);
-                        const accentColor = lead.groupe_id ? '#6366f1' : (isLate ? '#e53935' : '#e67e00');
-                        return (
-                          <div key={lead.id} onClick={() => openLeadModal(lead)}
-                            className="group relative nt-card rounded-2xl transition-all duration-200 cursor-pointer"
-                            style={{borderLeft: `3px solid ${accentColor}`}}
-                          >
-                            <div className="pl-4 pr-4 pt-4 pb-3.5">
-                              <div className="flex items-start justify-between gap-2 mb-1">
-                                <p className="font-black text-[14px] leading-snug tracking-tight text-gray-900">{lead.nom_client}</p>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  {lead.groupe_id && (
-                                    <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-200">👥 GROUPE</span>
-                                  )}
-                                  {lead.source === 'Site web' && (
-                                    <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md bg-blue-50 text-blue-500 border border-blue-100">🌐 Web</span>
-                                  )}
-                                  <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md"
-                                    style={{color: accentColor, background: `${accentColor}14`}}>
-                                    {isLate ? 'RETARD' : 'AUJ.'}
-                                  </span>
-                                </div>
-                              </div>
-                              <p className="text-[11px] mb-3 leading-relaxed truncate text-gray-400">{lead.titre_demande}</p>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {lead.date_evenement && (
-                                  <span className="dm text-[10px] font-bold px-2.5 py-1 rounded-lg text-gray-500 bg-gray-50 border border-gray-100">
-                                    {lead.date_fin_evenement && lead.date_fin_evenement !== lead.date_evenement
-                                      ? `${format(parseISO(lead.date_evenement), 'dd MMM', { locale: fr })} → ${format(parseISO(lead.date_fin_evenement), 'dd MMM yy', { locale: fr })}`.toUpperCase()
-                                      : format(parseISO(lead.date_evenement), 'dd MMM yy', { locale: fr }).toUpperCase()
-                                    }
-                                  </span>
-                                )}
-                                <NtStatusPill statut={lead.statut} />
-                                {lead.commentaires?.trim() && <CommentTooltip text={lead.commentaires} />}
-                              </div>
-                              {lead.date_relance && (
-                                <div className="mt-2.5 flex items-center gap-1.5 text-[10px] font-black" style={{color: accentColor}}>
-                                  <Clock className="w-3 h-3 shrink-0" />
-                                  <span className="dm">Relance · {format(parseISO(lead.date_relance), 'dd MMM yy', { locale: fr }).toUpperCase()}</span>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex items-center justify-end gap-1.5 px-4 pb-3 -mt-1">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); window.open(`/devis?leadId=${lead.id}`, '_blank'); }}
-                                className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-600 hover:text-white transition-all"
-                                title="Générer / Voir le devis"
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); window.open(`/fiche?leadId=${lead.id}`, '_blank'); }}
-                                className="p-1.5 rounded-lg bg-violet-50 text-violet-600 border border-violet-100 hover:bg-violet-600 hover:text-white transition-all"
-                                title="Fiche de fonctions"
-                              >
-                                <ScrollText className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDuplicate(lead); }}
-                                className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-500 transition-all"
-                                title="Dupliquer ce dossier"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); openLeadModal(lead); }}
-                                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"
-                                title="Modifier"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-
-                            {/* Hover panel */}
-                            <div className="overflow-hidden max-h-0 group-hover:max-h-24 transition-all duration-300 ease-in-out">
-                              <div className="mx-3 mb-3 px-4 py-3 rounded-xl flex items-center gap-5 flex-wrap bg-gray-50 border border-gray-100">
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-[8px] font-black uppercase tracking-widest text-gray-400">Gaétan</span>
-                                  <select value={lead.besoin_gaetan ?? 'Pas besoin'} onChange={(e) => { e.stopPropagation(); handleGaetanChange(lead.id, e.target.value); }} onClick={(e) => e.stopPropagation()} className="nt-select h-6 rounded-lg px-2 text-[9px] font-bold focus:outline-none cursor-pointer">
-                                    <option>Pas besoin</option><option>À valider</option><option>Validé</option><option>Pas dispo</option>
-                                  </select>
-                                </div>
-                                <div className="w-px h-4 bg-gray-200 shrink-0" />
-                                <div className="flex items-center gap-4">
-                                  {[{l:'Total devis',v:`${budget.toLocaleString()} €`,c:'#555'},{l:'Réglé',v:`${paye.toLocaleString()} €`,c:'#1aaa5a'},{l:'Solde',v:reste>0?`− ${reste.toLocaleString()} €`:'✓ Soldé',c:reste>0?'#e53935':'#1aaa5a'}].map(k=>(
-                                    <div key={k.l}>
-                                      <p className="text-[8px] font-black uppercase tracking-widest mb-0.5 text-gray-400">{k.l}</p>
-                                      <p className="dm text-sm font-bold" style={{color:k.c}}>{k.v}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                                <p className="ml-auto text-[8px] font-medium text-gray-300 hidden lg:block whitespace-nowrap">
-                                  {lead.updated_by ?? '—'} · {format(parseISO(lead.updated_at ?? lead.created_at), 'dd/MM', { locale: fr })}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
-                  )}
-                </div>
-
-                {/* ══ DROITE — DOSSIERS ══ */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-baseline justify-between mb-4">
-                    <span className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-400">
-                      {filterStatut === 'Pipeline' ? 'Agenda' : filterStatut}
-                    </span>
-                    <span className="dm text-[11px] font-bold text-gray-300">{String(sortedLeads.length).padStart(2,'0')}</span>
+              // Vues lookup / archive (Confirmé · Terminées · Débiteurs · Refus · Tous)
+              return (
+                <div className="pb-24 max-w-7xl">
+                  <div className="flex items-baseline justify-between mb-2.5">
+                    <span className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-400">{filterStatut}</span>
+                    <span className="dm text-[11px] font-bold text-gray-300">{String(sortedLeads.length).padStart(2, '0')}</span>
                   </div>
-
-                  {sortedLeads.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-2xl py-16 gap-4 bg-white border border-dashed border-gray-200">
-                      <PlusCircle className="w-5 h-5 text-gray-300" />
-                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-300">Aucun dossier</p>
-                      <button onClick={() => openLeadModal()} className="text-[10px] font-black underline underline-offset-2 text-gray-400 hover:text-gray-900 transition-colors">Créer un dossier</button>
-                    </div>
-                  ) : (
-                    sortedLeads.map((lead, i, arr) => {
-                      const rs = getRelanceStatus(lead.date_relance, lead.statut, lead.etat_paiement);
-                      const isUrgent = rs === 'late' || rs === 'today';
-                      const budget = lead.budget_estime || 0;
-                      const paye = lead.montant_paye || 0;
-                      const reste = Math.max(0, budget - paye);
-                      const currentMonth = lead.date_evenement ? format(parseISO(lead.date_evenement), 'MMMM yyyy', { locale: fr }) : null;
-                      const prevMonth = i > 0 && arr[i-1].date_evenement ? format(parseISO(arr[i-1].date_evenement!), 'MMMM yyyy', { locale: fr }) : null;
-                      const showSep = currentMonth && currentMonth !== prevMonth;
-
-                      return (
-                        <div key={lead.id}>
-                          {showSep && (
-                            <div className="flex items-center gap-4 py-3 px-0.5">
-                              <span className="dm text-[10px] font-bold uppercase tracking-[0.2em] text-gray-300">{currentMonth}</span>
-                              <div className="flex-1 h-px bg-gray-100" />
-                            </div>
-                          )}
-
-                          <div onClick={() => openLeadModal(lead)}
-                           className="group relative nt-card rounded-2xl transition-all duration-200 cursor-pointer"
-                            style={{borderLeft: `3px solid ${lead.groupe_id ? '#6366f1' : NT_STATUS_COLOR[lead.statut]}`}}
-                          >
-                            <div className="pl-4 pr-4 pt-4 pb-3.5 flex gap-4 items-start">
-
-                              {/* Mini cal dot matrix */}
-                              {lead.date_evenement ? (
-                                <div className="flex flex-col items-center shrink-0 min-w-[38px]" style={{gap: '0px'}}>
-                                  <span className="dm text-[8px] font-bold uppercase tracking-widest text-gray-400 leading-none">
-                                    {format(parseISO(lead.date_evenement), 'MMM', { locale: fr })}
-                                  </span>
-                                  <span className="dm font-bold leading-none" style={{fontSize: '26px', color: '#111', letterSpacing: '-0.02em'}}>
-                                    {format(parseISO(lead.date_evenement), 'dd')}
-                                  </span>
-                                  <span className="dm text-[8px] font-bold text-gray-300 leading-none">
-                                    {format(parseISO(lead.date_evenement), 'yyyy')}
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center justify-center shrink-0 min-w-[38px] h-[52px]">
-                                  <span className="dm text-xl font-bold text-gray-200">—</span>
-                                </div>
-                              )}
-
-                              {/* Séparateur */}
-                              <div className="w-px self-stretch mx-1 shrink-0 bg-gray-100" />
-
-                              {/* Contenu */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-start gap-2 mb-0.5">
-                                  <p className="font-black text-[14px] leading-snug tracking-tight flex-1 min-w-0 truncate text-gray-900">{lead.nom_client}</p>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {lead.groupe_id && (
-                                      <span className="dm text-[9px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-200">👥 GROUPE</span>
-                                    )}
-                                    {lead.source === 'Site web' && (
-                                      <span className="dm text-[9px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-500 border border-blue-100">🌐 Web</span>
-                                    )}
-                                    {isUrgent && (
-                                      <span className="dm text-[9px] font-bold px-2 py-0.5 rounded-md"
-                                        style={{color: rs==='late'?'#e53935':'#e67e00', background: rs==='late'?'#e5393514':'#e67e0014'}}>
-                                        {rs === 'late' ? 'RETARD' : 'AUJ.'}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <p className="text-[11px] mb-3 leading-relaxed truncate text-gray-400">{lead.titre_demande}</p>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <NtStatusPill statut={lead.statut} />
-                                  {lead.statut === 'Confirmé' && lead.etat_paiement && <NtPaymentPill etat={lead.etat_paiement} />}
-                                  {lead.commentaires?.trim() && <CommentTooltip text={lead.commentaires} />}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex items-center justify-end gap-1.5 px-4 pb-3 -mt-1">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); window.open(`/devis?leadId=${lead.id}`, '_blank'); }}
-                                className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-600 hover:text-white transition-all"
-                                title="Générer / Voir le devis"
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); window.open(`/fiche?leadId=${lead.id}`, '_blank'); }}
-                                className="p-1.5 rounded-lg bg-violet-50 text-violet-600 border border-violet-100 hover:bg-violet-600 hover:text-white transition-all"
-                                title="Fiche de fonctions"
-                              >
-                                <ScrollText className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDuplicate(lead); }}
-                                className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-500 transition-all"
-                                title="Dupliquer ce dossier"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); openLeadModal(lead); }}
-                                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"
-                                title="Modifier"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDelete(lead.id); }}
-                                className="p-1.5 rounded-lg text-slate-300 hover:bg-red-50 hover:text-red-500 transition-all"
-                                title="Supprimer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-
-                            {/* Hover panel */}
-                            <div className="overflow-hidden max-h-0 group-hover:max-h-24 transition-all duration-300 ease-in-out">
-                              <div className="mx-3 mb-3 px-4 py-3 rounded-xl flex items-center gap-5 flex-wrap bg-gray-50 border border-gray-100">
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-[8px] font-black uppercase tracking-widest text-gray-400">Gaétan</span>
-                                  <select value={lead.besoin_gaetan ?? 'Pas besoin'} onChange={(e) => { e.stopPropagation(); handleGaetanChange(lead.id, e.target.value); }} onClick={(e) => e.stopPropagation()} className="nt-select h-6 rounded-lg px-2 text-[9px] font-bold focus:outline-none cursor-pointer">
-                                    <option>Pas besoin</option><option>À valider</option><option>Validé</option><option>Pas dispo</option>
-                                  </select>
-                                </div>
-                                <div className="w-px h-4 bg-gray-200 shrink-0" />
-                                <div className="flex items-center gap-4">
-                                  {[{l:'Total devis',v:`${budget.toLocaleString()} €`,c:'#555'},{l:'Réglé',v:`${paye.toLocaleString()} €`,c:'#1aaa5a'},{l:'Solde',v:reste>0?`− ${reste.toLocaleString()} €`:'✓ Soldé',c:reste>0?'#e53935':'#1aaa5a'}].map(k=>(
-                                    <div key={k.l}>
-                                      <p className="text-[8px] font-black uppercase tracking-widest mb-0.5 text-gray-400">{k.l}</p>
-                                      <p className="dm text-sm font-bold" style={{color:k.c}}>{k.v}</p>
-                                    </div>
-                                  ))}
-                                  {lead.date_relance && (
-                                    <>
-                                      <div className="w-px h-4 bg-gray-200 shrink-0" />
-                                      <div>
-                                        <p className="text-[8px] font-black uppercase tracking-widest mb-0.5 text-gray-400">Relance</p>
-                                        <p className="dm text-sm font-bold" style={{color: rs==='late'?'#e53935':rs==='today'?'#e67e00':'#555'}}>
-                                          {format(parseISO(lead.date_relance), 'dd MMM yy', { locale: fr }).toUpperCase()}
-                                        </p>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                                <p className="ml-auto text-[8px] font-medium text-gray-300 hidden lg:block whitespace-nowrap">
-                                  {lead.updated_by ?? '—'} · {format(parseISO(lead.updated_at ?? lead.created_at), 'dd/MM', { locale: fr })}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
+                  {sortedLeads.length === 0
+                    ? emptyBox(<PlusCircle className="w-5 h-5 text-gray-300" />, 'Aucun dossier',
+                        <button onClick={() => openLeadModal()} className="text-[10px] font-black underline underline-offset-2 text-gray-400 hover:text-gray-900 transition-colors">Créer un dossier</button>)
+                    : <div className="border-t border-gray-200">{renderGrouped(sortedLeads)}</div>}
                 </div>
-
-              </div>
-            )}
+              );
+            })()}
           </>
         )}
 
@@ -1246,77 +1390,7 @@ export default function CommercialDashboard() {
             3. TARIFS
         ═══════════════════════════════════════ */}
         {activeTab === 'tarifs' && (
-          <div className="space-y-8">
-            <section>
-              <h2 className="text-[9px] font-black uppercase tracking-[0.25em] mb-5 flex items-center gap-3 text-gray-400">
-                <CalendarDays className="w-4 h-4" /> Location Salles TTC
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                {[
-                  { n: 'Telo Segreto',   d: '57m² · 30/40 pers.', p: '239 € / 359 €' },
-                  { n: 'Telo Maritimo',  d: '50m² · 30 pers.',    p: '359 €' },
-                  { n: 'Telo Intimo',    d: '18m² · 5 pers.',     p: '80 € / 160 €' },
-                  { n: 'Patio Tropical', d: '100m² · 60 pers.',   p: 'Événementiel' },
-                ].map(s => (
-                  <div key={s.n} className="nt-card p-4 rounded-2xl">
-                    <div className="font-black text-sm mb-1 text-gray-900">{s.n}</div>
-                    <div className="text-[10px] mb-3 text-gray-400">{s.d}</div>
-                    <div className="dm font-bold text-sm text-gray-500">{s.p}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section>
-              <h2 className="text-[9px] font-black uppercase tracking-[0.25em] mb-5 flex items-center gap-3 text-gray-400">
-                <MessageSquareText className="w-4 h-4" /> Restauration TTC — With Gaétan
-              </h2>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {[
-                  { title: 'Menus à table', accent: '#1aaa5a', items: [
-                    { n: 'Menu Starter',     c: '2 temps · sans alcool',              p: '29 €' },
-                    { n: 'Menu Confort',     c: '3 temps · sans alcool',              p: '41 €' },
-                    { n: 'Menu Privilège',   c: '3 temps · cocktail signature',       p: '50 €' },
-                    { n: 'Menu Privilège++', c: '3 temps · cocktail · mises en bouche', p: '55 €' },
-                  ]},
-                  { title: 'Cocktails dinatoires', accent: '#3b5bdb', items: [
-                    { n: 'Cocktail starter',   c: '5 salés · eaux / café',           p: '29 €' },
-                    { n: 'Cocktail starter++', c: '5 salés · cocktail s.a.',         p: '35 €' },
-                    { n: 'Cocktail confort',   c: '5 salés · 3 sucrés',              p: '44 €' },
-                    { n: 'Cocktail privilège', c: '5 salés · 3 sucrés · animation',  p: '50 €' },
-                    { n: 'Cocktail prestige',  c: '5 salés · 13 sucrés · animation', p: '60 €' },
-                  ]},
-                  { title: 'Self service', accent: '#e67e00', items: [
-                    { n: 'Self starter',       c: '5 salés froids · eaux',           p: '25 €' },
-                    { n: 'Self intermédiaire', c: '5 salés · 2 sucrés',              p: '30 €' },
-                    { n: 'Self ++',            c: '5 salés · 2 sucrés · apéritif',   p: '35 €' },
-                  ]},
-                ].map(cat => (
-                  <div key={cat.title} className="space-y-2">
-                    <p className="text-[9px] font-black uppercase tracking-[0.2em] mb-3 px-1 text-gray-400">{cat.title}</p>
-                    {cat.items.map(m => (
-                      <div key={m.n} className="nt-card p-3 rounded-xl flex justify-between items-center" style={{borderLeft: `3px solid ${cat.accent}40`}}>
-                        <div className="overflow-hidden mr-3">
-                          <div className="text-sm font-black truncate text-gray-900">{m.n}</div>
-                          <div className="text-[10px] truncate text-gray-400">{m.c}</div>
-                        </div>
-                        <div className="dm font-bold text-sm whitespace-nowrap" style={{color: cat.accent}}>{m.p}</div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="nt-card p-6 rounded-2xl">
-              <h2 className="text-[9px] font-black uppercase tracking-[0.25em] mb-4 flex items-center gap-3 text-gray-400">
-                <Layout className="w-4 h-4" /> Dispositions & Capacités
-              </h2>
-              <div className="overflow-hidden rounded-xl border border-gray-100">
-                <img src="/disposition.png" alt="Capacités" className="w-full h-auto object-cover" />
-              </div>
-            </section>
-          </div>
+          <TarifsTab hotelId={selectedHotelId} isAdmin={isAdmin} />
         )}
 
 
@@ -1470,17 +1544,58 @@ export default function CommercialDashboard() {
                 {/* 5. Notes */}
                 <div className="space-y-2">
                   <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-400">04 · Notes Internes</p>
-                  <textarea className="nt-input w-full rounded-xl p-4 text-sm min-h-[90px] resize-y border outline-none"
+                  <textarea
+                    className="nt-input w-full rounded-xl p-4 text-sm min-h-[90px] max-h-[340px] overflow-y-auto resize-none border outline-none leading-relaxed"
                     placeholder="Notes, spécificités, infos importantes..."
+                    ref={el => { if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 340) + 'px'; } }}
+                    onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 340) + 'px'; }}
                     value={currentLead.commentaires || ''} onChange={e => setCurrentLead({...currentLead, commentaires: e.target.value})} />
                 </div>
               </div>
 
               <div className="p-5 flex justify-end gap-3 shrink-0 border-t border-gray-100 bg-gray-50">
+                {currentLead.id && (
+                  <div className="mr-auto flex gap-2">
+                    {!currentLead.groupe_id && (
+                      <button
+                        onClick={async () => {
+                          // Onglet ouvert dans le geste utilisateur (anti pop-up blocker),
+                          // puis enregistrement du dossier avant de pré-remplir le bloc.
+                          const w = window.open('', '_blank');
+                          const id = await handleSave();
+                          if (id && w) w.location.href = `/groupes?new=${id}`;
+                          else if (w) w.close();
+                        }}
+                        disabled={isSaving}
+                        className="px-4 h-10 rounded-xl text-sm font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-all inline-flex items-center gap-1.5 disabled:opacity-50"
+                        title="Enregistre le dossier puis crée un bloc de chambres (groupe / mariage) rattaché"
+                      >
+                        <Users className="w-4 h-4" /> Créer le bloc de chambres
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          const l = currentLead as Lead;
+                          const solde = Math.max(0, effectiveAmount(l) - (l.montant_paye || 0));
+                          setPayFor(l);
+                          setPayAmount(solde > 0 ? String(Math.round(solde * 100) / 100) : '');
+                          setPayEmail(l.email || '');
+                          setPayDesc(l.titre_demande || '');
+                          setPayLink(null);
+                        }}
+                        className="px-4 h-10 rounded-xl text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all inline-flex items-center gap-1.5"
+                        title="Envoyer une demande de paiement (solde pré-rempli) au client de ce dossier"
+                      >
+                        <CreditCard className="w-4 h-4" /> Lien de paiement
+                      </button>
+                    )}
+                  </div>
+                )}
                 <button onClick={() => setShowModal(false)} className="px-5 h-10 rounded-xl text-sm font-black text-gray-500 hover:text-gray-900 bg-white border border-gray-200 transition-all">
                   Annuler
                 </button>
-                <button onClick={handleSave} disabled={isSaving} className="px-8 h-10 rounded-xl text-sm font-black bg-gray-900 text-white hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                <button onClick={handleSave} disabled={isSaving} className="px-8 h-10 rounded-xl text-sm font-black text-white bg-[var(--brand)] hover:bg-[var(--brand-hover)] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                   {isSaving ? 'Enregistrement…' : 'Enregistrer'}
                 </button>
               </div>
@@ -1516,6 +1631,52 @@ export default function CommercialDashboard() {
                     <button onClick={() => window.open(`/fiche?leadId=${groupeLead.id}`, '_blank')} className="h-10 rounded-xl text-sm font-bold bg-violet-50 text-violet-700 border border-violet-200 inline-flex items-center justify-center gap-1.5"><ScrollText className="w-4 h-4" /> Fiche</button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal lien de paiement (rattaché au dossier) */}
+        {payFor && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }}
+            onClick={e => { if (e.target === e.currentTarget && !paySending) setPayFor(null); }}>
+            <div className="w-full max-w-md rounded-2xl bg-white overflow-hidden">
+              <div className="p-5 border-b border-gray-100 flex items-start justify-between gap-3" style={{ background: '#ecfdf5' }}>
+                <div>
+                  <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700">💳 PAIEMENT</span>
+                  <h2 className="text-base font-black tracking-tight text-gray-900 mt-2">{payFor.nom_client}</h2>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Montant pré-rempli avec le solde à régler — modifiable.</p>
+                </div>
+                <button onClick={() => setPayFor(null)} className="text-gray-400 hover:text-gray-700 shrink-0"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="p-5 space-y-3">
+                <div>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-400">Montant (€)</label>
+                  <input value={payAmount} onChange={e => setPayAmount(e.target.value)} inputMode="decimal" placeholder="230" autoFocus
+                    className="nt-input w-full h-11 rounded-xl px-4 mt-1 border outline-none font-black text-lg" />
+                </div>
+                <div>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-400">Description</label>
+                  <input value={payDesc} onChange={e => setPayDesc(e.target.value)} placeholder="Acompte, solde séminaire…"
+                    className="nt-input w-full h-10 rounded-xl px-4 mt-1 border outline-none" />
+                </div>
+                <div>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-400">Email du client <span className="text-gray-300">(vide = lien à copier)</span></label>
+                  <input type="email" value={payEmail} onChange={e => setPayEmail(e.target.value)} placeholder="client@exemple.fr"
+                    className="nt-input w-full h-10 rounded-xl px-4 mt-1 border outline-none" />
+                </div>
+                <button onClick={sendPaymentLink} disabled={paySending}
+                  className="w-full h-11 rounded-xl text-sm font-black text-white bg-[var(--brand)] hover:bg-[var(--brand-hover)] transition inline-flex items-center justify-center gap-2 disabled:opacity-50">
+                  {paySending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4" /> {payEmail.trim() ? 'Créer & envoyer' : 'Créer le lien'}</>}
+                </button>
+                {payLink && (
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
+                    <span className="text-xs text-gray-600 truncate flex-1">{payLink}</span>
+                    <button onClick={() => { navigator.clipboard.writeText(payLink); toast.success('Lien copié'); }} className="text-xs font-bold text-emerald-700 inline-flex items-center gap-1 shrink-0"><Copy className="w-3.5 h-3.5" /> Copier</button>
+                    <a href={payLink} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-emerald-700 inline-flex items-center gap-1 shrink-0">Ouvrir <ExternalLink className="w-3 h-3" /></a>
+                  </div>
+                )}
+                <p className="text-[10px] text-gray-400">Le paiement apparaîtra dans <strong>Encaissement</strong> et viendra créditer le « réglé » de ce dossier.</p>
               </div>
             </div>
           </div>
