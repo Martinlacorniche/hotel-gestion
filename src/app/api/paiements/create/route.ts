@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import { getStripeForHotel } from '@/lib/stripe';
+import { getStripeForHotel, senderFor } from '@/lib/stripe';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/apiAuth';
 
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
         try {
           const resend = new Resend(process.env.RESEND_API_KEY);
           const { error: mailErr } = await resend.emails.send({
-            from: 'Best Western Plus La Corniche <paiement@send.hotel-corniche.com>',
+            from: senderFor(hotelId),
             to: email,
             subject: `Demande de paiement — ${euro(amount)} · Best Western Plus La Corniche`,
             html: paymentEmailHtml({ clientNom, amount, description, url: session.url! }),

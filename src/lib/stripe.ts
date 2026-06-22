@@ -33,3 +33,14 @@ export function getStripeForHotel(hotelId: string | null | undefined): Stripe {
 export function getWebhookSecrets(): string[] {
   return [...new Set(Object.values(HOTELS).map(h => process.env[h.webhookEnv]))].filter(Boolean) as string[];
 }
+
+// Expéditeur Resend par hôtel : même domaine vérifié (send.hotel-corniche.com),
+// mais nom affiché adapté (« Les Voiles » vs « La Corniche ») tant qu'on n'a pas
+// de domaine Voiles dédié.
+const SENDERS: Record<string, string> = {
+  'f9d59e56-9a2f-433e-bcf4-f9753f105f32': 'Best Western Plus La Corniche <paiement@send.hotel-corniche.com>',
+  'ded6e6fb-ff3c-4fa8-ad07-403ee316be53': 'Les Voiles <paiement@send.hotel-corniche.com>',
+};
+export function senderFor(hotelId: string | null | undefined): string {
+  return (hotelId && SENDERS[hotelId]) || SENDERS[DEFAULT_HOTEL];
+}

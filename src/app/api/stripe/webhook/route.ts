@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { Resend } from 'resend';
-import { getStripe, getWebhookSecrets } from '@/lib/stripe';
+import { getStripe, getWebhookSecrets, senderFor } from '@/lib/stripe';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 // Base publique du site invité (Site-BW) pour le lien « gérer ma réservation ».
 const SITE_BW_BASE = process.env.NEXT_PUBLIC_SITE_BW_URL || 'https://sitehtbm.netlify.app';
 
 // Email de confirmation au client une fois le paiement (obligatoire) validé.
-async function sendGuestConfirmation(checkoutId: string) {
+async function sendGuestConfirmation(checkoutId: string, hotelId?: string | null) {
   if (!process.env.RESEND_API_KEY) return;
   const { data: resas } = await supabaseAdmin
     .from('groupe_reservations')
@@ -31,7 +31,7 @@ async function sendGuestConfirmation(checkoutId: string) {
   const link = g?.code_acces ? `${SITE_BW_BASE}/groupe/${g.code_acces}?r=${first.booking_ref}` : '';
   const resend = new Resend(process.env.RESEND_API_KEY);
   await resend.emails.send({
-    from: 'BW+ La Corniche <paiement@send.hotel-corniche.com>',
+    from: senderFor(hotelId),
     to: first.email,
     subject: `Réservation confirmée · ${g?.nom ?? ''}`,
     html: `
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
           .eq('stripe_checkout_id', s.id).eq('statut', 'en_attente_paiement').select('id');
         // Email de confirmation au client (uniquement si on vient bien de confirmer une résa invité).
         if (confirmed && confirmed.length > 0) {
-          try { await sendGuestConfirmation(s.id); } catch (e) { console.warn('Email confirmation invité:', e instanceof Error ? e.message : e); }
+          try { await sendGuestConfirmation(s.id, pay?.hotel_id); } catch (e) { console.warn('Email confirmation invité:', e instanceof Error ? e.message : e); }
         }
         break;
       }
