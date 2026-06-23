@@ -250,6 +250,9 @@ export default function HotelDashboard() {
   // n'est pas activée (flag absent de Netlify, comme la capture à ses débuts).
   const LIBERATIONS_ENABLED = process.env.NEXT_PUBLIC_LIBERATIONS_ENABLED === '1';
   const [liberations, setLiberations] = useState<any[]>([]);
+  // Les Voiles : les chambres libérées remontent automatiquement de Mews (poller
+  // → INSERT chambres_liberees → notif housekeeping). La réception n'a donc plus
+  // rien à saisir → on masque l'encart manuel (gardé pour La Corniche, manuelle).
   const [liberationInput, setLiberationInput] = useState('');
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [newTicket, setNewTicket] = useState({
@@ -1249,8 +1252,9 @@ const birthdayMessage = useMemo(() => {
               <h2 className="text-lg font-bold flex items-center gap-2 invisible">.<span className="text-xs px-2 py-0.5 rounded-full">.</span></h2>
             </div>
 
-            {/* CHAMBRES LIBÉRÉES — compact : champ seul, liste du jour au survol */}
-            {LIBERATIONS_ENABLED && (
+            {/* CHAMBRES LIBÉRÉES — compact : champ seul, liste du jour au survol.
+                Masqué pour Les Voiles : alimenté automatiquement par Mews. */}
+            {LIBERATIONS_ENABLED && currentHotel?.nom?.trim() !== 'Les Voiles' && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
                  <div className="flex items-center justify-between mb-3">
                     <h3 className="font-bold text-slate-800">🚪 Chambres libérées</h3>
