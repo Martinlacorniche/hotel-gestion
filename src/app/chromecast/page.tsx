@@ -9,8 +9,10 @@ import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import {
   Wifi, WifiOff, Plus, Trash2, RefreshCw, AlertTriangle,
-  ChevronLeft, Tv2, X, Loader2, Signal, Clock, Server
+  Tv2, X, Loader2, Signal, Server
 } from 'lucide-react';
+import { PageHeader } from '@/components/PageHeader';
+import { EmptyState } from '@/components/EmptyState';
 
 const API_BASE = process.env.NEXT_PUBLIC_CHROMECAST_API_BASE!;
 const API_KEY  = process.env.NEXT_PUBLIC_CHROMECAST_API_KEY!;
@@ -409,45 +411,36 @@ export default function ChromecastDashboard() {
       <ThemedBackground />
       <div className="w-full px-6 py-6">
 
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => router.push('/')} className="text-slate-400 hover:text-slate-600 transition-colors">
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <div className="flex items-center gap-2 flex-1">
-            <div className="bg-indigo-100 p-2 rounded-lg">
-              <Tv2 className="w-5 h-5 text-[var(--brand)]" />
-            </div>
-            <div>
-              <h1 className="font-bold text-slate-800 text-lg leading-none">Chromecasts</h1>
-              <p className="text-xs text-slate-400">Gestion des TVs</p>
-            </div>
-          </div>
-
-          {/* Statut serveur + refresh */}
-          <div className="flex items-center gap-2">
-            {lastRefresh && (
-              <span className="text-xs text-slate-400 hidden sm:block">
-                {lastRefresh.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </span>
-            )}
-            <button
-              onClick={fetchStatus}
-              disabled={fetching}
-              className="text-slate-400 hover:text-[var(--brand)] transition-colors"
-              title="Rafraîchir"
-            >
-              <RefreshCw className={`w-4 h-4 ${fetching ? 'animate-spin' : ''}`} />
-            </button>
-            <Button
-              onClick={() => setShowAddModal(true)}
-              size="sm"
-              className="btn-brand hover:bg-indigo-700 text-white flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" /> Ajouter
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={Tv2}
+          title="Chromecasts"
+          subtitle="Gestion des TVs"
+          iconClassName="bg-slate-100 text-slate-600"
+          actions={
+            <>
+              {lastRefresh && (
+                <span className="text-xs text-slate-400 hidden sm:block">
+                  {lastRefresh.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              )}
+              <button
+                onClick={fetchStatus}
+                disabled={fetching}
+                className="text-slate-400 hover:text-[var(--brand)] transition-colors"
+                title="Rafraîchir"
+              >
+                <RefreshCw className={`w-4 h-4 ${fetching ? 'animate-spin' : ''}`} />
+              </button>
+              <Button
+                onClick={() => setShowAddModal(true)}
+                size="sm"
+                className="btn-brand hover:bg-indigo-700 text-white flex items-center gap-1"
+              >
+                <Plus className="w-4 h-4" /> Ajouter
+              </Button>
+            </>
+          }
+        />
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 mb-6">
@@ -481,16 +474,18 @@ export default function ChromecastDashboard() {
 
         {/* Grille chambres */}
         {total === 0 && !fetching && !fetchError ? (
-          <div className="text-center py-16 text-slate-400">
-            <Tv2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm">Aucune Chromecast configurée</p>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="mt-3 text-sm text-[var(--brand)] hover:underline"
-            >
-              Ajouter la première
-            </button>
-          </div>
+          <EmptyState
+            icon={Tv2}
+            title="Aucune Chromecast configurée"
+            action={
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="text-sm text-[var(--brand)] hover:underline"
+              >
+                Ajouter la première
+              </button>
+            }
+          />
         ) : (
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 xl:grid-cols-10">
             {rooms.map((room) => (

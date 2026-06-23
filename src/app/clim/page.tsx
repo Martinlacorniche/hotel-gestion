@@ -9,9 +9,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import {
   Wind, Plus, Trash2, Loader2, Clock, Euro, BedDouble,
-  AlertTriangle, ListChecks, ArrowLeft, Pencil, X, ImagePlus, Check,
+  AlertTriangle, ListChecks, Pencil, X, ImagePlus, Check,
 } from 'lucide-react';
-import Link from 'next/link';
+import { PageHeader } from '@/components/PageHeader';
+import { EmptyState } from '@/components/EmptyState';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -70,8 +72,8 @@ function pathFromPublicUrl(url: string): string | null {
 
 export default function ClimPage() {
   const { user, isLoading } = useAuth();
+  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
   const [hotels, setHotels] = useState<Hotel[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -103,8 +105,9 @@ export default function ClimPage() {
       const { data } = isSuperadmin ? await base : await base.eq('id', userHotelId || '');
       const list = (data || []) as Hotel[];
       setHotels(list);
-      setSelectedHotelId(userHotelId || list[0]?.id || null);
+      if (!selectedHotelId) setSelectedHotelId(userHotelId || list[0]?.id || '');
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const loadIncidents = useCallback(async (hotelId: string) => {
@@ -290,29 +293,12 @@ export default function ClimPage() {
     <div className="min-h-screen bg-slate-50">
       <div className="p-4 md:p-6 max-w-6xl mx-auto">
         {/* Header */}
-        <header className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="text-slate-400 hover:text-slate-700 transition">
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-sky-100 text-sky-700">
-              <Wind className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-800">Suivi Clim</h1>
-              <p className="text-sm text-slate-500">Journal des incidents de climatisation · onglet temporaire</p>
-            </div>
-          </div>
-          {hotels.length > 1 && (
-            <select
-              value={selectedHotelId || ''}
-              onChange={e => setSelectedHotelId(e.target.value)}
-              className="border rounded-lg px-3 h-11 text-sm bg-white"
-            >
-              {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-            </select>
-          )}
-        </header>
+        <PageHeader
+          icon={Wind}
+          title="Suivi Clim"
+          subtitle="Journal des incidents de climatisation · onglet temporaire"
+          iconClassName="bg-sky-100 text-sky-700"
+        />
 
         {/* Stats recap */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
@@ -528,7 +514,7 @@ export default function ClimPage() {
                   ))}
                 </div>
                 {stats.spaceRows.length === 0 ? (
-                  <p className="text-sm text-slate-400">Aucun incident pour le moment.</p>
+                  <EmptyState icon={ListChecks} title="Aucun incident pour le moment" />
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -563,7 +549,7 @@ export default function ClimPage() {
                 {loading ? (
                   <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
                 ) : incidents.length === 0 ? (
-                  <p className="text-sm text-slate-400">Aucun incident enregistré.</p>
+                  <EmptyState icon={Wind} title="Aucun incident enregistré" subtitle="Les incidents de climatisation apparaîtront ici." />
                 ) : (
                   <ul className="space-y-3">
                     {incidents.map(inc => (

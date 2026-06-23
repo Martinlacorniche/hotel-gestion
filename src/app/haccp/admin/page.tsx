@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { supabase } from '@/lib/supabaseClient';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,8 +34,7 @@ export default function HACCPAdminPage() {
   const { user, isLoading: authLoading } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
 
-  const [hotels, setHotels] = useState<Hotel[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
+  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Sensor | null>(null);
@@ -50,9 +50,9 @@ export default function HACCPAdminPage() {
         ? await baseQuery
         : await baseQuery.eq('id', userHotelId || '');
       const list = (data || []) as Hotel[];
-      setHotels(list);
-      if (list.length > 0) setSelectedHotelId(userHotelId || list[0].id);
+      if (!selectedHotelId && list.length > 0) setSelectedHotelId(userHotelId || list[0].id);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isAdmin]);
 
   // Charge sondes
@@ -103,15 +103,6 @@ export default function HACCPAdminPage() {
             Modifier les seuils, délais d&apos;alerte et statut des sondes installées.
           </p>
         </div>
-        {hotels.length > 1 && (
-          <select
-            value={selectedHotelId || ''}
-            onChange={(e) => setSelectedHotelId(e.target.value)}
-            className="border rounded-md px-3 py-2 text-sm bg-background"
-          >
-            {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-          </select>
-        )}
       </header>
 
       {loading ? (

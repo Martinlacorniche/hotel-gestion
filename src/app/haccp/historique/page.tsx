@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { supabase } from '@/lib/supabaseClient';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,8 +30,7 @@ export default function HACCPHistoriquePage() {
   const { user, isLoading: authLoading } = useAuth();
 
   // ---- Sélecteurs ----
-  const [hotels, setHotels] = useState<Hotel[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
+  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [selectedSensorId, setSelectedSensorId] = useState<string>('all');
   const [preset, setPreset] = useState<Preset>('30d');
@@ -82,9 +82,9 @@ export default function HACCPHistoriquePage() {
         ? await baseQuery
         : await baseQuery.eq('id', userHotelId || '');
       const list = (data || []) as Hotel[];
-      setHotels(list);
-      if (list.length > 0) setSelectedHotelId(userHotelId || list[0].id);
+      if (!selectedHotelId && list.length > 0) setSelectedHotelId(userHotelId || list[0].id);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // ---- Charge les sondes de l'hôtel sélectionné ----
@@ -216,19 +216,6 @@ export default function HACCPHistoriquePage() {
       <Card className="mb-4">
         <CardContent className="py-4">
           <div className="flex flex-wrap gap-3 items-end">
-            {hotels.length > 1 && (
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Hôtel</label>
-                <select
-                  value={selectedHotelId || ''}
-                  onChange={e => setSelectedHotelId(e.target.value)}
-                  className="border rounded-md px-3 py-2 text-sm bg-background min-w-[180px]"
-                >
-                  {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-                </select>
-              </div>
-            )}
-
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sonde</label>
               <select

@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/PageHeader';
+import { EmptyState } from '@/components/EmptyState';
 import {
-  CreditCard, ArrowLeft, Loader2, Search, Copy, Link2, Send,
+  CreditCard, Loader2, Search, Copy, Link2, Send,
   RotateCcw, Mail, ExternalLink, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
@@ -40,10 +42,10 @@ async function authHeaders() {
 export default function EncaissementPage() {
   const { user, isLoading } = useAuth();
   const isSuperadmin = user?.role === 'superadmin';
-  const isAdmin = isSuperadmin || user?.role === 'admin';
 
   const [hotels, setHotels] = useState<Hotel[]>([]);
-  const [hotelId, setHotelId] = useState<string>('');
+  // Hôtel sélectionné = contexte global (synchro sidebar + autres pages).
+  const { selectedHotelId: hotelId, setSelectedHotelId: setHotelId } = useSelectedHotel();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -79,8 +81,10 @@ export default function EncaissementPage() {
       const { data } = isSuperadmin ? await base : await base.eq('id', uh || '');
       const list = (data || []) as Hotel[];
       setHotels(list);
-      setHotelId(uh || list[0]?.id || '');
+      // Le contexte a déjà restauré l'hôtel ; on ne fixe un défaut que si vide.
+      if (!hotelId) setHotelId(uh || list[0]?.id || '');
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isSuperadmin]);
 
   const loadPayments = useCallback(async () => {
@@ -188,28 +192,18 @@ export default function EncaissementPage() {
 
   if (isLoading) return <div className="p-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin" /></div>;
   if (!user) return <div className="p-8 text-center text-slate-500">Authentification requise.</div>;
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-8">
-        <Card><CardContent className="p-8 text-center text-slate-500 text-sm">
-          L&apos;encaissement est réservé aux administrateurs.
-          <div className="mt-3"><Link href="/" className="text-rose-600 underline">Retour à l&apos;accueil</Link></div>
-        </CardContent></Card>
-      </div>
-    );
-  }
+  // Accès géré par le ShiftContext : admins/superadmins tout le temps,
+  // rôle "user" uniquement pendant son service (shift ± 2h).
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="p-4 md:p-6 max-w-5xl mx-auto">
-        <header className="mb-6 flex items-center gap-3">
-          <Link href="/" className="text-slate-400 hover:text-slate-700 transition"><ArrowLeft className="w-5 h-5" /></Link>
-          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700"><CreditCard className="w-6 h-6" /></div>
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-800">Encaissement</h1>
-            <p className="text-sm text-slate-500">Demande de paiement par carte — lien Stripe envoyé au client</p>
-          </div>
-        </header>
+        <PageHeader
+          icon={CreditCard}
+          title="Encaissement"
+          subtitle="Demande de paiement par carte — lien Stripe envoyé au client"
+          iconClassName="bg-emerald-100 text-emerald-700"
+        />
 
         {/* Formulaire */}
         <Card className="mb-6">
@@ -239,14 +233,6 @@ export default function EncaissementPage() {
                     className="w-full border rounded-lg px-3 h-11 text-sm bg-white" />
                 </label>
               </div>
-              {isSuperadmin && hotels.length > 1 && (
-                <label className="block">
-                  <span className="text-xs font-medium text-slate-500 mb-1 block">Hôtel</span>
-                  <select value={hotelId} onChange={e => setHotelId(e.target.value)} className="border rounded-lg px-3 h-11 text-sm bg-white">
-                    {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-                  </select>
-                </label>
-              )}
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input type="checkbox" checked={sendEmail} onChange={e => setSendEmail(e.target.checked)} className="w-5 h-5 accent-emerald-600" />
@@ -307,7 +293,7 @@ export default function EncaissementPage() {
         {loading ? (
           <div className="py-12 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
         ) : filtered.length === 0 ? (
-          <Card><CardContent className="p-8 text-center text-slate-400 text-sm">Aucun paiement.</CardContent></Card>
+          <Card><CardContent className="p-2"><EmptyState icon={CreditCard} title="Aucun paiement" subtitle="Aucun paiement à afficher pour cette période." /></CardContent></Card>
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100 overflow-hidden">
             {filtered.map(p => {

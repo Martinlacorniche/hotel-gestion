@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { ThemedBackground } from "@/components/ThemedBackground";
+import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
 
 type CurioItem = { id: string; nom: string; emoji: string | null; ordre: number; duree_heures: number; prix_reservation: number };
 type Reservation = { id: string; objet_id: string; client_nom: string; chambre: string; debut: string; fin: string };
@@ -38,15 +40,12 @@ export default function ObjetsPretPage() {
     <div className="min-h-screen">
       <ThemedBackground />
       <div className="px-6 py-8">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-xl bg-[#004e7c] flex items-center justify-center">
-            <Package size={20} className="text-white" />
-          </div>
-          <div>
-            <h1 className="font-semibold text-slate-900 text-xl">Curiosités</h1>
-            <p className="text-sm text-slate-400">Réservations des objets en prêt</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={Package}
+          title="Curiosités"
+          subtitle="Réservations des objets en prêt"
+          iconClassName="bg-amber-50 text-amber-700"
+        />
         <Gantt />
       </div>
     </div>
@@ -239,7 +238,11 @@ function Gantt() {
         })}
 
         {objets.length === 0 && (
-          <p className="py-12 text-center text-sm text-slate-400">Aucun objet configuré dans Curiosités</p>
+          <EmptyState
+            icon={Package}
+            title="Aucun objet configuré"
+            subtitle="Ajoutez des objets dans Curiosités pour gérer leurs réservations."
+          />
         )}
       </div>
 

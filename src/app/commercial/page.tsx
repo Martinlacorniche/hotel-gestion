@@ -6,6 +6,7 @@ import { confirmDialog } from '@/components/ConfirmDialog';
 import { ThemedBackground } from '@/components/ThemedBackground';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { format, isBefore, isToday, parseISO, getYear } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { 
@@ -391,10 +392,13 @@ export default function CommercialDashboard() {
 
   // États
   const [hotels, setHotels] = useState<Hotel[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string>('');
+  // Hôtel sélectionné = contexte global (synchro sidebar + autres pages).
+  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
   const [activeTab, setActiveTab] = useState<'pipeline' | 'tarifs' | 'planning'>('pipeline');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  // Compteur de réservations groupe nouvelles/modifiées non vues (bulle rouge sur le bouton Groupes).
+  const [groupesUnread, setGroupesUnread] = useState(0);
   // Dropdown custom ouvert (clé `st-<id>` ou `ga-<id>`), null = aucun.
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -451,6 +455,22 @@ export default function CommercialDashboard() {
         return { ...l, montant_devis };
       });
       setLeads(withDevis);
+
+      // Bulle rouge : réservations à traiter sur les groupes de cet hôtel —
+      // confirmées nouvelles/modifiées (non vues) + annulations pas encore
+      // retirées du PMS. Même définition que le détail (exclut les expirées).
+      const gids = withDevis.filter((l: any) => l.groupe_id).map((l: any) => l.groupe_id);
+      if (gids.length) {
+        const [c1, c2] = await Promise.all([
+          supabase.from('groupe_reservations').select('id', { count: 'exact', head: true })
+            .in('groupe_id', gids).eq('statut', 'confirmee').eq('vu_backoffice', false),
+          supabase.from('groupe_reservations').select('id', { count: 'exact', head: true })
+            .in('groupe_id', gids).eq('statut', 'annulee').eq('pms_done', false),
+        ]);
+        setGroupesUnread((c1.count || 0) + (c2.count || 0));
+      } else {
+        setGroupesUnread(0);
+      }
     }
     setLoading(false);
   };
@@ -477,20 +497,24 @@ export default function CommercialDashboard() {
   };
 
   // --- EFFECTS ---
+  // Onglet initial piloté par l'URL (?tab=) — sous-menu Commercial de la sidebar.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t === 'pipeline' || t === 'planning' || t === 'tarifs') setActiveTab(t);
+  }, []);
+
   useEffect(() => {
     const initHotels = async () => {
       const { data, error } = await supabase.from('hotels').select('id, nom').order('nom');
       if (!error && data) {
         setHotels(data);
-        const saved = localStorage.getItem('selectedHotelId');
-        if (saved && data.find(h => h.id === saved)) {
-          setSelectedHotelId(saved);
-        } else if (data.length > 0) {
-          setSelectedHotelId(data[0].id);
-        }
+        // Le contexte a déjà restauré l'hôtel depuis le localStorage ; on ne fixe
+        // un défaut (1er hôtel) que s'il n'y a encore aucune sélection.
+        if (data.length > 0 && !selectedHotelId) setSelectedHotelId(data[0].id);
       }
     };
     initHotels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -836,14 +860,6 @@ export default function CommercialDashboard() {
           {/* Ligne haute */}
           <div className="flex items-start justify-between mb-6 flex-wrap gap-6">
 
-            <select
-              value={selectedHotelId}
-              onChange={(e) => setSelectedHotelId(e.target.value)}
-              className="nt-select px-4 py-2 text-sm font-black outline-none cursor-pointer"
-            >
-              {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-            </select>
-
             {/* KPIs dot matrix */}
             {activeTab === 'pipeline' && (
               <div className="flex items-end gap-8 flex-wrap">
@@ -896,15 +912,18 @@ export default function CommercialDashboard() {
                 {tab === 'pipeline' ? 'Suivi Commercial' : tab === 'planning' ? 'Planning Salles' : 'Offres & Tarifs'}
               </button>
             ))}
-            {isAdmin && (
-              <a
-                href="/groupes"
-                className="ml-auto mb-2 inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide px-3 h-8 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
-                title="Paramétrage des chambres & types pour les blocs (groupes & mariages)"
-              >
-                Chambres & types →
-              </a>
-            )}
+            <a
+              href="/groupes"
+              className="ml-auto mb-2 relative inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide px-3 h-8 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+              title="Groupes & mariages — récap des blocs"
+            >
+              👥 Groupes →
+              {groupesUnread > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center shadow ring-2 ring-white">
+                  {groupesUnread}
+                </span>
+              )}
+            </a>
           </div>
         </div>
 

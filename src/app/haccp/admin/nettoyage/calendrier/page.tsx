@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { supabase } from '@/lib/supabaseClient';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,8 +27,7 @@ export default function CleaningCalendrierPage() {
   const { user, isLoading: authLoading } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
 
-  const [hotels, setHotels] = useState<Hotel[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
+  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
   const [period, setPeriod] = useState(() => startOfMonth(new Date()));
 
   const [zones, setZones] = useState<CleaningZone[]>([]);
@@ -45,9 +45,9 @@ export default function CleaningCalendrierPage() {
         ? await baseQuery
         : await baseQuery.eq('id', userHotelId || '');
       const list = (data || []) as Hotel[];
-      setHotels(list);
-      if (list.length > 0) setSelectedHotelId(userHotelId || list[0].id);
+      if (!selectedHotelId && list.length > 0) setSelectedHotelId(userHotelId || list[0].id);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isAdmin]);
 
   const loadData = useCallback(async (hotelId: string, periodStart: Date, periodEnd: Date) => {
@@ -210,15 +210,6 @@ export default function CleaningCalendrierPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {hotels.length > 1 && (
-            <select
-              value={selectedHotelId || ''}
-              onChange={e => setSelectedHotelId(e.target.value)}
-              className="border rounded-md px-3 py-2 text-sm bg-background"
-            >
-              {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-            </select>
-          )}
           <Link href="/haccp/admin/nettoyage">
             <Button variant="outline" size="sm">
               <Settings className="w-4 h-4 mr-1" /> Config

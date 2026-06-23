@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { supabase } from '@/lib/supabaseClient';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import { ThemedBackground } from '@/components/ThemedBackground';
@@ -206,13 +207,8 @@ export default function PlanningPage() {
 
   const router = useRouter();
   const [hotels, setHotels] = useState([]);
-  const [selectedHotelId, setSelectedHotelId] = useState(() => {
-    if (typeof window !== "undefined") {
-      const fromStorage = window.localStorage.getItem('selectedHotelId');
-      if (fromStorage) return fromStorage;
-    }
-    return user && user.hotel_id ? user.hotel_id : '';
-  });
+  // Hôtel sélectionné = contexte global (synchro sidebar + autres pages).
+  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
   const [currentHotel, setCurrentHotel] = useState(null);
   const hotelId = selectedHotelId || user?.hotel_id || '';
 
@@ -241,10 +237,6 @@ export default function PlanningPage() {
     const hotelName = currentHotel?.nom ? ` — ${currentHotel.nom}` : '';
     document.title = `Planning${hotelName}`;
   }, [currentHotel]);
-
-  useEffect(() => {
-    if (selectedHotelId && typeof window !== "undefined") window.localStorage.setItem('selectedHotelId', selectedHotelId);
-  }, [selectedHotelId]);
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
     const monday = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -1187,15 +1179,6 @@ export default function PlanningPage() {
         <div className="flex flex-col md:flex-row justify-between items-center gap-6 mb-8">
            {/* GAUCHE: Hotel & Titre */}
            <div className="flex items-center gap-4">
-              {hotels.length > 0 && (
-                 <select 
-                    className="bg-slate-50 border border-slate-200 text-slate-700 text-sm font-semibold py-2 px-4 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100"
-                    value={selectedHotelId} 
-                    onChange={(e) => setSelectedHotelId(e.target.value)}
-                 >
-                    {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-                 </select>
-              )}
               <h1 className="text-2xl font-bold text-slate-800 tracking-tight">{currentHotel?.nom || 'Planning'}</h1>
            </div>
 

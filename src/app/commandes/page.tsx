@@ -7,6 +7,7 @@ import { confirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import {
   ShoppingCart, Plus, AlertTriangle, CheckCircle, Clock,
   Package, Trash2, Edit2, ChevronRight, Filter, Search, Truck
@@ -34,10 +35,7 @@ export default function PageCommandes() {
   
   // --- GESTION HÔTEL ---
   const [hotels, setHotels] = useState<any[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string>(() => {
-    if (typeof window !== "undefined") return window.localStorage.getItem('selectedHotelId') || "";
-    return "";
-  });
+  const { selectedHotelId } = useSelectedHotel();
   const hotelId = selectedHotelId || user?.hotel_id;
 
   // --- DATA ---
@@ -55,12 +53,6 @@ export default function PageCommandes() {
   useEffect(() => {
     supabase.from('hotels').select('id, nom').then(({ data }) => setHotels(data || []));
   }, []);
-
-  useEffect(() => {
-    if (selectedHotelId && typeof window !== "undefined") {
-      window.localStorage.setItem('selectedHotelId', selectedHotelId);
-    }
-  }, [selectedHotelId]);
 
   useEffect(() => {
     if (hotelId) {
@@ -174,16 +166,6 @@ export default function PageCommandes() {
                 <ShoppingCart className="w-6 h-6 text-[var(--brand)]" /> Commandes
             </h1>
             
-            {hotels.length > 1 && (
-                <select 
-                    className="w-full mb-4 bg-slate-50 border border-slate-200 text-xs font-bold py-2 px-3 rounded-lg outline-none focus:ring-2 focus:ring-[var(--brand)] text-slate-600"
-                    value={selectedHotelId}
-                    onChange={(e) => setSelectedHotelId(e.target.value)}
-                >
-                    {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-                </select>
-            )}
-
             {/* Formulaire Ajout */}
             <div className="bg-indigo-50 rounded-2xl p-4 space-y-3 border border-indigo-100">
                 <h3 className="text-sm font-bold text-indigo-900 flex items-center gap-2">

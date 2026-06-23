@@ -8,6 +8,7 @@ import { ThemedBackground } from "@/components/ThemedBackground";
 import { supabase } from "@/lib/supabaseClient";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useSelectedHotel } from "@/context/SelectedHotelContext";
 import {
   Euro, Printer, Lock, Save, Sun, Moon, Sunset,
   ChevronLeft, ChevronRight, AlertCircle, Coins,
@@ -96,7 +97,8 @@ function CaissePageInner() {
   const searchParams = useSearchParams();
   const isAdmin = (user as any)?.role === "admin" || (user as any)?.role === "superadmin";
 
-  const [hotelId, setHotelId] = useState<string>("");
+  // Hôtel sélectionné = contexte global (synchro avec le toggle du rail/burger).
+  const { selectedHotelId: hotelId, setSelectedHotelId: setHotelId } = useSelectedHotel();
   const [hotelName, setHotelName] = useState<string>("");
   const [hotels, setHotels] = useState<{ id: string; nom: string }[]>([]);
   const [dateJour, setDateJour] = useState<string>(dfFormat(new Date(), "yyyy-MM-dd"));
@@ -126,23 +128,20 @@ function CaissePageInner() {
   const [signingShift, setSigningShift] = useState<ShiftType | null>(null);
 
   // --- Init hotel ---
+  // Le contexte restaure déjà l'hôtel (localStorage). Ici : priorité au deep-link
+  // ?hotel_id=, sinon défaut sur l'hôtel du user si rien n'est encore sélectionné.
   useEffect(() => {
     (async () => {
       const fromQS = searchParams?.get("hotel_id");
       if (fromQS) { setHotelId(fromQS); return; }
-      if (typeof window !== "undefined") {
-        const fromLS = window.localStorage.getItem("selectedHotelId");
-        if (fromLS) { setHotelId(fromLS); return; }
-      }
+      if (hotelId) return;
       const { data: authRes } = await supabase.auth.getUser();
       if (authRes?.user?.id) {
         const { data: u } = await supabase.from("users").select("hotel_id").eq("id_auth", authRes.user.id).maybeSingle();
-        if (u?.hotel_id) {
-          setHotelId(u.hotel_id);
-          if (typeof window !== "undefined") window.localStorage.setItem("selectedHotelId", u.hotel_id);
-        }
+        if (u?.hotel_id) setHotelId(u.hotel_id);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   useEffect(() => {
@@ -260,12 +259,6 @@ function CaissePageInner() {
   }, [hotelId, dateJour]);
 
   // --- Helpers ---
-  const switchHotel = (newId: string) => {
-    if (!newId || newId === hotelId) return;
-    setHotelId(newId);
-    if (typeof window !== "undefined") window.localStorage.setItem("selectedHotelId", newId);
-  };
-
   const updateShift = (s: ShiftType, patch: Partial<CaisseShift>) => {
     setShifts((prev) => ({ ...prev, [s]: { ...prev[s], ...patch } }));
   };
@@ -450,7 +443,7 @@ function CaissePageInner() {
       {/* Print styles — 1 page A4 paysage, ultra compact */}
       <style jsx global>{`
         /* Grille encaissements (header + lignes + total alignés sur les mêmes colonnes) */
-        .enc-grid { display: grid; grid-template-columns: 72px 90px 90px 60px; gap: 8px; }
+        .enc-grid { display: grid; grid-template-columns: 92px 88px 88px 58px; gap: 8px; }
 
         @media print {
           @page { size: A4 landscape; margin: 6mm; }
@@ -546,20 +539,7 @@ function CaissePageInner() {
             <Euro className="w-[18px] h-[18px] text-emerald-600" strokeWidth={2.5} />
             <h1 className="text-[15px] font-semibold text-slate-900 tracking-tight">Caisse</h1>
           </div>
-          {hotels.length > 1 && (
-            <>
-              <span className="text-slate-300">·</span>
-              <select
-                value={hotelId}
-                onChange={(e) => switchHotel(e.target.value)}
-                className="bg-transparent border-0 px-1 h-8 text-[13px] font-medium text-slate-600 hover:text-slate-900 outline-none cursor-pointer"
-              >
-                {hotels.map((h) => (
-                  <option key={h.id} value={h.id}>{h.nom}</option>
-                ))}
-              </select>
-            </>
-          )}
+          {hotelName && <><span className="text-slate-300">·</span><span className="text-[13px] font-medium text-slate-600">{hotelName}</span></>}
         </div>
 
         <div className="flex items-center gap-3">
@@ -891,9 +871,9 @@ function CaissePageInner() {
                         const okC = Math.abs(t.ecartConsigne) < 0.01;
                         return (
                           <div className="enc-row enc-grid items-center py-1 group">
-                            <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700 whitespace-nowrap">
+                            <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-700 leading-tight">
                               <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                              € consigne
+                              {hotelName.toLowerCase().includes('voiles') ? 'Paiement en ligne' : 'Stripe Direct'}
                             </span>
                             <input
                               type="number" step="0.01" inputMode="decimal" disabled={locked}

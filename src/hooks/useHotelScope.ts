@@ -2,38 +2,23 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-
-const STORAGE_KEY = 'selectedHotelId';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 
 export type Hotel = { id: string; nom: string; [key: string]: unknown };
 
 /**
  * Encapsule le scope "hôtel courant" partagé par la quasi-totalité des écrans :
- * - état `selectedHotelId` initialisé depuis localStorage
- * - persistance localStorage à chaque changement
- * - chargement de la liste des hôtels + sélection du premier par défaut
- * - dérivation de `currentHotel` depuis la liste (pas de requête en plus)
- *
- * Remplace le bloc copié-collé dans ~11 pages.
+ * - `selectedHotelId` vient désormais d'un CONTEXTE global (SelectedHotelContext)
+ *   → changer d'hôtel sur une page met à jour la sidebar et toutes les autres
+ *   pages montées qui utilisent ce hook (et inversement).
+ * - chaque appel charge néanmoins sa propre liste d'hôtels avec ses colonnes
+ *   (`select`), donc on ne partage que l'id, pas la forme des objets.
  *
  * @param select colonnes à charger sur `hotels` (défaut "id, nom").
- *               Passe p.ex. "id, nom, logo_url" si l'écran a besoin de plus.
  */
 export function useHotelScope(select: string = 'id, nom') {
+  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
   const [hotels, setHotels] = useState<Hotel[]>([]);
-  const [selectedHotelId, setSelectedHotelIdState] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return window.localStorage.getItem(STORAGE_KEY) || '';
-    }
-    return '';
-  });
-
-  const setSelectedHotelId = (id: string) => {
-    setSelectedHotelIdState(id);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, id);
-    }
-  };
 
   useEffect(() => {
     supabase
@@ -43,20 +28,16 @@ export function useHotelScope(select: string = 'id, nom') {
         const list = (data as unknown as Hotel[]) || [];
         setHotels(list);
         // Sélectionne le premier hôtel par défaut si rien n'est encore choisi.
-        setSelectedHotelIdState((prev) => {
-          if (prev) return prev;
-          const first = list[0]?.id || '';
-          if (first && typeof window !== 'undefined') {
-            window.localStorage.setItem(STORAGE_KEY, first);
-          }
-          return first;
-        });
+        if (!selectedHotelId && list[0]?.id) setSelectedHotelId(list[0].id);
       });
+    // selectedHotelId volontairement hors deps : on ne veut pas refetch à chaque
+    // changement d'hôtel, et le défaut ci-dessus n'a besoin de tourner qu'au chargement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [select]);
 
   const currentHotel = useMemo(
     () => hotels.find((h) => h.id === selectedHotelId) || null,
-    [hotels, selectedHotelId]
+    [hotels, selectedHotelId],
   );
 
   return { hotels, selectedHotelId, setSelectedHotelId, currentHotel };

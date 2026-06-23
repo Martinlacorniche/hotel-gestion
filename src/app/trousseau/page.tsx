@@ -172,15 +172,6 @@ export default function TrousseauPage() {
                         <Plus className="w-5 h-5" />
                     </button>
                 </div>
-                {hotels.length > 1 && (
-                    <select 
-                        className="w-full bg-slate-50 border border-slate-200 text-xs font-bold py-2 px-3 rounded-lg outline-none focus:ring-2 focus:ring-[var(--brand)] text-slate-600"
-                        value={selectedHotelId}
-                        onChange={(e) => { setSelectedHotelId(e.target.value); setSelectedEntry(null); }}
-                    >
-                        {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-                    </select>
-                )}
             </div>
 
             <div className="relative group">

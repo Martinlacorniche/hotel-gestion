@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { ThemedBackground } from "@/components/ThemedBackground";
 import { confirmDialog } from "@/components/ConfirmDialog";
+import { PageHeader } from "@/components/PageHeader";
+import { EmptyState as SharedEmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,6 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import {
-  ArrowLeft,
   UserPlus,
   Loader2,
   Search,
@@ -353,30 +353,21 @@ export default function UsersPage() {
   return (
     <div className="min-h-screen">
       <ThemedBackground />
-      {/* Header sticky */}
-      <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="sm" className="text-slate-500 hover:text-slate-800 -ml-2">
-                <ArrowLeft size={16} className="mr-1" /> Retour
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-lg font-semibold text-slate-900">Utilisateurs</h1>
-              <p className="text-xs text-slate-500">Gérez les accès et les rôles de votre équipe</p>
-            </div>
-          </div>
-          <Button
-            onClick={() => setInviteOpen(true)}
-            className="bg-slate-900 hover:bg-slate-800 text-white shadow-sm"
-          >
-            <UserPlus size={15} className="mr-2" /> Inviter
-          </Button>
-        </div>
-      </header>
-
       <main className="max-w-7xl mx-auto px-6 py-6">
+        <PageHeader
+          icon={UsersIcon}
+          title="Utilisateurs"
+          subtitle="Gérez les accès et les rôles de votre équipe"
+          iconClassName="bg-indigo-50 text-indigo-700"
+          actions={
+            <Button
+              onClick={() => setInviteOpen(true)}
+              className="bg-slate-900 hover:bg-slate-800 text-white shadow-sm"
+            >
+              <UserPlus size={15} className="mr-2" /> Inviter
+            </Button>
+          }
+        />
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <StatCard icon={UsersIcon} iconBg="bg-slate-100" iconColor="text-slate-600" label="Total" value={stats.total} />
@@ -443,7 +434,16 @@ export default function UsersPage() {
               <Loader2 className="animate-spin inline mr-2" size={16} /> Chargement…
             </div>
           ) : filtered.length === 0 ? (
-            <EmptyState onInvite={() => setInviteOpen(true)} />
+            <SharedEmptyState
+              icon={Search}
+              title="Aucun utilisateur trouvé"
+              subtitle="Essayez de modifier les filtres ou invitez un nouvel utilisateur."
+              action={
+                <Button size="sm" onClick={() => setInviteOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white">
+                  <UserPlus size={14} className="mr-2" /> Inviter
+                </Button>
+              }
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -771,21 +771,6 @@ function StatusDot({ active }: { active: boolean }) {
       <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-emerald-500" : "bg-rose-400"}`} />
       <span className={active ? "text-emerald-700" : "text-rose-600"}>{active ? "Actif" : "Désactivé"}</span>
     </span>
-  );
-}
-
-function EmptyState({ onInvite }: { onInvite: () => void }) {
-  return (
-    <div className="py-20 text-center">
-      <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-3">
-        <Search size={20} className="text-slate-400" />
-      </div>
-      <p className="text-sm text-slate-700 font-medium">Aucun utilisateur trouvé</p>
-      <p className="text-xs text-slate-500 mt-1 mb-4">Essayez de modifier les filtres ou invitez un nouvel utilisateur.</p>
-      <Button size="sm" onClick={onInvite} className="bg-slate-900 hover:bg-slate-800 text-white">
-        <UserPlus size={14} className="mr-2" /> Inviter
-      </Button>
-    </div>
   );
 }
 

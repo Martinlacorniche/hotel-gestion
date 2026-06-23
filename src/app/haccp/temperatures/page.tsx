@@ -142,17 +142,6 @@ export default function HACCPTemperaturesDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {hotels.length > 1 && (
-            <select
-              value={selectedHotelId || ''}
-              onChange={(e) => setSelectedHotelId(e.target.value)}
-              className="border rounded-md px-3 h-11 text-sm bg-background"
-            >
-              {hotels.map(h => (
-                <option key={h.id} value={h.id}>{h.nom}</option>
-              ))}
-            </select>
-          )}
           <Button
             asChild
             variant="outline"

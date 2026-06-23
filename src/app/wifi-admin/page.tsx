@@ -18,6 +18,8 @@ import {
   X, Clock, Euro, Sparkles
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { PageHeader } from "@/components/PageHeader";
+import { useSelectedHotel } from "@/context/SelectedHotelContext";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -174,8 +176,17 @@ function WifiAdminContent() {
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const hotelId = searchParams?.get("hotel_id") ?? CORNICHE_ID;
+  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
+  const qsHotelId = searchParams?.get("hotel_id");
+  // Source de vérité : le contexte global (piloté par la sidebar). On accepte
+  // encore un ?hotel_id= en deep-link, qu'on synchronise dans le contexte.
+  const hotelId = qsHotelId || selectedHotelId || CORNICHE_ID;
   const isVoiles = hotelId === VOILES_ID;
+
+  useEffect(() => {
+    if (qsHotelId && qsHotelId !== selectedHotelId) setSelectedHotelId(qsHotelId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qsHotelId]);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
@@ -188,18 +199,12 @@ function WifiAdminContent() {
       <div className="min-h-screen">
         <ThemedBackground />
         <div className="max-w-2xl mx-auto px-4 py-8">
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-9 h-9 rounded-xl bg-[#004e7c] flex items-center justify-center">
-              <Wifi size={18} className="text-white" />
-            </div>
-            <div>
-              <h1 className="font-semibold text-slate-900 text-lg">Gestion de l&apos;interface WiFi</h1>
-              <p className="text-xs text-slate-400">
-                {isVoiles ? "Les Voiles" : "BW+ La Corniche"} · Portail clients
-              </p>
-            </div>
-          </div>
+          <PageHeader
+            icon={Wifi}
+            title="Gestion de l'interface WiFi"
+            subtitle={`${isVoiles ? "Les Voiles" : "BW+ La Corniche"} · Portail clients`}
+            iconClassName="bg-sky-50 text-sky-700"
+          />
 
           <Tabs defaultValue="tuiles">
             <TabsList className="w-full mb-6">
@@ -306,7 +311,7 @@ function TilesTab() {
     const ext = file.name.split(".").pop();
     const path = `tiles/${tile.slug}.${ext}`;
     const { error: upErr } = await supabase.storage.from("wifi-images").upload(path, file, { upsert: true });
-    if (upErr) { toast.error("Erreur upload"); setUploading(null); return; }
+    if (upErr) { toast.error(`Erreur upload : ${upErr.message}`); setUploading(null); return; }
     const { data: { publicUrl } } = supabase.storage.from("wifi-images").getPublicUrl(path);
     await supabase.from("wifi_tiles").update({ image_url: publicUrl }).eq("id", tile.id);
     update(tile.id, { image_url: publicUrl });

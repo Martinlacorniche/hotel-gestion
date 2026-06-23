@@ -135,15 +135,6 @@ export default function RegistrePage() {
 
       {/* Sélecteurs */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        {hotels.length > 1 && (
-          <select
-            value={selectedHotelId || ''}
-            onChange={e => setSelectedHotelId(e.target.value)}
-            className="border rounded-md px-3 h-11 text-sm bg-background"
-          >
-            {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-          </select>
-        )}
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setPeriod(p => subMonths(p, 1))} aria-label="Mois précédent" className="h-11 w-11 p-0">
             <ChevronLeft className="w-5 h-5" />

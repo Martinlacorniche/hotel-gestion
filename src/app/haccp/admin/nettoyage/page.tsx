@@ -110,15 +110,6 @@ export default function HACCPCleaningAdminPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {hotels.length > 1 && (
-            <select
-              value={selectedHotelId || ''}
-              onChange={e => setSelectedHotelId(e.target.value)}
-              className="border rounded-md px-3 py-2 text-sm bg-background"
-            >
-              {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-            </select>
-          )}
           <Link href="/haccp/admin/nettoyage/calendrier">
             <Button variant="outline">
               <CalendarRange className="w-4 h-4 mr-1" /> Calendrier

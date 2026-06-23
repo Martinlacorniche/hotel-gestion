@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import { useHotelScope } from '@/hooks/useHotelScope';
+import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -187,25 +188,12 @@ export default function HACCPHome() {
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
-      <header className="mb-6 flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">
-            HACCP{firstName ? ` · Bonjour ${firstName}` : ''}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Ton tableau de bord du jour — alertes, tâches, températures.
-          </p>
-        </div>
-        {hotels.length > 1 && (
-          <select
-            value={selectedHotelId || ''}
-            onChange={e => setSelectedHotelId(e.target.value)}
-            className="border rounded-md px-3 h-11 text-sm bg-background"
-          >
-            {hotels.map(h => <option key={h.id} value={h.id}>{h.nom}</option>)}
-          </select>
-        )}
-      </header>
+      <PageHeader
+        icon={Thermometer}
+        title={`HACCP${firstName ? ` · Bonjour ${firstName}` : ''}`}
+        subtitle="Ton tableau de bord du jour — alertes, tâches, températures."
+        iconClassName="bg-rose-50 text-rose-700"
+      />
 
       {loading ? (
         <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin" /></div>

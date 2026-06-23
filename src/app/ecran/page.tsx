@@ -2,14 +2,15 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { ThemedBackground } from "@/components/ThemedBackground";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
 import {
-  ArrowLeft, Monitor, Send, Loader2, Clock, Check, AlertTriangle, RefreshCw,
+  Monitor, Send, Loader2, Clock, Check, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -114,19 +115,14 @@ export default function EcranPage() {
 
       {/* Header sticky */}
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
-        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-3">
-          <Link href="/">
-            <Button variant="ghost" size="sm" className="text-slate-500 hover:text-slate-800 -ml-2">
-              <ArrowLeft size={16} className="mr-1" /> Retour
-            </Button>
-          </Link>
-          <div className="flex items-center gap-2">
-            <Monitor size={18} className="text-slate-700" />
-            <div>
-              <h1 className="text-lg font-semibold text-slate-900">Écran</h1>
-              <p className="text-xs text-slate-500">Envoyer un message à l&apos;écran SmallTV</p>
-            </div>
-          </div>
+        <div className="max-w-3xl mx-auto px-6 py-4">
+          <PageHeader
+            icon={Monitor}
+            title="Écran"
+            subtitle="Envoyer un message à l'écran SmallTV"
+            iconClassName="bg-slate-100 text-slate-700"
+            className="mb-0"
+          />
         </div>
       </header>
 
@@ -202,7 +198,7 @@ export default function EcranPage() {
               <Loader2 className="animate-spin" size={18} />
             </div>
           ) : messages.length === 0 ? (
-            <div className="py-8 text-center text-sm text-slate-400">Aucun message envoyé.</div>
+            <EmptyState icon={Monitor} title="Aucun message envoyé" subtitle="Les messages envoyés à l'écran SmallTV apparaîtront ici." />
           ) : (
             <ul className="divide-y divide-slate-100">
               {messages.map((m) => (

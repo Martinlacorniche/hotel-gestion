@@ -12,53 +12,22 @@ import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { 
-  ChevronLeft, ChevronRight, PlusCircle, Filter, CalendarDays, Car,
-  NotebookText, ShoppingCart, KeyRound, Settings, LogOut,
-  Stamp, Grid, Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
-  Wrench, Tv2, Wifi, Package, Star, Thermometer, Wind, Monitor, CreditCard, // Icônes maintenance + chromecast + wifi + objets + favoris + HACCP + clim + écran + encaissement
+import {
+  ChevronLeft, ChevronRight, PlusCircle, Filter,
+  Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
   MessageCircle, Send, // Conversation consignes
-  Euro, // Caisse
   X // Chambres libérées
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { v4 as uuidv4 } from 'uuid';
 import { format as formatDate } from 'date-fns';
 import { fr as frLocale } from 'date-fns/locale';
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuLabel,
-} from "@/components/ui/dropdown-menu";
 
 // --- OUTILS / MENU ---
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolDef = { id: string; label: string; href: string | ((id: string) => string); icon: any; bg: string; text: string; condition?: "parking" | "coworking" | "corniche" | "voiles" | "superadmin" | "admin" };
-
-const TOOLS: ToolDef[] = [
-  { id: "planning",    label: "Planning",     href: "/planning",                           icon: CalendarDays, bg: "bg-indigo-50",  text: "text-indigo-600" },
-  { id: "parking",     label: "Parking",      href: "/parking",                            icon: Car,          bg: "bg-green-50",   text: "text-green-700",  condition: "parking" },
-  { id: "fidelite",    label: "Co-Work",      href: "/fidelite",                           icon: Stamp,        bg: "bg-purple-50",  text: "text-purple-700", condition: "coworking" },
-  { id: "commandes",   label: "Commandes",    href: "/commandes",                          icon: ShoppingCart, bg: "bg-orange-50",  text: "text-orange-700" },
-  { id: "trousseau",   label: "Identifiants", href: (id) => `/trousseau?hotel_id=${id}`,   icon: KeyRound,     bg: "bg-cyan-50",    text: "text-cyan-700" },
-  { id: "repertoire",  label: "Contacts",     href: (id) => `/repertoire?hotel_id=${id}`,  icon: NotebookText, bg: "bg-blue-50",    text: "text-blue-700" },
-  { id: "process",     label: "Process",      href: (id) => `/process?hotel_id=${id}`,     icon: Settings,     bg: "bg-gray-50",    text: "text-gray-700" },
-  { id: "commercial",  label: "Commercial",   href: (id) => `/commercial?hotel_id=${id}`,  icon: ShoppingCart, bg: "bg-violet-50",  text: "text-violet-700" },
-  { id: "maintenance", label: "Maintenance",  href: (id) => `/maintenance?hotel_id=${id}`, icon: Wrench,       bg: "bg-yellow-50",  text: "text-yellow-700" },
-  { id: "chromecast",  label: "Chromecasts",  href: "/chromecast",                         icon: Tv2,          bg: "bg-slate-100",  text: "text-slate-700",  condition: "corniche" },
-  { id: "haccp",       label: "HACCP",        href: "/haccp",                              icon: Thermometer,  bg: "bg-rose-50",    text: "text-rose-700" },
-  { id: "wifi-admin",  label: "Wifi Client", href: (id: string) => `/wifi-admin?hotel_id=${id}`, icon: Wifi, bg: "bg-sky-50", text: "text-sky-700" },
-  { id: "objets-pret", label: "Curiosités",    href: "/objets-pret",                        icon: Package,      bg: "bg-amber-50",   text: "text-amber-700",  condition: "corniche" },
-  { id: "clim",        label: "Clim",          href: "/clim",                               icon: Wind,         bg: "bg-sky-50",     text: "text-sky-700",    condition: "voiles" },
-  { id: "ecran",       label: "Écran",         href: "/ecran",                              icon: Monitor,      bg: "bg-slate-100",  text: "text-slate-700",  condition: "superadmin" },
-  { id: "encaissement", label: "Encaissement", href: "/encaissement",                       icon: CreditCard,   bg: "bg-emerald-50", text: "text-emerald-700", condition: "admin" },
-  // « Groupes & mariages » n'a plus de tuile : accès uniquement via la page Commercial.
-];
+// Liste partagée avec la sidebar (AppShell) — définie dans src/lib/tools.ts
 
 // --- TYPES & UTILITAIRES ---
 
@@ -142,30 +111,7 @@ function weatherIconSVG(code: number) {
 // --- COMPOSANT PRINCIPAL ---
 
 export default function HotelDashboard() {
-  const { user: rawUser, logout, isLoading } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [pinnedTools, setPinnedTools] = useState<string[]>([]);
-  const [pinnedLoaded, setPinnedLoaded] = useState(false);
-
-  useEffect(() => {
-    if (!rawUser?.id) return;
-    supabase.from("users").select("pinned_tools").eq("id_auth", rawUser.id).single()
-      .then(({ data, error }) => {
-        if (error) { console.error("fetch pinned_tools:", error); }
-        setPinnedTools(data?.pinned_tools ?? ["planning"]);
-        setPinnedLoaded(true);
-      });
-  }, [rawUser?.id]);
-
-  const togglePin = async (id: string) => {
-    if (!rawUser?.id) return;
-    const next = pinnedTools.includes(id)
-      ? pinnedTools.filter(p => p !== id)
-      : [...pinnedTools, id];
-    setPinnedTools(next);
-    const { error } = await supabase.from("users").update({ pinned_tools: next }).eq("id_auth", rawUser.id);
-    if (error) { console.error("save pinned_tools:", error); }
-  };
+  const { user: rawUser, isLoading } = useAuth();
   const [sunTimes, setSunTimes] = useState<{sunrise:string, sunset:string} | null>(null);
 
   const user = rawUser as CustomUser | null;
@@ -265,20 +211,9 @@ export default function HotelDashboard() {
   }, [showUserDropdown]);
 
   const [hotels, setHotels] = useState<any[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const fromStorage = window.localStorage.getItem('selectedHotelId');
-      if (fromStorage) return fromStorage;
-    }
-    if (user && (user as any).hotel_id) return (user as any).hotel_id;
-    return '';
-  });
-
-  useEffect(() => {
-    if (selectedHotelId && typeof window !== 'undefined') {
-      window.localStorage.setItem('selectedHotelId', selectedHotelId);
-    }
-  }, [selectedHotelId]);
+  // Hôtel sélectionné = contexte global partagé avec la sidebar (rail) et toutes
+  // les pages → un switch ici suit partout, et inversement.
+  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
 
   // Si pas de choix manuel ni en localStorage, utiliser default_hotel_id du user
   // (préférence sur /profil) puis fallback sur user.hotel_id.
@@ -1083,158 +1018,48 @@ const birthdayMessage = useMemo(() => {
           </div>
         </div>
 
-        {/* Zone droite : Actions */}
-        <div className="flex items-center gap-3 justify-end md:w-auto overflow-x-auto pb-2 md:pb-0">
-
-          {/* Bouton Caisse — sobre, même esthétique que la pill date */}
-          <a
-            href={`/caisse?hotel_id=${hotelId || ''}`}
-            target="_blank"
-            title="Caisse du jour"
-            className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-white border border-slate-200 shadow-sm hover:border-slate-300 hover:bg-slate-50 transition text-sm font-semibold text-slate-700 shrink-0"
-          >
-            <Euro className="w-4 h-4 text-slate-500" />
-            Caisse
-          </a>
-
-          {/* Bouton Serrures — uniquement pour Les Voiles */}
-          {currentHotel?.nom?.toLowerCase().includes("voiles") && (
-            <a
-              href="/serrures"
-              target="_blank"
-              title="Serrures"
-              className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-sm hover:shadow-md transition-all"
-            >
-              <KeyRound className="w-4 h-4" />
-            </a>
-          )}
-
-           {/* Sélecteur Hôtel */}
-           {hotels.length > 1 && (
-            <div className="flex bg-white rounded-full shadow-sm border border-slate-200 p-1">
-              {hotels.map((h: any) => (
-                <button
-                  key={h.id}
-                  onClick={() => setSelectedHotelId(h.id)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all duration-200 ${
-                    h.id === selectedHotelId 
-                      ? "bg-indigo-600 text-white shadow-md" 
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {h.nom}
-                </button>
-              ))}
-            </div>
-          )}
-
-           {/* Favoris épinglés — affichés directement dans le header */}
-           {pinnedLoaded && (() => {
-             const isCorniche = currentHotel?.nom?.toLowerCase().includes("corniche");
-             const isVoiles = currentHotel?.nom?.toLowerCase().includes("voiles");
-             return pinnedTools.map(pid => {
-               const t = TOOLS.find(t => t.id === pid);
-               if (!t) return null;
-               if (t.condition === "parking" && !currentHotel?.has_parking) return null;
-               if (t.condition === "coworking" && !currentHotel?.has_coworking) return null;
-               if (t.condition === "corniche" && !isCorniche) return null;
-               if (t.condition === "voiles" && !isVoiles) return null;
-               if (t.condition === "superadmin" && !isSuperadmin) return null;
-               if (t.condition === "admin" && !isAdmin) return null;
-               const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;
-               return (
-                 <a key={t.id} href={href} target="_blank" title={t.label}
-                   className={`flex items-center justify-center w-9 h-9 rounded-full ${t.bg} ${t.text} hover:opacity-80 transition shrink-0`}>
-                   <t.icon className="w-4 h-4" />
-                 </a>
-               );
-             });
-           })() }
-
-           {/* Apps Menu */}
-           <DropdownMenu open={open} onOpenChange={setOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="bg-white shadow-sm rounded-full border-slate-200">
-                <Grid className="w-4 h-4 text-slate-600" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72 p-3 space-y-2">
-              <p className="text-[10px] uppercase tracking-widest text-slate-400 px-1 pb-1">Applications</p>
-              <div className="grid grid-cols-3 gap-1.5">
-                {(() => {
-                  const isCorniche = currentHotel?.nom?.toLowerCase().includes("corniche");
-                  const isVoiles = currentHotel?.nom?.toLowerCase().includes("voiles");
-                  return TOOLS.filter(t => {
-                    if (t.condition === "parking")  return currentHotel?.has_parking;
-                    if (t.condition === "coworking") return currentHotel?.has_coworking;
-                    if (t.condition === "corniche")  return isCorniche;
-                    if (t.condition === "voiles")    return isVoiles;
-                    if (t.condition === "superadmin") return isSuperadmin;
-                    if (t.condition === "admin")     return isAdmin;
-                    return true;
-                  }).map(t => {
-                    const href = typeof t.href === "function" ? t.href(hotelId || "") : t.href;
-                    const pinned = pinnedTools.includes(t.id);
-                    return (
-                      <div key={t.id} className="relative group">
-                        <a href={href} target="_blank"
-                          className={`flex flex-col items-center justify-center gap-1 p-2.5 rounded-xl ${t.bg} ${t.text} hover:opacity-80 transition w-full`}>
-                          <t.icon className="w-5 h-5" />
-                          <span className="text-[10px] font-medium text-center leading-tight">{t.label}</span>
-                        </a>
-                        <button
-                          onClick={e => { e.preventDefault(); e.stopPropagation(); togglePin(t.id); }}
-                          title={pinned ? "Retirer des favoris" : "Épingler"}
-                          className={`absolute top-1 right-1 rounded-full p-0.5 transition opacity-0 group-hover:opacity-100 ${pinned ? "opacity-100 text-amber-500" : "text-slate-300 hover:text-amber-400"}`}
-                        >
-                          <Star className="w-3 h-3" fill={pinned ? "currentColor" : "none"} />
-                        </button>
-                      </div>
-                    );
-                  });
-                })()}
+        {/* Zone droite : Météo du jour (remontée ici, à la place de l'ancien menu) */}
+        {hasMeteo && mainMeteo && (
+          <div className="justify-self-end w-full md:w-auto">
+            <div className={`flex items-center gap-3 rounded-2xl px-3.5 py-2 shadow-sm border border-white/60 ${bgColorForWeather(mainMeteo.weathercode)}`}>
+              <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm shrink-0">
+                {weatherIconSVG(mainMeteo.weathercode)}
               </div>
-              {pinnedTools.length > 0 && (
-                <p className="text-[10px] text-slate-400 text-center pt-1">⭐ = épinglé dans la barre</p>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Menu utilisateur (avatar cliquable) */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                title="Menu"
-                className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
-                style={{ backgroundColor: 'var(--brand, #4f46e5)' }}
-              >
-                {(user as any)?.emoji
-                  ? <span className="text-base">{(user as any).emoji}</span>
-                  : <span>{(user?.name || user?.email || '?').slice(0, 2).toUpperCase()}</span>}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-slate-900">
-                    {(user as any)?.emoji ? `${(user as any).emoji} ` : ''}{user?.name || user?.email}
-                  </span>
-                  <span className="text-xs text-slate-500 truncate">{user?.email}</span>
+              <div className="leading-tight">
+                <div className="text-2xl font-extrabold text-slate-800">{mainMeteo.temperature}°</div>
+                <div className="text-[10px] text-slate-500 -mt-0.5">{weatherLabel(mainMeteo.weathercode)}</div>
+              </div>
+              <div className="flex items-stretch gap-3 border-l border-white/70 pl-3">
+                {meteoMorning && (
+                  <div className="text-center">
+                    <div className="text-[9px] uppercase font-bold text-slate-400">Matin</div>
+                    <div className="text-sm font-bold text-slate-700">{meteoMorning.temperature}°</div>
+                    <div className="flex items-center justify-center gap-0.5 text-[9px] text-slate-500">
+                      <svg width="10" height="10" viewBox="0 0 24 24" style={{ transform: `rotate(${meteoMorning.winddirection + 180}deg)` }}><path d="M12 2 L15 8 H9 L12 2 Z M11 8 V20 H13 V8 H11 Z" fill="currentColor" /></svg>
+                      {Math.round(meteoMorning.windspeed)}
+                    </div>
+                  </div>
+                )}
+                {meteoAfternoon && (
+                  <div className="text-center">
+                    <div className="text-[9px] uppercase font-bold text-slate-400">Aprem</div>
+                    <div className="text-sm font-bold text-slate-700">{meteoAfternoon.temperature}°</div>
+                    <div className="flex items-center justify-center gap-0.5 text-[9px] text-slate-500">
+                      <svg width="10" height="10" viewBox="0 0 24 24" style={{ transform: `rotate(${meteoAfternoon.winddirection + 180}deg)` }}><path d="M12 2 L15 8 H9 L12 2 Z M11 8 V20 H13 V8 H11 Z" fill="currentColor" /></svg>
+                      {Math.round(meteoAfternoon.windspeed)}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {(seaTemp || sunTimes) && (
+                <div className="hidden sm:flex flex-col gap-0.5 border-l border-white/70 pl-3 text-[10px] text-slate-600 font-medium whitespace-nowrap">
+                  {seaTemp != null && <span>🌊 {seaTemp.toFixed(1)}°</span>}
+                  {sunTimes && <span>☀️ {sunTimes.sunrise}–{sunTimes.sunset}</span>}
                 </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <Link href="/profil">
-                <DropdownMenuItem className="cursor-pointer">
-                  <Settings size={14} /> Mon profil
-                </DropdownMenuItem>
-              </Link>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={logout} className="cursor-pointer text-rose-600 focus:text-rose-700 focus:bg-rose-50">
-                <LogOut size={14} /> Déconnexion
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* --- BARRE DE RECHERCHE GLOBALE --- */}
@@ -1416,59 +1241,12 @@ const birthdayMessage = useMemo(() => {
             </div>
         </div>
 
-        {/* COL 3 : SIDEBAR (Météo, KPIs, Taxis) */}
-        <div className="flex flex-col gap-6">
-            
-            {/* METEO WIDGET */}
-            <div className={`rounded-3xl p-4 shadow-sm border border-white/50 ${mainMeteo ? bgColorForWeather(mainMeteo.weathercode) : "bg-white"}`}>
-                 <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                         <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-sm">
-                            {mainMeteo ? weatherIconSVG(mainMeteo.weathercode) : <div className="w-4 h-4 bg-gray-200 rounded-full animate-pulse"/>}
-                         </div>
-                         <div>
-                            <div className="text-xs font-bold text-slate-700 uppercase tracking-wide">Météo</div>
-                            <div className="text-[10px] text-slate-500">{formatDate(selectedDate, "d MMMM")}</div>
-                         </div>
-                    </div>
-                 </div>
+        {/* COL 3 : SIDEBAR (KPIs, Taxis, Chambres libérées) — météo remontée dans le header */}
+        <div className="flex flex-col gap-4">
 
-                 {hasMeteo ? (
-                    <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-2">
-                            {meteoMorning && (
-                                <div className="bg-white/60 rounded-2xl p-2 flex flex-col items-center text-center">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Matin</span>
-                                    <span className="text-lg font-bold text-slate-800">{meteoMorning.temperature}°</span>
-                                    <span className="text-[10px] text-slate-500 leading-tight">{weatherLabel(meteoMorning.weathercode)}</span>
-                                    <div className="flex items-center justify-center gap-1 mt-1 text-[10px] text-slate-600">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" style={{ transform: `rotate(${meteoMorning.winddirection + 180}deg)` }}>
-                                             <path d="M12 2 L15 8 H9 L12 2 Z M11 8 V20 H13 V8 H11 Z" fill="currentColor"/>
-                                        </svg>
-                                        <span>{Math.round(meteoMorning.windspeed)} km/h</span>
-                                    </div>
-                                </div>
-                            )}
-                             {meteoAfternoon && (
-                                <div className="bg-white/60 rounded-2xl p-2 flex flex-col items-center text-center">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Aprem</span>
-                                    <span className="text-lg font-bold text-slate-800">{meteoAfternoon.temperature}°</span>
-                                    <span className="text-[10px] text-slate-500 leading-tight">{weatherLabel(meteoAfternoon.weathercode)}</span>
-                                    <div className="flex items-center justify-center gap-1 mt-1 text-[10px] text-slate-600">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" style={{ transform: `rotate(${meteoAfternoon.winddirection + 180}deg)` }}>
-                                             <path d="M12 2 L15 8 H9 L12 2 Z M11 8 V20 H13 V8 H11 Z" fill="currentColor"/>
-                                        </svg>
-                                        <span>{Math.round(meteoAfternoon.windspeed)} km/h</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex justify-between items-center px-2 text-xs text-slate-600 font-medium">
-                             {seaTemp && <span>🌊 {seaTemp.toFixed(1)}°C</span>}
-                             {sunTimes && <span>☀️ {sunTimes.sunrise} - {sunTimes.sunset}</span>}
-                        </div>
-                    </div>
-                 ) : ( <div className="text-xs text-center py-2 text-slate-400">Chargement...</div>)}
+            {/* En-tête fantôme : aligne la 1ʳᵉ carte avec celles de Consignes/Tickets */}
+            <div className="hidden lg:flex items-center" aria-hidden>
+              <h2 className="text-lg font-bold flex items-center gap-2 invisible">.<span className="text-xs px-2 py-0.5 rounded-full">.</span></h2>
             </div>
 
             {/* CHAMBRES LIBÉRÉES — compact : champ seul, liste du jour au survol */}

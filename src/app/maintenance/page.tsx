@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import { ThemedBackground } from '@/components/ThemedBackground';
+import { PageHeader } from '@/components/PageHeader';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +15,7 @@ import { fr as frLocale } from 'date-fns/locale';
 import { format as dfFormat, parse as dfParse } from 'date-fns';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import {
   ChevronDown, ChevronRight, Wrench, Lightbulb, Droplets, Fan, Hammer,
   PaintRoller, DoorClosed, PlugZap, Plus, Calendar,
@@ -141,7 +143,7 @@ function MaintenancePageInner() {
   const { user: rawUser } = useAuth();
   const searchParams = useSearchParams();
 
-  const [hotelId, setHotelId] = useState<string>('');
+  const { selectedHotelId: hotelId, setSelectedHotelId: setHotelId } = useSelectedHotel();
   const [hotelName, setHotelName] = useState<string>('');
   const [hotels, setHotels] = useState<{ id: string; nom: string }[]>([]);
   const [items, setItems] = useState<MaintItem[]>([]);
@@ -200,19 +202,16 @@ function MaintenancePageInner() {
     (async () => {
       const fromQS = searchParams?.get('hotel_id');
       if (fromQS) { setHotelId(fromQS); return; }
-      if (typeof window !== 'undefined') {
-        const fromLS = window.localStorage.getItem('selectedHotelId');
-        if (fromLS) { setHotelId(fromLS); return; }
-      }
+      // Le contexte restaure déjà l'hôtel depuis localStorage ; on ne fixe un
+      // défaut (hôtel du user) que si aucun hôtel n'est encore sélectionné.
+      if (hotelId) return;
       const { data: authRes } = await supabase.auth.getUser();
       if (authRes?.user?.id) {
         const { data: u } = await supabase.from('users').select('hotel_id').eq('id_auth', authRes.user.id).maybeSingle();
-        if (u?.hotel_id) {
-          setHotelId(u.hotel_id);
-          if (typeof window !== 'undefined') window.localStorage.setItem('selectedHotelId', u.hotel_id);
-        }
+        if (u?.hotel_id) setHotelId(u.hotel_id);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   useEffect(() => {
@@ -248,12 +247,6 @@ function MaintenancePageInner() {
       if (!error) setClimReseaux((data as any) || []);
     })();
   }, [hotelId]);
-
-  const switchHotel = (newId: string) => {
-    if (!newId || newId === hotelId) return;
-    setHotelId(newId);
-    if (typeof window !== 'undefined') window.localStorage.setItem('selectedHotelId', newId);
-  };
 
   useEffect(() => {
     document.title = 'Maintenance';
@@ -464,28 +457,18 @@ function MaintenancePageInner() {
       {/* --- MAIN CONTENT --- */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         
-        {/* Header Flottant Moderne */}
-        <div className="h-20 shrink-0 flex items-center justify-between px-8 z-20 gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 bg-white rounded-2xl shadow-sm flex items-center justify-center shrink-0">
-                    <Wrench className="w-5 h-5 text-[var(--brand)]" />
-                </div>
-                <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">Maintenance</h1>
-                {hotels.length > 1 && (
-                    <select
-                        value={hotelId}
-                        onChange={(e) => switchHotel(e.target.value)}
-                        className="ml-3 bg-white border border-slate-200 rounded-xl px-3 h-10 text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 focus:ring-2 focus:ring-[var(--brand)] outline-none transition"
-                    >
-                        {hotels.map(h => (
-                            <option key={h.id} value={h.id}>{h.nom}</option>
-                        ))}
-                    </select>
-                )}
-            </div>
-            <Button onClick={() => setShowCreate(true)} disabled={!hotelId} className="btn-brand text-white shadow-lg shadow-slate-300/40 rounded-2xl px-6 h-12 text-sm font-bold transition-all hover:-translate-y-0.5 shrink-0">
-                <Plus className="w-5 h-5 mr-2" /> Signalement
-            </Button>
+        {/* Header */}
+        <div className="shrink-0 px-8 pt-6 z-20">
+            <PageHeader
+                icon={Wrench}
+                title="Maintenance"
+                iconClassName="bg-yellow-50 text-yellow-700"
+                actions={
+                    <Button onClick={() => setShowCreate(true)} disabled={!hotelId} className="btn-brand text-white shadow-lg shadow-slate-300/40 rounded-2xl px-6 h-12 text-sm font-bold transition-all hover:-translate-y-0.5 shrink-0">
+                        <Plus className="w-5 h-5 mr-2" /> Signalement
+                    </Button>
+                }
+            />
         </div>
 
         {/* Tabs & Content */}
