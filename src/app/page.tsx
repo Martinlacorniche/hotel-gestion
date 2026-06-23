@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { confirmDialog } from '@/components/ConfirmDialog';
-import BriefingModal from '@/components/BriefingModal';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -998,8 +997,6 @@ const birthdayMessage = useMemo(() => {
           </h1>
           <div className="flex items-center gap-2.5 text-sm text-slate-500">
             <span>Voici ce qui se passe aujourd'hui à l'hôtel.</span>
-            {/* Brief de prise de poste — résumé IA à la demande */}
-            <BriefingModal user={user as any} hotelId={hotelId} />
           </div>
         </div>
 
