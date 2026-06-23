@@ -212,17 +212,9 @@ export default function HotelDashboard() {
   const [hotels, setHotels] = useState<any[]>([]);
   // Hôtel sélectionné = contexte global partagé avec la sidebar (rail) et toutes
   // les pages → un switch ici suit partout, et inversement.
-  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
-
-  // Si pas de choix manuel ni en localStorage, utiliser default_hotel_id du user
-  // (préférence sur /profil) puis fallback sur user.hotel_id.
-  useEffect(() => {
-    if (selectedHotelId) return;
-    if (typeof window !== 'undefined' && window.localStorage.getItem('selectedHotelId')) return;
-    const def = (user as any)?.default_hotel_id;
-    if (def) { setSelectedHotelId(def); return; }
-    if ((user as any)?.hotel_id) setSelectedHotelId((user as any).hotel_id);
-  }, [user, selectedHotelId]);
+  const { selectedHotelId } = useSelectedHotel();
+  // Le défaut (hôtel attribué de l'user) est désormais résolu par
+  // SelectedHotelContext — plus de logique de défaut dupliquée ici.
 
   const [currentHotel, setCurrentHotel] = useState<any | null>(null);
   const hotelId = selectedHotelId || (user as any)?.default_hotel_id || (user as any)?.hotel_id;

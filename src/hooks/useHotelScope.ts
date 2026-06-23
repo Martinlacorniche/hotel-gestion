@@ -17,23 +17,25 @@ export type Hotel = { id: string; nom: string; [key: string]: unknown };
  * @param select colonnes à charger sur `hotels` (défaut "id, nom").
  */
 export function useHotelScope(select: string = 'id, nom') {
-  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
+  const { selectedHotelId, setSelectedHotelId, initialized } = useSelectedHotel();
   const [hotels, setHotels] = useState<Hotel[]>([]);
 
   useEffect(() => {
     supabase
       .from('hotels')
       .select(select)
-      .then(({ data }) => {
-        const list = (data as unknown as Hotel[]) || [];
-        setHotels(list);
-        // Sélectionne le premier hôtel par défaut si rien n'est encore choisi.
-        if (!selectedHotelId && list[0]?.id) setSelectedHotelId(list[0].id);
-      });
-    // selectedHotelId volontairement hors deps : on ne veut pas refetch à chaque
-    // changement d'hôtel, et le défaut ci-dessus n'a besoin de tourner qu'au chargement.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      .then(({ data }) => setHotels((data as unknown as Hotel[]) || []));
   }, [select]);
+
+  // Dernier recours : si l'init du contexte est terminée (auth chargée) et que
+  // l'user n'a AUCUN hôtel attribué (ex. superadmin), on retombe sur le 1er hôtel.
+  // Effet SÉPARÉ avec deps fraîches → plus de closure périmée. C'était l'ancien
+  // bug : le `.then()` lisait un `selectedHotelId` figé à '' et écrasait à chaque
+  // refresh le choix de l'user par list[0] (Les Voiles).
+  useEffect(() => {
+    if (!initialized || selectedHotelId) return;
+    if (hotels[0]?.id) setSelectedHotelId(hotels[0].id);
+  }, [initialized, selectedHotelId, hotels, setSelectedHotelId]);
 
   const currentHotel = useMemo(
     () => hotels.find((h) => h.id === selectedHotelId) || null,

@@ -208,7 +208,7 @@ export default function PlanningPage() {
   const router = useRouter();
   const [hotels, setHotels] = useState([]);
   // Hôtel sélectionné = contexte global (synchro sidebar + autres pages).
-  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
+  const { selectedHotelId } = useSelectedHotel();
   const [currentHotel, setCurrentHotel] = useState(null);
   const hotelId = selectedHotelId || user?.hotel_id || '';
 
@@ -827,7 +827,9 @@ export default function PlanningPage() {
 
   useEffect(() => {
     supabase.from('hotels').select('id, nom').then(({ data }) => {
-      setHotels(data || []); if (!selectedHotelId && data?.[0]) setSelectedHotelId(data[0].id);
+      // Le défaut (hôtel attribué de l'user) est résolu par SelectedHotelContext
+      // — plus de fallback list[0] aveugle (qui faisait retomber sur Les Voiles).
+      setHotels(data || []);
     });
   }, [isAdmin]);
 

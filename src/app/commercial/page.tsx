@@ -393,7 +393,7 @@ export default function CommercialDashboard() {
   // États
   const [hotels, setHotels] = useState<Hotel[]>([]);
   // Hôtel sélectionné = contexte global (synchro sidebar + autres pages).
-  const { selectedHotelId, setSelectedHotelId } = useSelectedHotel();
+  const { selectedHotelId } = useSelectedHotel();
   const [activeTab, setActiveTab] = useState<'pipeline' | 'tarifs' | 'planning'>('pipeline');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -508,9 +508,9 @@ export default function CommercialDashboard() {
       const { data, error } = await supabase.from('hotels').select('id, nom').order('nom');
       if (!error && data) {
         setHotels(data);
-        // Le contexte a déjà restauré l'hôtel depuis le localStorage ; on ne fixe
-        // un défaut (1er hôtel) que s'il n'y a encore aucune sélection.
-        if (data.length > 0 && !selectedHotelId) setSelectedHotelId(data[0].id);
+        // Le défaut (hôtel attribué de l'user) est résolu par SelectedHotelContext
+        // — on ne pose plus de fallback list[0] ici (il faisait retomber tout le
+        // monde sur Les Voiles à chaque refresh).
       }
     };
     initHotels();
@@ -519,7 +519,7 @@ export default function CommercialDashboard() {
 
   useEffect(() => {
     if (selectedHotelId) {
-      localStorage.setItem('selectedHotelId', selectedHotelId);
+      // La persistance du choix est gérée par SelectedHotelContext.
       fetchLeads();
       fetchPlanning();
     }
