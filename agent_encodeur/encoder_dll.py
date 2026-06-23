@@ -12,6 +12,7 @@ Si le dossier `lib/` ou le DLL est absent → on tombe en mode STUB qui simule.
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import platform
 import subprocess
@@ -20,8 +21,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 
+log = logging.getLogger("encoder")
+
 DLL_DIR = Path(__file__).parent / "lib"
 DLL_PATH = DLL_DIR / "CardEncoder.dll"
+
+# Codes DLL pour lesquels un cycle PnP (débranchement logiciel) a un sens :
+# 1005 = USB gelé après reboot, 16 = encodeur déconnecté. PAS 1004 (tenu par une
+# autre app : il faut juste attendre qu'elle relâche, pas l'arracher via PnP).
+USB_FROZEN_CODES = {16, 1005}
 
 # Codes d'erreur du DLL (extrait du manuel V1.6.1)
 ERROR_CODES = {
@@ -68,7 +76,18 @@ def err_str(code: int) -> str:
     return ERROR_CODES.get(code, f"Code {code}")
 
 
-def reenumerate_usb() -> bool:
+def is_admin() -> bool:
+    """True si le process tourne avec les droits administrateur (requis pour
+    Disable/Enable-PnpDevice, donc pour l'auto-réparation USB)."""
+    if platform.system() != "Windows":
+        return False
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def reenumerate_usb() -> tuple[bool, str]:
     """Cycle disable/enable du périphérique encodeur Sciener via PnP (Windows) =
     équivalent logiciel d'un débranchement/rebranchement.
 
@@ -79,19 +98,27 @@ def reenumerate_usb() -> bool:
     NÉCESSITE que l'agent tourne en ADMINISTRATEUR (Disable/Enable-PnpDevice).
     Le VID&PID ciblé est configurable via AGENT_ENCODER_USB_VIDPID
     (défaut "VID_1A86&PID_FE07" = encodeur Sciener).
-    Renvoie True si la commande PnP s'est exécutée sans erreur.
+
+    Renvoie (succès, raison). IMPORTANT : on ne masque PLUS les erreurs PnP — sans
+    droits admin, Disable-PnpDevice échoue (accès refusé) et on renvoie (False, …)
+    au lieu de prétendre faussement avoir ré-énuméré. Codes de sortie PS :
+    2 = device introuvable, 3 = Disable/Enable refusé (droits ?), 0 = OK.
     """
     if platform.system() != "Windows":
-        return False
+        return False, "non-Windows"
+    if not is_admin():
+        return False, "agent NON administrateur → Disable/Enable-PnpDevice impossible"
     vid_pid = os.environ.get("AGENT_ENCODER_USB_VIDPID", "VID_1A86&PID_FE07")
     ps = (
-        "$ErrorActionPreference='SilentlyContinue';"
+        "$ErrorActionPreference='Stop';"
         f"$d = Get-PnpDevice -PresentOnly | Where-Object {{ $_.InstanceId -like 'USB\\{vid_pid}\\*' }};"
         "if (-not $d) { exit 2 };"
-        "$d | Disable-PnpDevice -Confirm:$false;"
-        "Start-Sleep -Milliseconds 1500;"
-        "$d | Enable-PnpDevice -Confirm:$false;"
-        "Start-Sleep -Milliseconds 2500;"
+        "try {"
+        "  $d | Disable-PnpDevice -Confirm:$false;"
+        "  Start-Sleep -Milliseconds 1500;"
+        "  $d | Enable-PnpDevice -Confirm:$false;"
+        "  Start-Sleep -Milliseconds 2500;"
+        "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 3 }"
         "exit 0"
     )
     try:
@@ -101,9 +128,15 @@ def reenumerate_usb() -> bool:
             text=True,
             timeout=30,
         )
-        return r.returncode == 0
-    except Exception:
-        return False
+    except Exception as e:
+        return False, f"exception PnP: {e}"
+    if r.returncode == 0:
+        return True, f"ré-énumération PnP OK ({vid_pid})"
+    if r.returncode == 2:
+        return False, f"device {vid_pid} introuvable (mauvais VID/PID ou encodeur débranché ?)"
+    if r.returncode == 3:
+        return False, f"Disable/Enable-PnpDevice refusé : {(r.stderr or '').strip()[:200]}"
+    return False, f"PnP exit {r.returncode}: {(r.stderr or '').strip()[:200]}"
 
 
 class CardEncoder:
@@ -299,24 +332,41 @@ class CardEncoder:
 
         Retry sur connect : si l'encodeur est tenu par une autre app au moment
         où on essaie, attend `connect_retry_delay` s et retente jusqu'à
-        `connect_retries` fois. À la 1re vraie galère de connexion (typiquement
-        code 1005 après extinction/redémarrage du PC : USB gelé), on tente une
-        ré-énumération PnP de l'encodeur (= rebranchement logiciel) avant de
-        retenter — évite le débranchement/rebranchement manuel.
+        `connect_retries` fois. Sur un gel USB (code 1005/16, typiquement après
+        extinction/redémarrage du PC), on tente une ré-énumération PnP de
+        l'encodeur (= rebranchement logiciel) avant de retenter — évite le
+        débranchement/rebranchement manuel. La ré-énumération est retentée
+        jusqu'à `reenum_attempts` fois (c'est le seul vrai remède au gel), et son
+        échec est LOGGÉ (souvent : agent non administrateur).
         """
-        reenum_tried = False
+        reenum_attempts = 2
+        reenum_done = 0
+        last_reenum_reason = ""
         for attempt in range(1, connect_retries + 1):
             try:
                 self.connect(port)
                 break
-            except EncoderError:
+            except EncoderError as e:
                 if attempt >= connect_retries:
+                    # Enrichit l'erreur finale d'un indice actionnable.
+                    if e.code in USB_FROZEN_CODES:
+                        hint = last_reenum_reason or (
+                            "auto-réparation non tentée"
+                            if is_admin()
+                            else "agent non administrateur (auto-réparation USB désactivée)"
+                        )
+                        raise EncoderError(f"{e} [auto-réparation USB : {hint}]", e.code) from e
                     raise
-                if not reenum_tried:
-                    reenum_tried = True
-                    if reenumerate_usb():
+                # Gel USB → tenter un cycle PnP (rebranchement logiciel).
+                if e.code in USB_FROZEN_CODES and reenum_done < reenum_attempts:
+                    reenum_done += 1
+                    ok, reason = reenumerate_usb()
+                    last_reenum_reason = reason
+                    if ok:
+                        log.warning(f"USB gelé (code {e.code}) → {reason}, retry connexion")
                         time.sleep(1.0)  # laisse l'USB réapparaître après le cycle PnP
                         continue
+                    log.warning(f"USB gelé (code {e.code}) → auto-réparation impossible : {reason}")
                 time.sleep(connect_retry_delay)
         try:
             self.init_encoder(hotel_info)

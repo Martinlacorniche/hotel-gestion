@@ -144,12 +144,13 @@ def get_hotel_info() -> str:
 # ── Encodeur (DLL ou stub) ────────────────────────────────────────────────────
 
 try:
-    from encoder_dll import CardEncoder, EncoderError, is_available
+    from encoder_dll import CardEncoder, EncoderError, is_admin, is_available
 except Exception as e:
     log.warning(f"encoder_dll non chargé : {e}")
     CardEncoder = None  # type: ignore
     EncoderError = Exception  # type: ignore
     is_available = lambda: False  # type: ignore
+    is_admin = lambda: False  # type: ignore
 
 _encoder: Any = None
 USE_REAL_ENCODER = ENCODER_PORT.lower() != "stub" and is_available()
@@ -169,6 +170,16 @@ def setup_encoder() -> None:
         return
     mode = f"port={ENCODER_PORT}" if ENCODER_PORT else "auto-détection USB"
     log.info(f"Validation encodeur ({mode})…")
+    # L'auto-réparation USB (cycle PnP sur gel code 1005) exige les droits admin.
+    # Sans eux, un USB gelé après reboot ne se débloque QUE par rebranchement manuel.
+    if is_admin():
+        log.info("Droits administrateur OK → auto-réparation USB (PnP) active")
+    else:
+        log.warning(
+            "Agent NON administrateur → auto-réparation USB DÉSACTIVÉE. "
+            "En cas de gel USB (code 1005) après reboot, relancer l'agent "
+            "« en tant qu'administrateur » sinon il faudra rebrancher l'encodeur à la main."
+        )
     _encoder = CardEncoder()
     # Test de connexion bref pour identifier le modèle + valider la DLL,
     # puis on relâche l'encodeur immédiatement. Si l'encodeur est déjà tenu

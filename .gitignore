@@ -43,3 +43,11 @@ agent_encodeur/lib/*.dll
 
 # Local Netlify folder
 .netlify
+
+# python cache
+__pycache__/
+*.pyc
+
+# supabase CLI local state
+supabase/.temp/
+supabase/.branches/
