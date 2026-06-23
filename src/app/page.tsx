@@ -337,6 +337,22 @@ export default function HotelDashboard() {
     fetchKpis();
   }, [hotelId, selectedDate]);
 
+  // Taux d'occupation prévisionnel (Les Voiles uniquement) — cache rempli par
+  // /api/mews/refresh-occupancy (cron). Lecture seule du cache, aucun appel Mews ici.
+  const [occupancy, setOccupancy] = useState<any[] | null>(null);
+  useEffect(() => {
+    const isVoiles = currentHotel?.nom?.trim() === 'Les Voiles';
+    if (!isVoiles || !hotelId) { setOccupancy(null); return; }
+    const currentMonth = formatDate(new Date(), 'yyyy-MM');
+    supabase
+      .from('mews_occupancy')
+      .select('month, occupancy, occupied_nights, available_nights, updated_at')
+      .eq('hotel_id', hotelId)
+      .gte('month', currentMonth)
+      .order('month', { ascending: true })
+      .then(({ data }) => setOccupancy(data || []));
+  }, [currentHotel, hotelId]);
+
   const formatSafeDate = (dateStr: string | undefined) => {
     if (!dateStr || isNaN(Date.parse(dateStr))) return 'Date invalide';
     return formatDate(new Date(dateStr), 'dd MMMM', { locale: frLocale });
@@ -1373,6 +1389,40 @@ const birthdayMessage = useMemo(() => {
                    </div>
                  )}
             </div>
+
+            {/* OCCUPATION PRÉVISIONNELLE (Les Voiles) — live Mews, mois par mois */}
+            {occupancy && occupancy.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    🛏️ Taux d'occupation
+                  </h3>
+                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full font-medium">
+                    Live Mews
+                  </span>
+                </div>
+                <div className="flex flex-col gap-4">
+                  {occupancy.map((m: any) => {
+                    const MOIS_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+                    const [y, mo] = String(m.month).split('-');
+                    const label = `${MOIS_FR[Number(mo) - 1] ?? m.month} ${y?.slice(2) ?? ''}`;
+                    const pct = Math.max(0, Math.min(100, Number(m.occupancy) || 0));
+                    let barColor = 'bg-indigo-500';
+                    if (pct >= 80) barColor = 'bg-emerald-500';
+                    else if (pct < 40) barColor = 'bg-orange-400';
+                    return (
+                      <div key={m.month} className="flex items-center gap-3">
+                        <span className="w-16 text-xs font-bold text-slate-400 uppercase tracking-wide">{label}</span>
+                        <div className="flex-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                          <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="w-12 text-right text-sm font-bold text-slate-800">{pct.toFixed(0)}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* KPIS - VERSION CLEAN & MODERNE */}
              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">

@@ -105,3 +105,122 @@ export async function getCheckoutsToday(now: Date = new Date()): Promise<Checkou
   }
   return out;
 }
+
+// ============================================================================
+// Taux d'occupation prévisionnel (on-the-books), mois par mois.
+// ============================================================================
+// On compte les nuitées RÉSERVÉES (états engagés, hors annulations/options) sur
+// les mois civils à venir, puis on divise par la capacité (chambres × jours du
+// mois). C'est une vue "on the books" : elle grossit au fil des réservations.
+// Aucune donnée financière ici (le scope Mews refuse l'extent `Items`) — que de
+// l'occupation, parfaitement couverte par reservations/getAll.
+
+// États comptés comme "réservé". On exclut Enquiry/Requested/Optional (non
+// engagés) et bien sûr Canceled.
+const ON_THE_BOOKS_STATES = ['Confirmed', 'Started', 'Processed'];
+// Mews refuse les fenêtres > 100 jours par appel → on découpe (marge de sécurité).
+const MAX_INTERVAL_DAYS = 95;
+
+export type MonthlyOccupancy = {
+  month: string;          // 'YYYY-MM' (mois civil, fuseau Paris)
+  occupiedNights: number; // nuitées réservées dans le mois
+  availableNights: number; // capacité × nb de jours du mois
+  occupancy: number;      // pourcentage 0-100, arrondi à 0,1
+};
+
+// Liste des `horizon` mois civils à partir du mois courant (Paris).
+function targetMonths(now: Date, horizon: number): { key: string; days: number }[] {
+  const todayStr = parisDateStr(now); // 'YYYY-MM-DD'
+  let y = Number(todayStr.slice(0, 4));
+  let m = Number(todayStr.slice(5, 7)); // 1-12
+  const months: { key: string; days: number }[] = [];
+  for (let i = 0; i < horizon; i++) {
+    const days = new Date(Date.UTC(y, m, 0)).getUTCDate(); // jours du mois m
+    months.push({ key: `${y}-${String(m).padStart(2, '0')}`, days });
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return months;
+}
+
+// Itère les nuits d'un séjour : dates 'YYYY-MM-DD' de checkIn (incluse) à
+// checkOut (exclue — le jour du départ n'est pas une nuit).
+function* eachNight(checkIn: string, checkOut: string): Generator<string> {
+  let cur = Date.UTC(+checkIn.slice(0, 4), +checkIn.slice(5, 7) - 1, +checkIn.slice(8, 10));
+  const end = Date.UTC(+checkOut.slice(0, 4), +checkOut.slice(5, 7) - 1, +checkOut.slice(8, 10));
+  while (cur < end) {
+    const d = new Date(cur);
+    yield `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    cur += 86400e3;
+  }
+}
+
+// Récupère toutes les réservations engagées d'une fenêtre (pagination cursor).
+async function fetchReservations(startUtc: string, endUtc: string): Promise<Reservation[]> {
+  const all: Reservation[] = [];
+  let cursor: string | undefined;
+  for (let guard = 0; guard < 50; guard++) {
+    const Limitation: Record<string, unknown> = { Count: 1000 };
+    if (cursor) Limitation.Cursor = cursor;
+    const data = await callMews<{ Reservations: Reservation[]; Cursor?: string }>('reservations/getAll', {
+      StartUtc: startUtc,
+      EndUtc: endUtc,
+      TimeFilter: 'Colliding',
+      States: ON_THE_BOOKS_STATES,
+      Extent: { Reservations: true },
+      Limitation,
+    });
+    const batch = data.Reservations || [];
+    all.push(...batch);
+    if (batch.length < 1000 || !data.Cursor) break;
+    cursor = data.Cursor;
+  }
+  return all;
+}
+
+// Occupation mensuelle prévisionnelle. `capacity` = nb de chambres vendables.
+export async function getMonthlyOccupancy(
+  capacity: number,
+  now: Date = new Date(),
+  horizon = 6,
+): Promise<MonthlyOccupancy[]> {
+  const months = targetMonths(now, horizon);
+  const monthSet = new Set(months.map((x) => x.key));
+  const first = months[0].key;        // 'YYYY-MM' du mois courant
+  const last = months[months.length - 1].key;
+
+  // Fenêtre globale = du 1er du mois courant au 1er du mois suivant le dernier,
+  // paddée de ±1 jour (les bornes Mews sont en UTC, pas en heure de Paris).
+  const startMs = Date.UTC(+first.slice(0, 4), +first.slice(5, 7) - 1, 1) - 86400e3;
+  const endMs = Date.UTC(+last.slice(0, 4), +last.slice(5, 7), 1) + 86400e3;
+
+  // Découpe en tranches < 100 jours, dédoublonnage des résas par Id (une résa
+  // chevauchant deux tranches est renvoyée deux fois).
+  const byId = new Map<string, Reservation>();
+  for (let s = startMs; s < endMs; s += MAX_INTERVAL_DAYS * 86400e3) {
+    const e = Math.min(s + MAX_INTERVAL_DAYS * 86400e3, endMs);
+    const res = await fetchReservations(new Date(s).toISOString(), new Date(e).toISOString());
+    for (const r of res) byId.set(r.Id, r);
+  }
+
+  const occupied: Record<string, number> = {};
+  for (const k of monthSet) occupied[k] = 0;
+  for (const r of byId.values()) {
+    const inDate = parisDateStr(new Date(r.StartUtc));
+    const outDate = parisDateStr(new Date(r.EndUtc));
+    for (const night of eachNight(inDate, outDate)) {
+      const mk = night.slice(0, 7);
+      if (monthSet.has(mk)) occupied[mk]++;
+    }
+  }
+
+  return months.map(({ key, days }) => {
+    const available = capacity * days;
+    const occ = occupied[key] || 0;
+    return {
+      month: key,
+      occupiedNights: occ,
+      availableNights: available,
+      occupancy: available > 0 ? Math.round((occ / available) * 1000) / 10 : 0,
+    };
+  });
+}
