@@ -1390,40 +1390,6 @@ const birthdayMessage = useMemo(() => {
                  )}
             </div>
 
-            {/* OCCUPATION PRÉVISIONNELLE (Les Voiles) — live Mews, mois par mois */}
-            {occupancy && occupancy.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                    🛏️ Taux d'occupation
-                  </h3>
-                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full font-medium">
-                    Live Mews
-                  </span>
-                </div>
-                <div className="flex flex-col gap-4">
-                  {occupancy.map((m: any) => {
-                    const MOIS_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
-                    const [y, mo] = String(m.month).split('-');
-                    const label = `${MOIS_FR[Number(mo) - 1] ?? m.month} ${y?.slice(2) ?? ''}`;
-                    const pct = Math.max(0, Math.min(100, Number(m.occupancy) || 0));
-                    let barColor = 'bg-indigo-500';
-                    if (pct >= 80) barColor = 'bg-emerald-500';
-                    else if (pct < 40) barColor = 'bg-orange-400';
-                    return (
-                      <div key={m.month} className="flex items-center gap-3">
-                        <span className="w-16 text-xs font-bold text-slate-400 uppercase tracking-wide">{label}</span>
-                        <div className="flex-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                          <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="w-12 text-right text-sm font-bold text-slate-800">{pct.toFixed(0)}%</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
             {/* KPIS - VERSION CLEAN & MODERNE */}
              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -1444,7 +1410,15 @@ const birthdayMessage = useMemo(() => {
                       { key: "prix_moyen", label: "Prix Moyen", suffix: "€", icon: "🏷️", color: "bg-emerald-50 text-emerald-600" },
                       { key: "guest_review", label: "Note Guest", suffix: "/10", icon: "⭐", color: "bg-purple-50 text-purple-600" },
                     ].map((def, i) => {
-                      const value = kpis?.[def.key];
+                      // TO Les Voiles : valeur live Mews du mois sélectionné (lecture
+                      // seule), sinon valeur saisie manuellement (autres hôtels / KPI).
+                      const isVoiles = currentHotel?.nom?.trim() === 'Les Voiles';
+                      const selMonth = formatDate(selectedDate, 'yyyy-MM');
+                      const liveTO = isVoiles
+                        ? occupancy?.find((o: any) => o.month === selMonth)?.occupancy
+                        : undefined;
+                      const isLiveTO = def.key === 'taux_occupation' && liveTO != null;
+                      const value = isLiveTO ? liveTO : kpis?.[def.key];
                       const target = kpis?.[`${def.key}_objectif`];
                       const progress = value && target ? Math.min(100, (value / target) * 100) : 0;
                       
@@ -1470,13 +1444,13 @@ const birthdayMessage = useMemo(() => {
                                 <div className="flex items-baseline gap-1.5">
                                     {/* VALEUR ACTUELLE (Editable si Admin) */}
 <div className="relative group">
-    {isAdmin ? (
-        <input 
-            type="number" 
-            className="w-24 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 text-xl font-bold text-slate-800 outline-none transition-all p-0 m-0" 
-            value={value ?? ""} 
+    {isAdmin && !isLiveTO ? (
+        <input
+            type="number"
+            className="w-24 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 text-xl font-bold text-slate-800 outline-none transition-all p-0 m-0"
+            value={value ?? ""}
             placeholder="0"
-            onChange={(e) => setKpis((prev:any) => ({ ...prev, [def.key]: Number(e.target.value) }))} 
+            onChange={(e) => setKpis((prev:any) => ({ ...prev, [def.key]: Number(e.target.value) }))}
         />
     ) : (
         // MODIFICATION ICI : on passe def.suffix en 2ème argument
