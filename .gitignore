@@ -51,3 +51,4 @@ __pycache__/
 # supabase CLI local state
 supabase/.temp/
 supabase/.branches/
+fix_crons_mews.local.sql
