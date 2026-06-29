@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getStripeForHotel } from '@/lib/stripe';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { requireRole } from '@/lib/apiAuth';
+import { requirePaymentAccess } from '@/lib/apiAuth';
 
 // POST /api/paiements/refund  — rembourse un paiement (total).
-// Body: { paymentId }. Réservé admin/superadmin.
+// Body: { paymentId }. Accès : admin/superadmin, ou rôle « user » pendant son shift.
 export async function POST(req: Request) {
-  const auth = await requireRole(req, ['superadmin', 'admin']);
+  const auth = await requirePaymentAccess(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   let body: Record<string, unknown>;

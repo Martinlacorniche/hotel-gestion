@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { requireRole } from '@/lib/apiAuth';
+import { requirePaymentAccess } from '@/lib/apiAuth';
 
-// POST /api/paiements/pms — bascule « saisi dans le PMS » sur un paiement. Admin.
+// POST /api/paiements/pms — bascule « saisi dans le PMS » sur un paiement.
+// Accès : admin/superadmin, ou rôle « user » pendant son shift.
 // Body: { paymentId, done }
 export async function POST(req: Request) {
-  const auth = await requireRole(req, ['superadmin', 'admin']);
+  const auth = await requirePaymentAccess(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   let body: Record<string, unknown>;

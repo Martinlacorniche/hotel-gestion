@@ -2,15 +2,15 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { getStripeForHotel, senderFor } from '@/lib/stripe';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { requireRole } from '@/lib/apiAuth';
+import { requirePaymentAccess } from '@/lib/apiAuth';
 
 // POST /api/paiements/create — TPE virtuel : crée un LIEN DE PAIEMENT Stripe
 // (Checkout, PAS de facture → le PMS de l'hôtel reste la facture légale + TVA :
 // Hotsoft à la Corniche, Mews aux Voiles), renvoie le lien, et l'envoie par
-// email si demandé. Réservé admin/superadmin.
+// email si demandé. Accès : admin/superadmin, ou rôle « user » pendant son shift.
 // Body: { hotelId, amount (€), description, email, clientNom?, leadId?, sendEmail }
 export async function POST(req: Request) {
-  const auth = await requireRole(req, ['superadmin', 'admin']);
+  const auth = await requirePaymentAccess(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   let body: Record<string, unknown>;
