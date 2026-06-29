@@ -182,6 +182,13 @@ export default function EncaissementPage() {
     catch { toast.error('Copie impossible'); }
   }
 
+  // Copie le montant brut (ex. "230,00") pour le coller directement dans le PMS.
+  async function copyAmount(n: number) {
+    const txt = Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    try { await navigator.clipboard.writeText(txt); toast.success(`Montant copié — ${txt}`); }
+    catch { toast.error('Copie impossible'); }
+  }
+
   const filtered = useMemo(
     () => payments.filter(p => {
       if (statusFilter === 'Tous') return true;
@@ -344,7 +351,11 @@ export default function EncaissementPage() {
                 <div key={p.id} className="flex items-center gap-3 px-4 py-3 flex-wrap">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-slate-800">{euro(p.amount)}</span>
+                      <button onClick={() => copyAmount(p.amount)} title="Copier le montant (pour le PMS)"
+                        className="group font-semibold text-slate-800 inline-flex items-center gap-1 rounded-md -mx-1 px-1 hover:bg-emerald-50 hover:text-emerald-700 transition">
+                        {euro(p.amount)}
+                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 text-emerald-600 transition" />
+                      </button>
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${st.cls}`}>{st.label}</span>
                       <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-slate-500 inline-flex items-center gap-1">
                         {p.method === 'tpe' ? <><CreditCard className="w-3 h-3" /> Terminal</> : <><Link2 className="w-3 h-3" /> Lien</>}

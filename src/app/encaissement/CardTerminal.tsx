@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { Loader2, CreditCard, ShieldCheck } from 'lucide-react';
+import { Loader2, ShieldCheck, Wifi, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { stripePromiseFor } from '@/lib/stripeClient';
 
@@ -70,23 +70,40 @@ function CardForm({ hotelId, amount, description, clientNom, email, onPaid }: Pr
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <span className="text-xs font-medium text-slate-500 mb-1 block">Carte bancaire</span>
-        <div className="w-full border rounded-lg px-3 py-3 bg-white">
-          <CardElement options={CARD_STYLE} onReady={() => setReady(true)} />
+    <div className="mx-auto w-full max-w-sm">
+      {/* Boîtier TPE */}
+      <div className="rounded-[26px] bg-gradient-to-b from-slate-800 to-slate-900 p-4 shadow-xl ring-1 ring-black/20">
+        {/* Écran : montant à régler */}
+        <div className="rounded-2xl bg-gradient-to-b from-slate-700 to-slate-800 px-5 py-4 ring-1 ring-white/5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold tracking-[0.2em] text-slate-400">MONTANT À RÉGLER</span>
+            <Wifi className="w-4 h-4 text-emerald-400/80" />
+          </div>
+          <div className="mt-1 font-mono text-4xl font-bold tracking-tight text-emerald-300 tabular-nums">
+            {euro(amount)}
+          </div>
         </div>
-      </div>
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <span className="text-xs text-slate-400 inline-flex items-center gap-1.5">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" /> Saisie sécurisée Stripe — la carte ne transite jamais par nos serveurs.
-        </span>
+
+        {/* Insertion carte */}
+        <div className="mt-4">
+          <span className="text-[10px] font-semibold tracking-[0.18em] text-slate-400 mb-1.5 block px-1">CARTE BANCAIRE</span>
+          <div className="w-full rounded-xl bg-white px-3.5 py-3.5 ring-1 ring-white/10">
+            <CardElement options={CARD_STYLE} onReady={() => setReady(true)} />
+          </div>
+        </div>
+
+        {/* Touche de validation */}
         <button onClick={pay} disabled={!canPay}
-          className="h-11 px-5 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition disabled:opacity-50 inline-flex items-center gap-2">
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-          {amount > 0 ? `Débiter ${euro(amount)}` : 'Débiter la carte'}
+          className="mt-4 h-14 w-full rounded-2xl text-base font-bold text-white bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] transition disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40">
+          {busy
+            ? <><Loader2 className="w-5 h-5 animate-spin" /> Traitement…</>
+            : <><Check className="w-5 h-5" /> {amount > 0 ? `Valider ${euro(amount)}` : 'Saisir un montant'}</>}
         </button>
       </div>
+
+      <p className="mt-3 text-center text-xs text-slate-400 inline-flex items-center justify-center gap-1.5 w-full">
+        <ShieldCheck className="w-4 h-4 text-emerald-600" /> Saisie sécurisée Stripe — la carte ne transite jamais par nos serveurs.
+      </p>
     </div>
   );
 }
