@@ -9,9 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
+import CardTerminal from './CardTerminal';
 import {
   CreditCard, Loader2, Search, Copy, Link2, Send,
-  RotateCcw, Mail, ExternalLink, ChevronLeft, ChevronRight,
+  RotateCcw, Mail, ExternalLink, ChevronLeft, ChevronRight, AlertTriangle,
 } from 'lucide-react';
 
 interface Hotel { id: string; nom: string }
@@ -21,7 +22,7 @@ interface Payment {
   client_nom: string | null; email: string | null; status: string;
   hosted_invoice_url: string | null; created_at: string; paid_at: string | null; refunded_at: string | null;
   created_by: string | null; refunded_by: string | null; refund_reason: string | null;
-  pms_done: boolean;
+  pms_done: boolean; method: string | null;
 }
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -50,6 +51,7 @@ export default function EncaissementPage() {
   const [loading, setLoading] = useState(true);
 
   // Formulaire
+  const [mode, setMode] = useState<'lien' | 'tpe'>('lien'); // lien de paiement (à distance) ou terminal carte (sur place)
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [clientNom, setClientNom] = useState('');
@@ -110,8 +112,8 @@ export default function EncaissementPage() {
   }, [day, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (user) loadPayments(); }, [user, loadPayments]);
 
-  async function createPayment(e: React.FormEvent) {
-    e.preventDefault();
+  async function createPayment(e?: React.FormEvent) {
+    e?.preventDefault();
     const amt = parseFloat(amount.replace(',', '.'));
     if (!amt || amt <= 0) return toast.error('Indique un montant.');
     if (sendEmail && !email.trim()) return toast.error('Email requis pour envoyer la demande.');
@@ -201,14 +203,28 @@ export default function EncaissementPage() {
         <PageHeader
           icon={CreditCard}
           title="Encaissement"
-          subtitle="Demande de paiement par carte — lien Stripe envoyé au client"
+          subtitle="Terminal carte sur place ou lien de paiement à distance"
           iconClassName="bg-emerald-100 text-emerald-700"
         />
 
         {/* Formulaire */}
         <Card className="mb-6">
           <CardContent className="p-5">
-            <form onSubmit={createPayment} className="space-y-4">
+            {/* Choix du mode d'encaissement */}
+            <div className="flex gap-1 p-1 rounded-xl bg-slate-100 mb-5 w-full sm:w-fit">
+              {([
+                { k: 'lien' as const, icon: Link2, label: 'Lien de paiement', hint: 'à distance · sécurisé' },
+                { k: 'tpe' as const, icon: CreditCard, label: 'Terminal carte', hint: 'saisie directe de la carte' },
+              ]).map(t => (
+                <button key={t.k} onClick={() => setMode(t.k)}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-semibold transition inline-flex items-center justify-center gap-1.5 ${mode === t.k ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>
+                  <t.icon className="w-4 h-4" /> {t.label}
+                  <span className="hidden md:inline text-[11px] font-normal text-slate-400">· {t.hint}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-4">
               <div className="grid md:grid-cols-3 gap-4">
                 <label className="block">
                   <span className="text-xs font-medium text-slate-500 mb-1 block">Montant (€) *</span>
@@ -228,23 +244,49 @@ export default function EncaissementPage() {
                     className="w-full border rounded-lg px-3 h-11 text-sm bg-white" />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-500 mb-1 block">Email {sendEmail && '*'}</span>
+                  <span className="text-xs font-medium text-slate-500 mb-1 block">Email {mode === 'lien' && sendEmail ? '*' : <span className="text-slate-300">(reçu, optionnel)</span>}</span>
                   <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="client@exemple.fr"
                     className="w-full border rounded-lg px-3 h-11 text-sm bg-white" />
                 </label>
               </div>
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input type="checkbox" checked={sendEmail} onChange={e => setSendEmail(e.target.checked)} className="w-5 h-5 accent-emerald-600" />
-                  <span className="text-sm text-slate-700 flex items-center gap-1.5"><Mail className="w-4 h-4 text-emerald-600" /> Envoyer la demande par email au client</span>
-                </label>
-                <Button type="submit" disabled={creating} className="h-11">
-                  {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 mr-1.5" /> {sendEmail ? 'Créer & envoyer' : 'Créer le lien'}</>}
-                </Button>
-              </div>
-            </form>
 
-            {lastLink && (
+              {mode === 'lien' ? (
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" checked={sendEmail} onChange={e => setSendEmail(e.target.checked)} className="w-5 h-5 accent-emerald-600" />
+                    <span className="text-sm text-slate-700 flex items-center gap-1.5"><Mail className="w-4 h-4 text-emerald-600" /> Envoyer la demande par email au client</span>
+                  </label>
+                  <Button type="button" onClick={() => createPayment()} disabled={creating} className="h-11">
+                    {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 mr-1.5" /> {sendEmail ? 'Créer & envoyer' : 'Créer le lien'}</>}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-start gap-2.5 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-800">
+                      <p className="font-semibold">Mode non sécurisé — réservé aux cartes virtuelles.</p>
+                      <p className="text-amber-700 mt-0.5">
+                        Vous tapez vous-même le numéro de carte&nbsp;: le client <span className="font-medium">ne valide rien de son côté</span>
+                        {' '}(pas de confirmation par SMS de sa banque). En cas de contestation, le risque est pour l&apos;hôtel.
+                        À n&apos;utiliser que pour une <span className="font-medium">carte virtuelle</span> (OTA, garantie groupe…).
+                        Pour un vrai client, privilégiez le <span className="font-medium">Lien de paiement</span>.
+                      </p>
+                    </div>
+                  </div>
+                  <CardTerminal
+                    hotelId={hotelId}
+                    amount={parseFloat(amount.replace(',', '.')) || 0}
+                    description={description}
+                    clientNom={clientNom}
+                    email={email}
+                    onPaid={() => { setAmount(''); setDescription(''); setClientNom(''); setEmail(''); loadPayments(); }}
+                  />
+                </>
+              )}
+            </div>
+
+            {mode === 'lien' && lastLink && (
               <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
                 <Link2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span className="text-xs text-slate-600 truncate flex-1">{lastLink}</span>
@@ -304,6 +346,9 @@ export default function EncaissementPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-slate-800">{euro(p.amount)}</span>
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${st.cls}`}>{st.label}</span>
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-slate-500 inline-flex items-center gap-1">
+                        {p.method === 'tpe' ? <><CreditCard className="w-3 h-3" /> Terminal</> : <><Link2 className="w-3 h-3" /> Lien</>}
+                      </span>
                       {p.description && <span className="text-sm text-slate-500 truncate">· {p.description}</span>}
                     </div>
                     <div className="text-xs text-slate-400 mt-0.5 truncate">
