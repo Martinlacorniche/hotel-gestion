@@ -409,6 +409,8 @@ export default function CommercialDashboard() {
   const [planningData, setPlanningData] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [viewDate, setViewDate] = useState(new Date());
+  // Menu de choix au clic sur une barre du planning salle : null = fermé.
+  const [planningMenu, setPlanningMenu] = useState<{res:any;x:number;y:number}|null>(null);
   const [currentLead, setCurrentLead] = useState<Partial<Lead>>({
     statut: 'Nouveau',
     etat_paiement: 'Attente acompte',
@@ -958,6 +960,13 @@ export default function CommercialDashboard() {
 
           const COLS = '160px repeat(7, minmax(130px, 1fr))';
 
+          // Index de colonne (0..6) d'une date dans la semaine, par différence de
+          // jours — robuste aux écarts de format/fuseau, contrairement à un
+          // findIndex sur égalité de chaîne (qui renvoyait -1 et cassait le span).
+          const W0ms = new Date(WEEK[0].str + 'T00:00:00').getTime();
+          const colIdx = (ds: string) => Math.round((new Date(ds + 'T00:00:00').getTime() - W0ms) / 86400000);
+          const clampCol = (n: number) => Math.max(0, Math.min(6, n));
+
           return (
             <div className="rounded-2xl overflow-hidden mb-10 bg-white" style={{border:'1px solid #e8e8e8'}}>
 
@@ -1020,10 +1029,8 @@ export default function CommercialDashboard() {
                       const endDate = l.date_fin_evenement || l.date_evenement!;
                       const clL = l.date_evenement! < WEEK[0].str;
                       const clR = endDate > WEEK[6].str;
-                      const si = clL ? 0 : WEEK.findIndex(w => w.str === l.date_evenement);
-                      const ei = clR ? 6 : WEEK.findIndex(w => w.str === endDate);
-                      const siSafe = si < 0 ? 0 : si;
-                      const eiSafe = ei < 0 ? 6 : ei;
+                      const siSafe = clL ? 0 : clampCol(colIdx(l.date_evenement!));
+                      const eiSafe = clR ? 6 : clampCol(colIdx(endDate));
                       let row = 1;
                       while (slots.some(s => s.row === row && s.si <= eiSafe && s.ei >= siSafe)) row++;
                       slots.push({row, si: siSafe, ei: eiSafe});
@@ -1051,6 +1058,8 @@ export default function CommercialDashboard() {
                                   gridRow:row,
                                   position:'relative',
                                   zIndex:2,
+                                  minWidth:0,
+                                  overflow:'hidden',
                                   margin:`4px ${clR?0:4}px 4px ${clL?0:4}px`,
                                   background:st.badge,
                                   color:'#fff',
@@ -1121,8 +1130,8 @@ export default function CommercialDashboard() {
                               const endDate = res.end_date ?? res.start_date;
                               const clL = res.start_date < WEEK[0].str;
                               const clR = endDate > WEEK[6].str;
-                              const si = clL ? 0 : WEEK.findIndex(w=>w.str===res.start_date);
-                              const ei = clR ? 6 : WEEK.findIndex(w=>w.str===endDate);
+                              const si = clL ? 0 : clampCol(colIdx(res.start_date));
+                              const ei = clR ? 6 : clampCol(colIdx(endDate));
                               let row = 1;
                               while (slots.some(s=>s.row===row && s.si<=ei && s.ei>=si)) row++;
                               slots.push({row,si,ei});
@@ -1134,12 +1143,14 @@ export default function CommercialDashboard() {
                                 const st = getPStyle(res.display_status);
                                 return (
                                   <div key={res.reservation_id}
-                                    onClick={()=>{ const id = res.reference_id; if(id) window.open(`/devis?leadId=${id}`,'_blank'); }}
+                                    onClick={(e)=>{ e.stopPropagation(); setPlanningMenu({res, x:e.clientX, y:e.clientY}); }}
                                     style={{
                                       gridColumn:`${si+1} / ${ei+2}`,
                                       gridRow:row,
                                       position:'relative',
                                       zIndex:2,
+                                      minWidth:0,
+                                      overflow:'hidden',
                                       margin:`5px ${clR?0:4}px 5px ${clL?0:4}px`,
                                       background:st.badge,
                                       color:'#fff',
@@ -1183,6 +1194,38 @@ export default function CommercialDashboard() {
 
                 </div>
               </div>
+
+              {/* Menu de choix au clic sur une barre du planning */}
+              {planningMenu && (() => {
+                const id = planningMenu.res.reference_id;
+                const lead = leads.find(l => l.id === id);
+                const act = (fn: () => void) => { fn(); setPlanningMenu(null); };
+                return (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setPlanningMenu(null)} />
+                    <div
+                      className="fixed z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden w-56"
+                      style={{ left: Math.min(planningMenu.x, window.innerWidth - 240), top: Math.max(8, Math.min(planningMenu.y, window.innerHeight - 250)) }}>
+                      <div className="px-4 py-3 border-b border-gray-50">
+                        <div className="text-[11px] font-black truncate" style={{color:'#111'}}>{planningMenu.res.nom_client}</div>
+                        <div className="text-[10px] text-gray-400 truncate">{planningMenu.res.titre_demande || '—'}</div>
+                      </div>
+                      <button disabled={!lead} onClick={() => lead && act(() => openLeadModal(lead))}
+                        className="w-full text-left px-4 py-3 text-[12px] font-bold hover:bg-gray-50 transition-colors disabled:opacity-40 flex items-center gap-2.5" style={{color:'#333'}}>
+                        <Pencil className="w-3.5 h-3.5 text-gray-400" /> Résumé du dossier
+                      </button>
+                      <button disabled={!id} onClick={() => id && act(() => window.open(`/devis?leadId=${id}`, '_blank'))}
+                        className="w-full text-left px-4 py-3 text-[12px] font-bold hover:bg-gray-50 transition-colors disabled:opacity-40 flex items-center gap-2.5 border-t border-gray-50" style={{color:'#333'}}>
+                        <FileText className="w-3.5 h-3.5 text-gray-400" /> Ouvrir le devis
+                      </button>
+                      <button disabled={!id} onClick={() => id && act(() => window.open(`/fiche?leadId=${id}`, '_blank'))}
+                        className="w-full text-left px-4 py-3 text-[12px] font-bold hover:bg-gray-50 transition-colors disabled:opacity-40 flex items-center gap-2.5 border-t border-gray-50" style={{color:'#333'}}>
+                        <ScrollText className="w-3.5 h-3.5 text-gray-400" /> Fiche de fonction
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           );
         })()}

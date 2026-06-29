@@ -146,8 +146,22 @@ const STATUT_COLORS: Record<string, string> = {
   'Confirmé': '#10b981', 'Refus': '#ef4444',
 };
 
+const SEV_PDF: Record<string, string> = { critique: '#dc2626', important: '#b45309', mineur: '#94a3b8' };
+const SEV_LABEL: Record<string, string> = { critique: 'CRITIQUE', important: 'IMPORTANT', mineur: 'MINEUR' };
+
+function ChecklineRow({ ok, label, hint }: { ok: boolean; label: string; hint?: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
+      <Text style={{ width: '15%', fontSize: 6, fontFamily: 'Helvetica-Bold', color: ok ? '#15803d' : '#b45309' }}>{ok ? 'FAIT' : 'A FAIRE'}</Text>
+      <Text style={{ flex: 1, fontSize: 8, color: SLATE_800 }}>
+        {label}{hint ? <Text style={{ color: SLATE_400, fontSize: 7 }}>  ·  {hint}</Text> : null}
+      </Text>
+    </View>
+  );
+}
+
 export function FichePDFPage({ data }: { data: any }) {
-  const { lead, hotel, quoteItems, fiche, programmeRows, ficheDate } = data;
+  const { lead, hotel, quoteItems, fiche, programmeRows, ficheDate, avancement, junior } = data;
 
   const fmtDate = (d: string) => d
     ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -210,6 +224,21 @@ export function FichePDFPage({ data }: { data: any }) {
           </View>
         </View>
 
+        {/* ── JUNIOR (synthèse + points à vérifier) ── */}
+        {junior && (junior.synthese || (junior.manques && junior.manques.length > 0)) && (
+          <Section title="JUNIOR — SYNTHESE & POINTS A VERIFIER" color="#7c3aed">
+            {junior.synthese ? (
+              <Text style={[s.noteText, { color: SLATE_800, marginBottom: (junior.manques?.length ? 6 : 0) }]}>{junior.synthese}</Text>
+            ) : null}
+            {(junior.manques || []).map((m: any, i: number) => (
+              <View key={i} style={{ flexDirection: 'row', marginBottom: 3 }}>
+                <Text style={{ width: '16%', fontSize: 6, fontFamily: 'Helvetica-Bold', color: SEV_PDF[m.severite] || SLATE_400 }}>{SEV_LABEL[m.severite] || ''}</Text>
+                <Text style={{ flex: 1, fontSize: 7.5, color: SLATE_600 }}>{m.texte}</Text>
+              </View>
+            ))}
+          </Section>
+        )}
+
         {/* ── PRESTATIONS ── */}
         {allQuoteItems.length > 0 && (
           <Section title="PRESTATIONS" color={TEAL}>
@@ -217,8 +246,8 @@ export function FichePDFPage({ data }: { data: any }) {
               <View key={i} style={s.prestItem}>
                 <Text style={s.prestQty}>{item.quantity}×</Text>
                 <Text style={s.prestLabel}>{item.label}</Text>
-                {item.unit_price ? (
-                  <Text style={s.prestPrice}>{formatEur(Number(item.unit_price) * Number(item.quantity))}</Text>
+                {item.unit_price_ttc ? (
+                  <Text style={s.prestPrice}>{formatEur(Number(item.unit_price_ttc) * Number(item.quantity))}</Text>
                 ) : null}
               </View>
             ))}
@@ -278,6 +307,23 @@ export function FichePDFPage({ data }: { data: any }) {
             ) : null}
           </Section>
         ) : null}
+
+        {/* ── AVANCEMENT DU DOSSIER ── */}
+        {avancement && (
+          <Section title={`AVANCEMENT DU DOSSIER  (${avancement.doneCount}/${avancement.totalCount})`} color={TEAL_MID}>
+            <ChecklineRow ok={avancement.salles.ok} label="Salles reservees" hint={avancement.salles.ok ? `${avancement.salles.count} salle(s)` : 'Aucune'} />
+            {(avancement.amont || []).map((it: any, i: number) => (
+              <ChecklineRow key={i} ok={it.checked} label={it.label} hint={it.hint} />
+            ))}
+            <ChecklineRow ok={avancement.prestations_verifiees} label="Prestations consommees verifiees" />
+            <ChecklineRow ok={avancement.facture_pms} label="Facture finale emise (PMS)" hint={avancement.facture_pms_date || undefined} />
+            <Text style={{ marginTop: 5, fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: avancement.cloturee ? '#15803d' : '#b45309' }}>
+              {avancement.cloturee
+                ? `Dossier cloture${avancement.cloturee_at ? ' le ' + new Date(avancement.cloturee_at).toLocaleDateString('fr-FR') : ''}`
+                : 'Dossier non cloture'}
+            </Text>
+          </Section>
+        )}
 
         {/* ── FACTURATION (4 cellules sur 1 ligne) ── */}
         <Section title="FACTURATION" color="#b45309">

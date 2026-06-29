@@ -1,17 +1,56 @@
 'use client';
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { ThemedBackground } from '@/components/ThemedBackground';
 import { BlobProvider } from '@react-pdf/renderer';
 import { FichePDF } from './FichePDF';
 import { CombinedPDF } from './CombinedPDF';
-import { ArrowLeft, Printer, Save, Loader2, CheckCircle, Plus, ChevronUp, ChevronDown, Trash2, FileDown } from 'lucide-react';
+import { ArrowLeft, Printer, Save, Loader2, CheckCircle, Plus, ChevronUp, ChevronDown, Trash2, FileDown, Sparkles, AlertTriangle, Lock, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
 type RowType = 'seminaire' | 'repas' | 'pause' | 'autre';
 interface ProgRow { id: string; date: string; heure: string; label: string; salle: string; disposition: string; type: RowType; }
+
+// Item de la phase ① Amont (proposé par l'IA, ou ajouté à la main).
+interface AmontItem { key: string; label: string; hint?: string; }
+// Réponse de l'équipe à un point soulevé par Junior (boucle "outil vivant").
+interface ManqueReponse { key: string; question: string; reponse: string; }
+
+// Checklist d'avancement (stockée en JSONB dans fiches_fonctions.checklist).
+// Phase ① Amont = pilotée par l'IA + override manuel. Phase ④ Clôture = fixe
+// (verrou déterministe). Les salles réservées sont dérivées en live, pas ici.
+interface Checklist {
+  amont_checked: Record<string, boolean>; // cases cochées (items IA + manuels), par clé
+  amont_custom: AmontItem[];              // points ajoutés à la main (override)
+  amont_hidden: string[];                 // clés d'items IA masqués à la main (override)
+  manques_traites: string[];              // clés des points Junior marqués traités (disparaissent)
+  manques_reponses: ManqueReponse[];      // réponses fournies → re-nourrissent l'analyse
+  prestations_verifiees: boolean;         // consommé / extras / no-show vérifiés
+  facture_pms: boolean;                   // facture finale émise dans le PMS
+  facture_pms_date: string;
+  cloturee: boolean;
+  cloturee_at: string | null;
+}
+const EMPTY_CHECKLIST: Checklist = {
+  amont_checked: {}, amont_custom: [], amont_hidden: [],
+  manques_traites: [], manques_reponses: [],
+  prestations_verifiees: false, facture_pms: false, facture_pms_date: '',
+  cloturee: false, cloturee_at: null,
+};
+
+// Clé stable d'un point Junior (pour le marquer traité / y répondre malgré les
+// reformulations entre analyses) : minuscules, sans ponctuation/chiffres.
+const manqueKey = (texte: string) =>
+  String(texte ?? '').toLowerCase().replace(/[^a-zà-ÿ]+/g, ' ').trim().slice(0, 80);
+
+interface AuditResult {
+  synthese: string;
+  manques: { severite: string; texte: string }[];
+  suggestions_programme: { date: string; heure: string; type: RowType; label: string; salle: string }[];
+  checklist_amont?: AmontItem[];
+}
 
 const TYPE_STYLES: Record<RowType, string> = {
   seminaire: 'bg-teal-50 text-teal-700 border-teal-200',
@@ -59,6 +98,17 @@ function FicheContent() {
     notes_gaetan: '',
     notes_facturation: '',
   });
+  const [checklist, setChecklist] = useState<Checklist>(EMPTY_CHECKLIST);
+
+  // Assistant IA (audit du dossier)
+  const [audit, setAudit] = useState<AuditResult | null>(null);
+  const [auditing, setAuditing] = useState(false);     // analyse visible (1ère fois / forcée)
+  const [refreshing, setRefreshing] = useState(false); // rafraîchissement silencieux (cache déjà affiché)
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [auditAt, setAuditAt] = useState<string | null>(null);
+  const [autoDone, setAutoDone] = useState(false);     // garde-fou : auto-analyse 1× par ouverture
+  const [replyingTo, setReplyingTo] = useState<string | null>(null); // point Junior en cours de réponse
+  const [replyText, setReplyText] = useState('');
 
   useEffect(() => {
     const hotelName = hotel?.nom ? ` — ${hotel.nom}` : '';
@@ -108,6 +158,28 @@ function FicheContent() {
           notes_gaetan:      ficheData.notes_gaetan ?? '',
           notes_facturation: ficheData.notes_facturation ?? '',
         });
+        // checklist : JSONB nullable → on reconstruit explicitement (rétro-compatible
+        // avec les anciennes fiches, dont l'ancien format resto/hebergement est ignoré).
+        const c = (ficheData.checklist ?? {}) as Partial<Checklist>;
+        setChecklist({
+          amont_checked: { ...(c.amont_checked ?? {}) },
+          amont_custom: Array.isArray(c.amont_custom) ? c.amont_custom : [],
+          amont_hidden: Array.isArray(c.amont_hidden) ? c.amont_hidden : [],
+          manques_traites: Array.isArray(c.manques_traites) ? c.manques_traites : [],
+          manques_reponses: Array.isArray(c.manques_reponses) ? c.manques_reponses : [],
+          prestations_verifiees: !!c.prestations_verifiees,
+          facture_pms: !!c.facture_pms,
+          facture_pms_date: c.facture_pms_date ?? '',
+          cloturee: !!c.cloturee,
+          cloturee_at: c.cloturee_at ?? null,
+        });
+        // Cache d'analyse IA : on affiche tout de suite la dernière analyse
+        // connue (l'auto-analyse vérifiera ensuite si le dossier a changé).
+        const cachedAudit = ficheData.audit as { result?: AuditResult; generated_at?: string } | null;
+        if (cachedAudit?.result) {
+          setAudit(cachedAudit.result);
+          setAuditAt(cachedAudit.generated_at ?? null);
+        }
       }
 
       // Programme rows — charger depuis JSON ou pré-remplir depuis les salles
@@ -178,7 +250,7 @@ function FicheContent() {
     setRoomsOutOfSync(false);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (overrideChecklist?: Checklist) => {
     if (!leadId || saving) return;
     setSaving(true);
     const hotelId = lead?.hotel_id || localStorage.getItem('selectedHotelId');
@@ -189,6 +261,7 @@ function FicheContent() {
       notes_generales:   fiche.notes_generales || null,
       notes_gaetan:      fiche.notes_gaetan || null,
       notes_facturation: fiche.notes_facturation || null,
+      checklist:         overrideChecklist ?? checklist,
       updated_at: new Date().toISOString(),
     };
     if (ficheId) {
@@ -203,6 +276,100 @@ function FicheContent() {
   };
 
   const set = (field: string, val: string) => setFiche(prev => ({ ...prev, [field]: val }));
+
+  // ── Checklist & clôture ──
+  // Phase ④ (fixe) : les deux booléens du verrou de clôture.
+  const toggleCheck = (key: 'prestations_verifiees' | 'facture_pms') =>
+    setChecklist(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      // Cocher "facture finale émise" pré-remplit la date du jour (éditable).
+      if (key === 'facture_pms') next.facture_pms_date = !prev.facture_pms ? new Date().toISOString().slice(0, 10) : '';
+      return next;
+    });
+  // Phase ① (IA + override) : cocher un point, en masquer un proposé, en ajouter un.
+  const toggleAmont = (key: string) =>
+    setChecklist(prev => ({ ...prev, amont_checked: { ...prev.amont_checked, [key]: !prev.amont_checked[key] } }));
+  const removeAmont = (key: string, isCustom: boolean) =>
+    setChecklist(prev => isCustom
+      ? { ...prev, amont_custom: prev.amont_custom.filter(i => i.key !== key) }
+      : { ...prev, amont_hidden: [...prev.amont_hidden, key] });
+  const addAmont = () => {
+    const label = window.prompt('Intitulé du point à ajouter ?')?.trim();
+    if (!label) return;
+    const key = `custom_${Date.now().toString(36)}`;
+    setChecklist(prev => ({ ...prev, amont_custom: [...prev.amont_custom, { key, label }] }));
+  };
+  const toggleCloture = () =>
+    setChecklist(prev => prev.cloturee
+      ? { ...prev, cloturee: false, cloturee_at: null }
+      : { ...prev, cloturee: true, cloturee_at: new Date().toISOString() });
+
+  // ── Junior : audit du dossier complet ──
+  // Les appelants enregistrent la fiche AVANT (pour que Junior lise la base à jour).
+  // mode 'force' = ignore le cache et ré-analyse ; 'auto' (ouverture) = ressert le
+  // cache si rien n'a changé, sinon ré-analyse.
+  const runAudit = async (mode: 'auto' | 'force' = 'force') => {
+    if (!leadId || auditing || refreshing) return;
+    const visible = mode === 'force' || !audit;
+    if (visible) setAuditing(true); else setRefreshing(true);
+    setAuditError(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      const res = await fetch('/api/fiche-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ leadId, mode }),
+      });
+      const json = await res.json();
+      if (!json.ok) setAuditError(json.error || 'Analyse indisponible');
+      else { setAudit(json.audit as AuditResult); setAuditAt(json.generated_at ?? null); }
+    } catch {
+      setAuditError('Analyse indisponible, réessaie');
+    } finally {
+      setAuditing(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Auto-analyse à l'ouverture (1× par visite) : sert le cache si le dossier
+  // n'a pas bougé (0 coût), ré-analyse seulement s'il a changé.
+  useEffect(() => {
+    if (loading || !lead || !leadId || autoDone) return;
+    setAutoDone(true);
+    runAudit('auto');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, lead, leadId, autoDone]);
+  // Marque un point Junior comme traité → il disparaît de la liste (persiste à l'Enregistrer).
+  const markManqueTraite = (texte: string) => {
+    const key = manqueKey(texte);
+    setChecklist(prev => prev.manques_traites.includes(key) ? prev : { ...prev, manques_traites: [...prev.manques_traites, key] });
+  };
+  // Répond à un point : enregistre la réponse, masque le point, puis Junior ré-analyse
+  // en tenant compte de la réponse (boucle "outil vivant").
+  const submitReply = async (texte: string) => {
+    const reponse = replyText.trim();
+    setReplyingTo(null);
+    setReplyText('');
+    if (!reponse) return;
+    const key = manqueKey(texte);
+    const next: Checklist = {
+      ...checklist,
+      manques_traites: checklist.manques_traites.includes(key) ? checklist.manques_traites : [...checklist.manques_traites, key],
+      manques_reponses: [...checklist.manques_reponses.filter(r => r.key !== key), { key, question: texte, reponse }],
+    };
+    setChecklist(next);
+    await handleSave(next);
+    await runAudit('force');
+  };
+  // Ajoute une ligne suggérée au programme et la retire des suggestions.
+  const addSuggestion = (s: AuditResult['suggestions_programme'][number], idx: number) => {
+    setProgrammeRows(prev => [...prev, newRow({
+      date: s.date || (lead?.date_evenement || '').substring(0, 10),
+      heure: s.heure || '', type: s.type || 'autre', label: s.label || '', salle: s.salle || '',
+    })]);
+    setAudit(prev => prev ? { ...prev, suggestions_programme: prev.suggestions_programme.filter((_, i) => i !== idx) } : prev);
+  };
 
   const ficheDate = format(new Date(), 'dd/MM/yyyy', { locale: fr });
   const pdfData = { lead, hotel, rooms, quoteItems, fiche, programmeRows, ficheDate };
@@ -271,6 +438,41 @@ function FicheContent() {
 
   const devisItems = quoteItems.filter((i: any) => i.label?.trim());
 
+  // ── Avancement / clôture (dérivé) ──
+  const sallesOk = rooms.length > 0;
+  const today = new Date().toISOString().slice(0, 10);
+  const isPast = lead.date_evenement ? String(lead.date_evenement).slice(0, 10) < today : false;
+  // Phase ① visible = items IA (hors masqués manuellement) + items ajoutés à la main.
+  const amontItems: AmontItem[] = [
+    ...(audit?.checklist_amont ?? []).filter(it => !checklist.amont_hidden.includes(it.key)),
+    ...checklist.amont_custom,
+  ];
+  const customKeys = new Set(checklist.amont_custom.map(i => i.key));
+  // Points Junior encore actifs = ceux non marqués traités.
+  const manquesVisibles = (audit?.manques ?? []).filter(m => !checklist.manques_traites.includes(manqueKey(m.texte)));
+  const checkItems = [sallesOk, ...amontItems.map(it => !!checklist.amont_checked[it.key]), checklist.prestations_verifiees, checklist.facture_pms];
+  const doneCount = checkItems.filter(Boolean).length;
+  const totalCount = checkItems.length;
+  const progressPct = Math.round((doneCount / totalCount) * 100);
+  // Phase ④ complète = barrière de clôture (déterministe, indépendante de l'IA).
+  const clotureReady = checklist.prestations_verifiees && checklist.facture_pms;
+
+  // Données enrichies pour le PDF (avancement + analyse Junior).
+  const fichePdfData = {
+    ...pdfData,
+    avancement: {
+      salles: { ok: sallesOk, count: rooms.length },
+      amont: amontItems.map(it => ({ label: it.label, hint: it.hint, checked: !!checklist.amont_checked[it.key] })),
+      prestations_verifiees: checklist.prestations_verifiees,
+      facture_pms: checklist.facture_pms,
+      facture_pms_date: checklist.facture_pms_date,
+      cloturee: checklist.cloturee,
+      cloturee_at: checklist.cloturee_at,
+      doneCount, totalCount,
+    },
+    junior: audit ? { synthese: audit.synthese, manques: manquesVisibles } : null,
+  };
+
   return (
     <div className="min-h-screen">
       <ThemedBackground />
@@ -278,7 +480,7 @@ function FicheContent() {
       {/* ── Top bar ── */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={() => window.history.back()} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-all">
+          <button onClick={() => { if (window.history.length > 1) window.history.back(); else { window.close(); window.location.href = '/commercial?tab=planning'; } }} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-all">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
@@ -287,7 +489,7 @@ function FicheContent() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <BlobProvider document={<FichePDF data={pdfData} />}>
+          <BlobProvider document={<FichePDF data={fichePdfData} />}>
             {({ url, loading: pdfLoading }) => (
               <button
                 disabled={pdfLoading || !url}
@@ -300,7 +502,7 @@ function FicheContent() {
             )}
           </BlobProvider>
           {quoteItems.length > 0 && (
-            <BlobProvider document={<CombinedPDF ficheData={pdfData} quoteData={combinedPdfData} />}>
+            <BlobProvider document={<CombinedPDF ficheData={fichePdfData} quoteData={combinedPdfData} />}>
               {({ url, loading: pdfLoading }) => (
                 <button
                   disabled={pdfLoading || !url}
@@ -313,7 +515,7 @@ function FicheContent() {
               )}
             </BlobProvider>
           )}
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-1.5 px-5 h-9 rounded-xl text-xs font-black bg-gray-900 text-white hover:bg-gray-800 transition-all disabled:opacity-50">
+          <button onClick={() => handleSave()} disabled={saving} className="flex items-center gap-1.5 px-5 h-9 rounded-xl text-xs font-black bg-gray-900 text-white hover:bg-gray-800 transition-all disabled:opacity-50">
             {saved ? <CheckCircle className="w-3.5 h-3.5" /> : saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             {saved ? 'Enregistré' : saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
@@ -355,6 +557,160 @@ function FicheContent() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* ── Junior (assistant IA) ── */}
+        <div className="bg-white rounded-2xl border border-violet-200 overflow-hidden">
+          <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-700 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" /> Junior
+              <span className="text-[9px] text-violet-300 normal-case tracking-normal font-bold">· assistant dossier</span>
+              {refreshing && <span className="text-[9px] font-bold text-gray-300 normal-case tracking-normal flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> mise à jour…</span>}
+            </span>
+            <div className="flex items-center gap-3">
+              {auditAt && !auditing && (
+                <span className="text-[10px] text-gray-300 font-medium">analysé le {format(new Date(auditAt), 'dd/MM à HH:mm')}</span>
+              )}
+              <button onClick={async () => { await handleSave(); await runAudit('force'); }} disabled={auditing || refreshing}
+                className="flex items-center gap-1.5 px-4 h-8 rounded-xl text-[11px] font-black border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 transition-all disabled:opacity-50">
+                {auditing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                {auditing ? 'Analyse…' : audit ? 'Ré-analyser' : 'Analyser le dossier'}
+              </button>
+            </div>
+          </div>
+          <div className="p-6">
+            {!audit && !auditing && !auditError && (
+              <p className="text-sm text-gray-400">Junior relit tout le dossier (lead, salles, devis, programme, notes) et te dit l&apos;essentiel + ce qui manque — dont la facturation finale.</p>
+            )}
+            {auditing && <p className="text-sm text-gray-400">Junior analyse le dossier…</p>}
+            {auditError && <p className="text-sm text-red-500">{auditError}</p>}
+            {audit && (
+              <div className="space-y-5">
+                {/* Synthèse — l'event en un coup d'œil */}
+                <div className="rounded-xl bg-violet-50/60 border border-violet-100 px-4 py-3">
+                  <div className="text-[9px] font-black uppercase tracking-widest text-violet-400 mb-1">En bref</div>
+                  <p className="text-[15px] text-gray-800 leading-snug font-medium">{audit.synthese}</p>
+                </div>
+                {/* Points à vérifier — traitables / répondables */}
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2">À vérifier ({manquesVisibles.length})</div>
+                  {manquesVisibles.length === 0 ? (
+                    <p className="text-sm text-emerald-600 font-bold flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Rien à signaler, dossier complet.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {manquesVisibles.map((m, i) => {
+                        const sev = SEV_STYLE[m.severite] || SEV_STYLE.mineur;
+                        const key = manqueKey(m.texte);
+                        return (
+                          <div key={i} className={`px-3 py-2 rounded-xl border ${sev.box}`}>
+                            <div className="flex items-start gap-2.5">
+                              <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${sev.icon}`} />
+                              <span className="text-sm text-gray-700 flex-1">{m.texte}</span>
+                              {replyingTo !== key && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button onClick={() => { setReplyingTo(key); setReplyText(''); }}
+                                    className="px-2 h-7 rounded-lg text-[11px] font-bold text-violet-600 hover:bg-violet-100 transition-colors">Répondre</button>
+                                  <button onClick={() => markManqueTraite(m.texte)} title="Marquer traité"
+                                    className="p-1 rounded text-gray-300 hover:text-emerald-600 transition-colors"><Check className="w-4 h-4" /></button>
+                                </div>
+                              )}
+                            </div>
+                            {replyingTo === key && (
+                              <div className="mt-2 flex items-center gap-2 pl-6">
+                                <input autoFocus value={replyText} onChange={e => setReplyText(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') submitReply(m.texte); if (e.key === 'Escape') { setReplyingTo(null); setReplyText(''); } }}
+                                  placeholder="Ta réponse (ex. déjeuner externe au resto X)…"
+                                  className="flex-1 h-8 rounded-lg px-2 border border-gray-200 text-sm outline-none focus:border-violet-400" />
+                                <button onClick={() => submitReply(m.texte)} className="shrink-0 px-2.5 h-8 rounded-lg text-[11px] font-black bg-violet-600 text-white hover:bg-violet-700">Valider</button>
+                                <button onClick={() => { setReplyingTo(null); setReplyText(''); }} className="shrink-0 px-2 h-8 rounded-lg text-[11px] font-bold text-gray-400 hover:text-gray-700">Annuler</button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                {audit.suggestions_programme.length > 0 && (
+                  <div>
+                    <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2">Lignes de programme suggérées</div>
+                    <div className="space-y-1.5">
+                      {audit.suggestions_programme.map((s, i) => (
+                        <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50">
+                          <span className="text-xs font-bold text-gray-500 tabular-nums shrink-0">{s.heure || '--:--'}</span>
+                          <span className="text-sm text-gray-700 flex-1">{s.label}{s.salle ? ` · ${s.salle}` : ''}</span>
+                          <button onClick={() => addSuggestion(s, i)} className="shrink-0 flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-black bg-teal-600 text-white hover:bg-teal-700 transition-all">
+                            <Plus className="w-3 h-3" /> Ajouter
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="text-[10px] text-gray-300">Junior (IA) — à valider, peut se tromper. Tes réponses sont prises en compte à l&apos;analyse suivante.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Avancement & clôture ── */}
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Avancement du dossier</span>
+            <div className="flex items-center gap-3 flex-1 max-w-xs">
+              <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progressPct}%` }} />
+              </div>
+              <span className="text-xs font-black text-gray-500 tabular-nums">{doneCount}/{totalCount}</span>
+            </div>
+          </div>
+          <div className="p-6 grid grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1 flex items-center gap-1.5">
+                ① Amont <span className="text-violet-400 normal-case tracking-normal font-bold inline-flex items-center gap-0.5"><Sparkles className="w-2.5 h-2.5" />IA</span>
+              </div>
+              <CheckRow auto checked={sallesOk} label="Salles réservées" hint={sallesOk ? `${rooms.length} salle(s) réservée(s)` : 'Aucune réservation'} />
+              {amontItems.map(it => (
+                <CheckRow key={it.key} checked={!!checklist.amont_checked[it.key]} onToggle={() => toggleAmont(it.key)}
+                  label={it.label} hint={it.hint} onRemove={() => removeAmont(it.key, customKeys.has(it.key))} />
+              ))}
+              {amontItems.length === 0 && (
+                <p className="text-[11px] text-gray-400 px-1">{audit ? 'Aucun point de préparation spécifique pour ce dossier.' : 'Lance l’analyse (Assistant dossier) pour générer les points de préparation.'}</p>
+              )}
+              <button type="button" onClick={addAmont} className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 hover:text-gray-700 transition-colors pt-1 pl-1">
+                <Plus className="w-3.5 h-3.5" /> Ajouter un point
+              </button>
+            </div>
+            <div className="space-y-2">
+              <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1 flex items-center gap-1.5">
+                ④ Clôture &amp; facturation {isPast && !clotureReady && <span className="text-red-500">· à faire</span>}
+              </div>
+              <CheckRow checked={checklist.prestations_verifiees} onToggle={() => toggleCheck('prestations_verifiees')} label="Prestations consommées vérifiées" hint="extras, no-show, consommations réelles" />
+              <CheckRow checked={checklist.facture_pms} onToggle={() => toggleCheck('facture_pms')} label="Facture finale émise (PMS)" hint="la facturation se fait dans le PMS" />
+              {checklist.facture_pms && (
+                <div className="flex items-center gap-2 pl-3">
+                  <span className="text-[10px] font-bold text-gray-400">émise le</span>
+                  <input type="date" value={checklist.facture_pms_date} onChange={e => setChecklist(prev => ({ ...prev, facture_pms_date: e.target.value }))}
+                    className="h-8 rounded-lg px-2 border border-gray-200 text-xs outline-none focus:border-emerald-400" />
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-4 bg-gray-50/50">
+            {checklist.cloturee ? (
+              <span className="text-sm font-bold text-emerald-700 flex items-center gap-2">
+                <CheckCircle className="w-4 h-4" /> Dossier clôturé{checklist.cloturee_at ? ` le ${format(new Date(checklist.cloturee_at), 'dd/MM/yyyy')}` : ''}
+              </span>
+            ) : clotureReady ? (
+              <span className="text-sm text-gray-500">Tout est prêt — tu peux clôturer le dossier.</span>
+            ) : (
+              <span className="text-sm text-gray-400 flex items-center gap-2"><Lock className="w-3.5 h-3.5" /> Clôture verrouillée tant que la phase ④ n&apos;est pas complète.</span>
+            )}
+            <button type="button" onClick={toggleCloture} disabled={!clotureReady && !checklist.cloturee}
+              className={`shrink-0 px-5 h-9 rounded-xl text-xs font-black transition-all ${checklist.cloturee ? 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50' : 'bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed'}`}>
+              {checklist.cloturee ? 'Rouvrir' : 'Clôturer le dossier'}
+            </button>
           </div>
         </div>
 
@@ -534,12 +890,48 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function NoteField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  // Auto-extensible : le champ grandit avec le contenu, pas de scroll interne.
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; }
+  }, [value]);
   return (
     <Field label={label}>
-      <textarea value={value} onChange={e => onChange(e.target.value)}
+      <textarea ref={ref} value={value} onChange={e => onChange(e.target.value)}
         placeholder="Notes…" rows={3}
-        className="nt-input w-full rounded-xl px-3 py-2 border text-sm outline-none resize-none" />
+        className="nt-input w-full rounded-xl px-3 py-2 border text-sm outline-none resize-none overflow-hidden" />
     </Field>
+  );
+}
+
+const SEV_STYLE: Record<string, { box: string; icon: string }> = {
+  critique:  { box: 'bg-red-50 border-red-200',     icon: 'text-red-500'   },
+  important: { box: 'bg-amber-50 border-amber-200',  icon: 'text-amber-500' },
+  mineur:    { box: 'bg-gray-50 border-gray-200',    icon: 'text-gray-400'  },
+};
+
+function CheckRow({ checked, onToggle, auto, label, hint, onRemove }: { checked: boolean; onToggle?: () => void; auto?: boolean; label: string; hint?: string; onRemove?: () => void }) {
+  return (
+    <div className={`group/row w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${checked ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
+      <button type="button" disabled={auto} onClick={onToggle}
+        className={`flex items-center gap-3 flex-1 min-w-0 text-left ${auto ? 'cursor-default' : 'cursor-pointer'}`}>
+        <span className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 border ${checked ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
+          {checked && <Check className="w-3.5 h-3.5 text-white" />}
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className={`block text-sm font-bold ${checked ? 'text-emerald-800' : 'text-gray-700'}`}>{label}</span>
+          {hint && <span className="block text-[10px] text-gray-400 font-medium">{hint}</span>}
+        </span>
+      </button>
+      {auto && <span className="text-[9px] font-black uppercase tracking-widest text-gray-300 shrink-0">auto</span>}
+      {onRemove && (
+        <button type="button" onClick={onRemove} title="Retirer ce point"
+          className="shrink-0 p-1 rounded text-gray-300 hover:text-red-500 opacity-0 group-hover/row:opacity-100 transition-all">
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
 
