@@ -26,6 +26,13 @@ export const metadata: Metadata = {
   icons: {
     icon: '/favicon.png',
   },
+  // Outil interne : on interdit tout référencement par les moteurs de recherche.
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: { index: false, follow: false },
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
