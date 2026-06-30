@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import Link from 'next/link';
-import { Lock, Battery, Radio, RefreshCw, Link2, Unlink, Check, X, ShieldAlert } from 'lucide-react';
+import { Lock, Battery, Radio, RefreshCw, Link2, Unlink, Check, X, ShieldAlert, Repeat } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -40,6 +40,8 @@ export default function SerruresPage() {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [mappingFor, setMappingFor] = useState<LockSummary | null>(null);
+  const [replacingFor, setReplacingFor] = useState<Chambre | null>(null);
+  const [newLockId, setNewLockId] = useState<number | null>(null);
   const [selectedHotel, setSelectedHotel] = useState<string>('');
   const [numero, setNumero] = useState('');
   const [busy, setBusy] = useState(false);
@@ -101,6 +103,36 @@ export default function SerruresPage() {
       const json = await res.json();
       if (!json.ok) throw new Error(json.error);
       await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function replaceLock() {
+    if (!replacingFor || !newLockId) return;
+    const lock = (data && data.ok ? data.locks : []).find((l) => l.lockId === newLockId);
+    setBusy(true);
+    try {
+      const res = await fetch('/api/serrures/admin/map', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({
+          id: replacingFor.id,
+          tthotel_lock_id: newLockId,
+          tthotel_lock_alias: lock?.alias ?? replacingFor.numero,
+        }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      setReplacingFor(null);
+      setNewLockId(null);
+      await load();
+      toast.success(
+        `Serrure de la chambre ${replacingFor.numero} remplacée. Pensez à ré-encoder le code / la carte du séjour en cours.`,
+        { duration: 7000 },
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -194,13 +226,25 @@ export default function SerruresPage() {
                       {hotel?.nom ?? '?'} · lockId {c.tthotel_lock_id}
                     </div>
                   </div>
-                  <button
-                    onClick={() => unmapChambre(c.id)}
-                    className="text-neutral-400 hover:text-red-600"
-                    title="Démapper"
-                  >
-                    <Unlink className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => {
+                        setReplacingFor(c);
+                        setNewLockId(null);
+                      }}
+                      className="text-neutral-400 hover:text-indigo-600"
+                      title="Remplacer la serrure (serrure changée physiquement)"
+                    >
+                      <Repeat className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => unmapChambre(c.id)}
+                      className="text-neutral-400 hover:text-red-600"
+                      title="Démapper"
+                    >
+                      <Unlink className="w-4 h-4" />
+                    </button>
+                  </div>
                 </li>
               );
             })}
@@ -324,6 +368,99 @@ export default function SerruresPage() {
                 className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 text-sm"
               >
                 {busy ? 'Mapping…' : 'Mapper'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {replacingFor && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Remplacer la serrure</h3>
+              <button
+                onClick={() => setReplacingFor(null)}
+                className="text-neutral-400 hover:text-neutral-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-neutral-600 mb-1">
+              Chambre <strong>{replacingFor.numero}</strong> — serrure actuelle :{' '}
+              <code className="bg-neutral-100 px-1.5 py-0.5 rounded">
+                {replacingFor.tthotel_lock_id}
+              </code>
+            </p>
+            <p className="text-xs text-neutral-500 mb-4">
+              Choisissez la nouvelle serrure (parmi celles détectées non encore mappées).
+              L’historique des séjours de la chambre est conservé.
+            </p>
+            {(() => {
+              const available = locks.filter((l) => !mappedLockIds.has(l.lockId));
+              if (available.length === 0) {
+                return (
+                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
+                    Aucune serrure libre détectée. Rafraîchissez après avoir ajouté la nouvelle
+                    serrure dans TTLock.
+                  </p>
+                );
+              }
+              return (
+                <ul className="space-y-2 max-h-72 overflow-auto">
+                  {available.map((l) => {
+                    const sel = newLockId === l.lockId;
+                    return (
+                      <li key={l.lockId}>
+                        <button
+                          onClick={() => setNewLockId(l.lockId)}
+                          className={`w-full text-left rounded-md border px-3 py-2 flex items-center justify-between gap-3 ${
+                            sel
+                              ? 'border-indigo-500 bg-indigo-50'
+                              : 'border-neutral-200 hover:bg-neutral-50'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">{l.alias || '(sans alias)'}</div>
+                            <div className="text-xs text-neutral-500">lockId {l.lockId}</div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 text-xs text-neutral-500">
+                            {typeof l.battery === 'number' && (
+                              <span className="flex items-center gap-1">
+                                <Battery className="w-3.5 h-3.5" />
+                                {l.battery}%
+                              </span>
+                            )}
+                            <span
+                              className={`flex items-center gap-1 ${
+                                l.hasGateway ? 'text-emerald-600' : 'text-neutral-400'
+                              }`}
+                            >
+                              <Radio className="w-3.5 h-3.5" />
+                              {l.hasGateway ? 'gw' : 'pas de gw'}
+                            </span>
+                            {sel && <Check className="w-4 h-4 text-indigo-600" />}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              );
+            })()}
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setReplacingFor(null)}
+                className="px-3 py-2 rounded border border-neutral-300 hover:bg-neutral-50 text-sm"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={replaceLock}
+                disabled={busy || !newLockId}
+                className="px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 text-sm"
+              >
+                {busy ? 'Remplacement…' : 'Remplacer'}
               </button>
             </div>
           </div>
