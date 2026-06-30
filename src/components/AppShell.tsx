@@ -9,8 +9,8 @@
 // seuls les libellés (et le nom d'hôtel) apparaissent. Le contenu reste décalé de
 // pl-16 ; dépliée, la sidebar passe PAR-DESSUS avec un voile (pas de reflow).
 // Alimentée par la liste partagée src/lib/tools.
-import { useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Menu, X, Home, ChevronDown, Check, LogOut } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -19,15 +19,22 @@ import {
   TOOLS, TOOL_CHILDREN, isToolVisible, toolHref, type ToolDef, type ToolVisibilityCtx,
 } from '@/lib/tools';
 
-const HIDE_PREFIXES = ['/login', '/register', '/forgot-password', '/update-password'];
+// Pages accessibles SANS être connecté : flux d'authentification + pages de retour
+// Stripe (le client qui paie n'est pas un utilisateur de l'app). Toute autre page
+// est protégée : un visiteur non connecté est renvoyé au /login (garde global).
+const PUBLIC_PREFIXES = [
+  '/login', '/register', '/forgot-password', '/update-password', '/reset-password',
+  '/paiement',
+];
 
 function basePath(t: ToolDef): string {
   return toolHref(t, '').split('?')[0];
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const pathname = usePathname() || '/';
+  const router = useRouter();
   const { hotels, selectedHotelId, setSelectedHotelId, currentHotel } = useHotelScope(
     'id, nom, has_parking, has_coworking',
   );
@@ -36,8 +43,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [flyout, setFlyout] = useState<{ id: string; top: number; left: number } | null>(null); // sous-menu plié
   const [hotelMenu, setHotelMenu] = useState(false);
 
-  const hideShell = !user || HIDE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  if (hideShell) return <>{children}</>;
+  const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
+  // Garde global : une fois la session restaurée, un visiteur non connecté qui
+  // tente une page protégée est renvoyé au /login (les pages ne sont plus de
+  // simples coquilles visibles sans compte).
+  useEffect(() => {
+    if (isLoading) return;
+    if (!user && !isPublic) router.replace('/login');
+  }, [isLoading, user, isPublic, router]);
+
+  // Pages publiques : rendu direct, sans sidebar.
+  if (isPublic) return <>{children}</>;
+
+  // Page protégée sans utilisateur : on n'affiche PAS le contenu (chargement de
+  // session ou redirection en cours vers /login).
+  if (!user) {
+    return (
+      <div className="p-10 text-center text-gray-500 flex items-center justify-center min-h-screen">
+        Chargement…
+      </div>
+    );
+  }
 
   const closeAll = () => { setOpen(false); setExpanded(null); setHotelMenu(false); };
 
