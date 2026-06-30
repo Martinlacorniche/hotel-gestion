@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { revokeCardOnLocks } from '@/lib/tthotel';
+import { getHotelLocksMap } from '@/lib/tthotel';
 import { requireRole } from '@/lib/apiAuth';
 
-// DELETE /api/serrures/passes/:id  → RÉVOQUE la carte du pass sur toutes ses
-// serrures (add+delete via gateway = blacklist de l'UID), puis retire le pass.
-// Si la révocation échoue sur des serrures (injoignables), on garde le pass et
-// on remonte le détail pour pouvoir réessayer.
+// DELETE /api/serrures/passes/:id  → retire le pass IMMÉDIATEMENT (il disparaît de
+// l'UI) et empile la révocation de sa carte dans `pass_revocations`. Un cron
+// (revoke-drain) blackliste ensuite la carte serrure par serrure, en réessayant
+// tant que des passerelles sont injoignables. Les serrures qui n'existent plus
+// dans l'hôtel (ex. serrure remplacée) sont ignorées : la carte n'y ouvre rien.
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,7 @@ export async function DELETE(req: Request, ctx: Ctx) {
 
   const { data: pass, error: eP } = await supabaseAdmin
     .from('passes')
-    .select('id, last_job_id')
+    .select('id, hotel_id, label, last_job_id')
     .eq('id', id)
     .single();
   if (eP || !pass) {
@@ -26,27 +27,46 @@ export async function DELETE(req: Request, ctx: Ctx) {
   }
 
   // Carte du pass + serrures couvertes, depuis son dernier job d'encodage.
-  let results: { lockId: number; ok: boolean; error?: string }[] = [];
+  let cardNo: string | undefined;
+  let lockIds: number[] = [];
   if (pass.last_job_id) {
     const { data: job } = await supabaseAdmin
       .from('jobs_encodeur')
       .select('payload, resultat')
       .eq('id', pass.last_job_id)
       .single();
-    const cardNo = (job?.resultat as { card_no?: string } | null)?.card_no;
-    const lockIds = ((job?.payload as { lockIds?: number[] } | null)?.lockIds) ?? [];
-    if (cardNo && lockIds.length) {
-      results = await revokeCardOnLocks(lockIds, cardNo);
+    cardNo = (job?.resultat as { card_no?: string } | null)?.card_no;
+    lockIds = ((job?.payload as { lockIds?: number[] } | null)?.lockIds) ?? [];
+  }
+
+  // On ne garde que les serrures encore présentes dans l'hôtel (les disparues
+  // ne détiennent plus la carte → rien à révoquer). Best-effort : si TTHotel est
+  // injoignable ici, on enfile tel quel, le drain filtrera.
+  let pending = lockIds;
+  if (cardNo && lockIds.length) {
+    try {
+      const map = await getHotelLocksMap();
+      pending = lockIds.filter((l) => map.has(l));
+    } catch {
+      pending = lockIds;
     }
   }
 
-  const allOk = results.every((r) => r.ok);
+  // Retrait immédiat du pass.
+  const { error: eDel } = await supabaseAdmin.from('passes').delete().eq('id', id);
+  if (eDel) return NextResponse.json({ ok: false, error: eDel.message }, { status: 500 });
 
-  // On ne retire le pass que si tout a été révoqué (sinon on garde pour réessayer).
-  if (allOk) {
-    const { error } = await supabaseAdmin.from('passes').delete().eq('id', id);
-    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  // Mise en file de la révocation (si carte connue et serrures à traiter).
+  let queued = false;
+  if (cardNo && pending.length) {
+    const { error: eIns } = await supabaseAdmin.from('pass_revocations').insert({
+      hotel_id: pass.hotel_id,
+      card_no: cardNo,
+      pass_label: pass.label ?? null,
+      lock_ids: pending,
+    });
+    if (!eIns) queued = true;
   }
 
-  return NextResponse.json({ ok: allOk, results, removed: allOk });
+  return NextResponse.json({ ok: true, removed: true, queued, pendingLocks: pending.length });
 }

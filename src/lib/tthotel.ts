@@ -398,7 +398,14 @@ export async function authorizeCardOnLocks(
  * encodée sans gateway), on l'ajoute d'abord pour pouvoir le supprimer.
  * Réveil + retry sur le delete (la serrure peut dormir).
  */
-export async function revokeCardOnLock(lockId: number, cardNumber: string): Promise<void> {
+// `attempts` règle l'agressivité du retry gateway : 4 (défaut) pour une action
+// interactive, 1 pour le drain de file (échec rapide → on retentera au prochain
+// passage du cron plutôt que de bloquer la requête sur une serrure endormie).
+export async function revokeCardOnLock(
+  lockId: number,
+  cardNumber: string,
+  attempts = 4,
+): Promise<void> {
   let cardId = await findCardIdByNumber(lockId, cardNumber);
   if (!cardId) {
     const now = Date.now();
@@ -411,6 +418,7 @@ export async function revokeCardOnLock(lockId: number, cardNumber: string): Prom
         endDate: now + 86_400_000,
         addType: VIA_CLOUD,
       }),
+      attempts,
     );
     cardId = add.cardId;
     if (!cardId) throw new Error('identityCard/add: pas de cardId renvoyé');
@@ -418,6 +426,7 @@ export async function revokeCardOnLock(lockId: number, cardNumber: string): Prom
 
   await withGatewayRetry(lockId, () =>
     tthotelPost('/v3/identityCard/delete', { lockId, cardId, deleteType: VIA_CLOUD }),
+    attempts,
   );
 }
 
@@ -425,11 +434,12 @@ export async function revokeCardOnLock(lockId: number, cardNumber: string): Prom
 export async function revokeCardOnLocks(
   lockIds: number[],
   cardNumber: string,
+  attempts = 4,
 ): Promise<CardRevokeResult[]> {
   const results: CardRevokeResult[] = [];
   for (const lockId of lockIds) {
     try {
-      await revokeCardOnLock(lockId, cardNumber);
+      await revokeCardOnLock(lockId, cardNumber, attempts);
       results.push({ lockId, ok: true });
     } catch (err) {
       results.push({ lockId, ok: false, error: err instanceof Error ? err.message : String(err) });

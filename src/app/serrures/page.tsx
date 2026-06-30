@@ -507,15 +507,15 @@ export default function SerruresPage() {
         headers: await authHeaders(),
       });
       const json = await res.json();
-      const results: { ok: boolean }[] = json.results ?? [];
+      if (!json.ok) throw new Error(json.error || 'échec');
       await loadPasses();
-      if (json.removed) {
-        toast.success('Pass révoqué sur toutes les serrures');
-      } else if (results.length) {
-        const okCount = results.filter((r) => r.ok).length;
-        toast.error(`Révoqué sur ${okCount}/${results.length} serrures — réessaie (serrures injoignables)`);
-      } else if (!json.ok) {
-        throw new Error(json.error || 'échec');
+      if (json.queued) {
+        toast.success(
+          `Pass supprimé. Révocation de la carte sur ${json.pendingLocks} serrure(s) en cours (automatique).`,
+          { duration: 6000 },
+        );
+      } else {
+        toast.success('Pass supprimé.');
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
