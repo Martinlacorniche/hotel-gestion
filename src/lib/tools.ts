@@ -4,7 +4,7 @@
 import {
   CalendarDays, BookOpen, ShoppingCart, Car, Stamp, Package, Wrench,
   Thermometer, CreditCard, Tv2, Wifi, Wind, Monitor, Handshake,
-  ListChecks, DoorOpen, Tag, Users, Euro, KeyRound, ConciergeBell,
+  ListChecks, DoorOpen, Tag, Users, Euro, KeyRound, ConciergeBell, Martini,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -32,6 +32,7 @@ export const TOOLS: ToolDef[] = [
   { id: 'commandes',    label: 'Commandes',    href: '/commandes',                          icon: ShoppingCart, bg: 'bg-orange-50',  text: 'text-orange-700' },
   { id: 'haccp',        label: 'HACCP',        href: '/haccp',                              icon: Thermometer,  bg: 'bg-rose-50',    text: 'text-rose-700' },
   { id: 'encaissement', label: 'Encaissement', href: '/encaissement',                       icon: CreditCard,   bg: 'bg-emerald-50', text: 'text-emerald-700' },
+  { id: 'rooftop',      label: 'Rooftop',      href: '/rooftop',                            icon: Martini,      bg: 'bg-amber-50',   text: 'text-amber-700', condition: 'voiles' },
   // « Groupes & mariages » n'a pas de tuile : accès via la page Commercial.
 ];
 
