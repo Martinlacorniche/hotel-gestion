@@ -779,8 +779,25 @@ export default function PlanningPage() {
 
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const daysUntilWeek = Math.round((weekStart.getTime() - today.getTime()) / 86400000);
-    const hasDraft = planningEntries.some((e: any) => e.status === 'draft' && weekStrs.includes(e.date));
-    if (daysUntilWeek >= 0 && daysUntilWeek < SEUILS.prevenanceJours && hasDraft)
+    // Un brouillon ne compte comme "non publié" que s'il modifie VRAIMENT le planning
+    // publié : contenu différent du publié, ou nouveau créneau non vide sans publié.
+    // On ignore les brouillons no-op (identiques au publié, ou vides sans publié) qui
+    // déclenchaient une fausse alerte alors que rien n'a changé visuellement.
+    const pubByCell = new Map<string, any>();
+    planningEntries.forEach((e: any) => {
+      if (e.status === 'published' && weekStrs.includes(e.date)) pubByCell.set(`${e.user_id}|${e.date}`, e);
+    });
+    const sameShift = (a: any, b: any) =>
+      (a?.shift || '') === (b?.shift || '') &&
+      (a?.start_time || '') === (b?.start_time || '') &&
+      (a?.end_time || '') === (b?.end_time || '');
+    const isEmpty = (e: any) => !e?.shift && !e?.start_time && !e?.end_time;
+    const hasRealDraft = planningEntries.some((e: any) => {
+      if (e.status !== 'draft' || !weekStrs.includes(e.date)) return false;
+      const pub = pubByCell.get(`${e.user_id}|${e.date}`);
+      return pub ? !sameShift(e, pub) : !isEmpty(e);
+    });
+    if (daysUntilWeek >= 0 && daysUntilWeek < SEUILS.prevenanceJours && hasRealDraft)
       alerts.unshift({ uid: '', name: '', type: 'prevenance', label: `Planning non publié à J-${daysUntilWeek} (délai ${SEUILS.prevenanceJours}j)` });
 
     return { totals, alerts, cellFlags };
