@@ -66,11 +66,15 @@ export function BarTab({ hotelId }: { hotelId: string }) {
   const [drafts, setDrafts] = useState<Record<string, { nom: string; nom_en: string; description: string; description_en: string; prix: string; quantite: string }>>({});
   const [categories, setCategories] = useState<string[]>(DEFAULT_BAR_CATEGORIES);
   const [catEn, setCatEn] = useState<Record<string, string>>({});
+  const [catPrix, setCatPrix] = useState<Record<string, string>>({});
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (id: string) =>
+    setExpanded(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [barTileId, setBarTileId] = useState<string | null>(null);
   const [barConfig, setBarConfig] = useState<Record<string, unknown>>({});
   const [newNom, setNewNom] = useState<Record<string, string>>({});
-  const [newPrix, setNewPrix] = useState<Record<string, string>>({});
   const [newCat, setNewCat] = useState("");
   const [editingCat, setEditingCat] = useState<string | null>(null);
   const [editingCatVal, setEditingCatVal] = useState("");
@@ -112,6 +116,8 @@ export function BarTab({ hotelId }: { hotelId: string }) {
         }
         const enCats = tileData.config?.en?.categories as Record<string, string> | undefined;
         if (enCats) setCatEn(enCats);
+        const prixCats = tileData.config?.categories_prix as Record<string, string> | undefined;
+        if (prixCats) setCatPrix(prixCats);
       }
     });
   }, [hotelId, barSlug]);
@@ -136,6 +142,17 @@ export function BarTab({ hotelId }: { hotelId: string }) {
     else delete next[cat];
     setCatEn(next);
     persistCatEn(next);
+  };
+
+  // Prix par CATÉGORIE (pas par article) — stocké dans la config de la tuile.
+  const persistCatPrix = async (next: Record<string, string>) => persistConfig({ categories_prix: next });
+
+  const setCatPrixValue = (cat: string, value: string) => {
+    const next = { ...catPrix };
+    if (value.trim()) next[cat] = value.trim();
+    else delete next[cat];
+    setCatPrix(next);
+    persistCatPrix(next);
   };
 
   const toggleHiddenCat = async (cat: string) => {
@@ -205,19 +222,18 @@ export function BarTab({ hotelId }: { hotelId: string }) {
 
   const addItem = async (categorie: string) => {
     const nom = (newNom[categorie] ?? "").trim();
-    const prix = (newPrix[categorie] ?? "").trim();
-    if (!nom || !prix) return;
+    if (!nom) return;
     setAdding(true);
     const ordre = items.filter(i => i.categorie === categorie).length;
+    // Prix géré par catégorie désormais → prix article vide.
     const { data, error } = await supabase.from("wifi_bar")
-      .insert({ categorie, nom, prix, actif: true, ordre, quantite: null, local: false, description: null, hotel_id: hotelId })
+      .insert({ categorie, nom, prix: "", actif: true, ordre, quantite: null, local: false, description: null, hotel_id: hotelId })
       .select().single();
     setAdding(false);
     if (error) { toast.error("Erreur"); return; }
     setItems(prev => [...prev, data]);
-    setDrafts(prev => ({ ...prev, [data.id]: { nom: data.nom, nom_en: "", description: "", description_en: "", prix: data.prix, quantite: "" } }));
+    setDrafts(prev => ({ ...prev, [data.id]: { nom: data.nom, nom_en: "", description: "", description_en: "", prix: data.prix ?? "", quantite: "" } }));
     setNewNom(prev => ({ ...prev, [categorie]: "" }));
-    setNewPrix(prev => ({ ...prev, [categorie]: "" }));
     toast.success("Article ajouté ✓");
   };
 
@@ -251,6 +267,12 @@ export function BarTab({ hotelId }: { hotelId: string }) {
       delete nextEn[cat];
       setCatEn(nextEn);
       await persistCatEn(nextEn);
+    }
+    if (catPrix[cat]) {
+      const nextPrix = { ...catPrix };
+      delete nextPrix[cat];
+      setCatPrix(nextPrix);
+      await persistCatPrix(nextPrix);
     }
     toast.success(`Catégorie "${cat}" supprimée`);
   };
@@ -286,6 +308,13 @@ export function BarTab({ hotelId }: { hotelId: string }) {
       delete nextEn[oldCat];
       setCatEn(nextEn);
       await persistCatEn(nextEn);
+    }
+    if (catPrix[oldCat]) {
+      const nextPrix = { ...catPrix };
+      nextPrix[newName] = nextPrix[oldCat];
+      delete nextPrix[oldCat];
+      setCatPrix(nextPrix);
+      await persistCatPrix(nextPrix);
     }
     setEditingCat(null);
     toast.success("Catégorie renommée ✓");
@@ -333,7 +362,17 @@ export function BarTab({ hotelId }: { hotelId: string }) {
               <button onClick={() => deleteCategorie(cat)} className="text-slate-300 hover:text-red-400 transition p-1" title="Supprimer la catégorie">
                 <Trash2 size={12} />
               </button>
-              <div className="flex items-center gap-1 ml-3">
+              <div className="flex items-center gap-1 ml-3" title="Prix unique pour toute la catégorie">
+                <span className="text-[10px] font-medium text-[#004e7c]">Prix cat.</span>
+                <Input
+                  value={catPrix[cat] ?? ""}
+                  onChange={e => setCatPrix(prev => ({ ...prev, [cat]: e.target.value }))}
+                  onBlur={e => setCatPrixValue(cat, e.target.value)}
+                  placeholder="€"
+                  className="h-6 w-16 text-[11px] text-center tabular-nums"
+                />
+              </div>
+              <div className="flex items-center gap-1">
                 <Input
                   value={catEn[cat] ?? ""}
                   onChange={e => setCatEn(prev => ({ ...prev, [cat]: e.target.value }))}
@@ -364,7 +403,6 @@ export function BarTab({ hotelId }: { hotelId: string }) {
                         {item.actif && <Check size={10} className="text-white" />}
                       </button>
                       <Input value={d.nom} onChange={e => patch(item.id, "nom", e.target.value)} className="h-7 text-sm flex-1" />
-                      <Input value={d.prix} onChange={e => patch(item.id, "prix", e.target.value)} className="h-7 w-20 text-sm text-center tabular-nums" placeholder="Prix" />
                       <Input value={d.quantite} onChange={e => patch(item.id, "quantite", e.target.value)} className="h-7 w-14 text-sm text-center tabular-nums" placeholder="cl" type="number" min="0" />
                       <button
                         onClick={() => toggleLocal(item)}
@@ -378,30 +416,25 @@ export function BarTab({ hotelId }: { hotelId: string }) {
                         <Trash2 size={13} />
                       </button>
                     </div>
-                    <div className="flex items-center gap-2 ml-6">
-                      <Input
-                        value={d.nom_en}
-                        onChange={e => patch(item.id, "nom_en", e.target.value)}
-                        className="h-7 text-sm italic text-slate-500"
-                        placeholder="Nom EN"
-                      />
-                      <TranslateBtn source={d.nom} onResult={v => patch(item.id, "nom_en", v)} />
-                    </div>
-                    <Input
-                      value={d.description}
-                      onChange={e => patch(item.id, "description", e.target.value)}
-                      className="h-7 text-sm text-slate-400 ml-6"
-                      placeholder="Description (facultatif)"
-                    />
-                    <div className="flex items-center gap-2 ml-6">
-                      <Input
-                        value={d.description_en}
-                        onChange={e => patch(item.id, "description_en", e.target.value)}
-                        className="h-7 text-sm italic text-slate-400"
-                        placeholder="Description EN (facultatif)"
-                      />
-                      <TranslateBtn source={d.description} onResult={v => patch(item.id, "description_en", v)} />
-                    </div>
+
+                    <button onClick={() => toggleExpanded(item.id)} className="ml-6 inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-[#004e7c] transition">
+                      {expanded.has(item.id) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      {expanded.has(item.id) ? "Masquer les détails" : "Détails (traductions, description)"}
+                    </button>
+
+                    {expanded.has(item.id) && (
+                      <div className="ml-6 space-y-1.5 pt-1">
+                        <div className="flex items-center gap-2">
+                          <Input value={d.nom_en} onChange={e => patch(item.id, "nom_en", e.target.value)} className="h-7 text-sm italic text-slate-500" placeholder="Nom EN" />
+                          <TranslateBtn source={d.nom} onResult={v => patch(item.id, "nom_en", v)} />
+                        </div>
+                        <Input value={d.description} onChange={e => patch(item.id, "description", e.target.value)} className="h-7 text-sm text-slate-400" placeholder="Description (facultatif)" />
+                        <div className="flex items-center gap-2">
+                          <Input value={d.description_en} onChange={e => patch(item.id, "description_en", e.target.value)} className="h-7 text-sm italic text-slate-400" placeholder="Description EN (facultatif)" />
+                          <TranslateBtn source={d.description} onResult={v => patch(item.id, "description_en", v)} />
+                        </div>
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -409,8 +442,7 @@ export function BarTab({ hotelId }: { hotelId: string }) {
 
             <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
               <Input placeholder="Nom de l'article" value={newNom[cat] ?? ""} onChange={e => setNewNom(prev => ({ ...prev, [cat]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(cat)} className="h-8 text-sm flex-1" />
-              <Input placeholder="Prix" value={newPrix[cat] ?? ""} onChange={e => setNewPrix(prev => ({ ...prev, [cat]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(cat)} className="h-8 text-sm w-20" />
-              <Button size="sm" onClick={() => addItem(cat)} disabled={adding || !newNom[cat]?.trim() || !newPrix[cat]?.trim()} className="h-8 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
+              <Button size="sm" onClick={() => addItem(cat)} disabled={adding || !newNom[cat]?.trim()} className="h-8 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
                 <Plus size={14} />
               </Button>
             </div>
@@ -477,6 +509,10 @@ export function PlatsTab({ hotelId }: { hotelId: string }) {
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (id: string) =>
+    setExpanded(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const draftOf = (i: PlatItem): PlatDraft => ({
     nom: i.nom, nom_en: i.nom_en ?? "",
@@ -636,30 +672,35 @@ export function PlatsTab({ hotelId }: { hotelId: string }) {
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-2 ml-6">
-                      <Input value={d.nom_en} onChange={e => patch(item.id, "nom_en", e.target.value)} className="h-7 text-sm italic text-slate-500" placeholder="Nom EN" />
-                      <TranslateBtn source={d.nom} onResult={v => patch(item.id, "nom_en", v)} />
-                    </div>
-
+                    {/* Description : reste visible, c'est le texte qui vend */}
                     <div className="flex items-start gap-2 ml-6">
                       <textarea value={d.description} onChange={e => patch(item.id, "description", e.target.value)} rows={2} className="flex-1 text-sm rounded-md border border-slate-200 px-2 py-1 focus:outline-none focus:border-[#004e7c] resize-none" placeholder="Description qui donne envie…" />
                       <TranslateBtn source={d.description} onResult={v => patch(item.id, "description_en", v)} />
                     </div>
-                    {(d.description_en || d.description) && (
-                      <div className="ml-6">
+
+                    {/* Détails secondaires repliés : traductions, options, marque, photo */}
+                    <button onClick={() => toggleExpanded(item.id)} className="ml-6 inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-[#004e7c] transition">
+                      {expanded.has(item.id) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      {expanded.has(item.id) ? "Masquer les détails" : "Détails (traductions, options, marque, photo)"}
+                    </button>
+
+                    {expanded.has(item.id) && (
+                      <div className="ml-6 space-y-1.5 pt-1">
+                        <div className="flex items-center gap-2">
+                          <Input value={d.nom_en} onChange={e => patch(item.id, "nom_en", e.target.value)} className="h-7 text-sm italic text-slate-500" placeholder="Nom EN" />
+                          <TranslateBtn source={d.nom} onResult={v => patch(item.id, "nom_en", v)} />
+                        </div>
                         <Input value={d.description_en} onChange={e => patch(item.id, "description_en", e.target.value)} className="h-7 text-sm italic text-slate-500" placeholder="Description EN" />
+                        <div className="flex items-center gap-2">
+                          <Input value={d.options} onChange={e => patch(item.id, "options", e.target.value)} className="h-7 text-sm flex-1" placeholder="Options (ex. Sauce au choix : Barbecue ou Mayonnaise)" />
+                          <TranslateBtn source={d.options} onResult={v => patch(item.id, "options_en", v)} />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Input value={d.marque} onChange={e => patch(item.id, "marque", e.target.value)} className="h-7 text-sm w-44" placeholder="Marque / artisan" />
+                          <Input value={d.photo_url} onChange={e => patch(item.id, "photo_url", e.target.value)} className="h-7 text-sm flex-1" placeholder="URL photo (optionnel)" />
+                        </div>
                       </div>
                     )}
-
-                    <div className="flex items-center gap-2 ml-6">
-                      <Input value={d.options} onChange={e => patch(item.id, "options", e.target.value)} className="h-7 text-sm flex-1" placeholder="Options (ex. Sauce au choix : Barbecue ou Mayonnaise)" />
-                      <TranslateBtn source={d.options} onResult={v => patch(item.id, "options_en", v)} />
-                    </div>
-
-                    <div className="flex items-center gap-2 ml-6">
-                      <Input value={d.marque} onChange={e => patch(item.id, "marque", e.target.value)} className="h-7 text-sm w-44" placeholder="Marque / artisan" />
-                      <Input value={d.photo_url} onChange={e => patch(item.id, "photo_url", e.target.value)} className="h-7 text-sm flex-1" placeholder="URL photo (optionnel)" />
-                    </div>
                   </li>
                 );
               })}
