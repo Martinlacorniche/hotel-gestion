@@ -52,3 +52,6 @@ __pycache__/
 supabase/.temp/
 supabase/.branches/
 fix_crons_mews.local.sql
+
+# Scratchpad local (scripts d'explo, fichiers temporaires — peut contenir des secrets)
+scratchpad/

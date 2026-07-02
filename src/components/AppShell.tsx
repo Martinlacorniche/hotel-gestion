@@ -18,6 +18,7 @@ import { SortableContext, verticalListSortingStrategy, arrayMove, useSortable } 
 import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '@/context/AuthContext';
 import { useHotelScope } from '@/hooks/useHotelScope';
+import { useGroupesAlert } from '@/hooks/useGroupesAlert';
 import { supabase } from '@/lib/supabaseClient';
 import {
   TOOLS, TOOL_CHILDREN, isToolVisible, toolHref, type ToolDef, type ToolVisibilityCtx,
@@ -49,6 +50,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [navOrder, setNavOrder] = useState<string[]>([]); // ordre perso du menu (par user)
   // Drag = appui maintenu (220ms) → un tap navigue, un maintien réordonne. Ne casse pas le scroll.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 220, tolerance: 8 } }));
+  // Badge « groupes à traiter » (Commercial). Rafraîchi à chaque navigation.
+  const groupesUnread = useGroupesAlert(hotels.map((h) => h.id), pathname);
 
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
@@ -106,6 +109,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const childrenOf = (id: string) => (TOOL_CHILDREN[id] || []).filter((c) => isToolVisible(c, ctx));
   const flyoutKids = flyout ? childrenOf(flyout.id) : [];
 
+  // Compteur à afficher sur une entrée donnée (Commercial + son enfant Groupes).
+  const badgeCount = (id: string): number =>
+    id === 'commercial' || id === 'com-groupes' ? groupesUnread : 0;
+  // Incruste une pastille rouge sur une icône (visible aussi sur le rail plié).
+  const withBadge = (node: React.ReactNode, count: number): React.ReactNode =>
+    count <= 0 ? node : (
+      <span className="relative shrink-0">
+        {node}
+        <span className="absolute -top-1.5 -right-1.5 z-10 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center shadow ring-2 ring-white">
+          {count}
+        </span>
+      </span>
+    );
+
   // Ordre du menu : items rangés selon la préférence user ; les ids absents
   // retombent à la fin dans l'ordre par défaut (tri stable). On masque les hubs vides.
   const rank = (id: string) => { const i = navOrder.indexOf(id); return i < 0 ? Number.MAX_SAFE_INTEGER : i; };
@@ -137,13 +154,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return (
         <Row open={open} href={toolHref(lead, hotelId)} label={lead.label} active={isActive(basePath(lead))} onClick={closeAll}
           trailing={grip}
-          iconEl={<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${lead.bg} ${lead.text}`}><lead.icon className="w-5 h-5" /></span>} />
+          iconEl={withBadge(<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${lead.bg} ${lead.text}`}><lead.icon className="w-5 h-5" /></span>, badgeCount(lead.id))} />
       );
     }
 
     const groupActive = isActive(basePath(t)) || kids.some((c) => isActive(basePath(c)));
     const isExp = expanded === t.id;
-    const iconEl = <span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${t.bg} ${t.text}`}><t.icon className="w-5 h-5" /></span>;
+    const iconEl = withBadge(<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${t.bg} ${t.text}`}><t.icon className="w-5 h-5" /></span>, badgeCount(t.id));
     return (
       <>
         <Row
@@ -163,7 +180,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mt-1 ml-7 pl-3 border-l border-slate-100 space-y-1">
             {kids.map((c) => (
               <Row key={c.id} open compact href={toolHref(c, hotelId)} label={c.label} active={isActive(basePath(c))} onClick={closeAll}
-                iconEl={<span className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${c.bg} ${c.text}`}><c.icon className="w-4 h-4" /></span>} />
+                iconEl={withBadge(<span className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${c.bg} ${c.text}`}><c.icon className="w-4 h-4" /></span>, badgeCount(c.id))} />
             ))}
           </div>
         )}
@@ -315,7 +332,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {flyoutKids.map((c) => (
               <Link key={c.id} href={toolHref(c, hotelId)} onClick={() => setFlyout(null)}
                 className={`flex items-center gap-2.5 px-2 py-2 rounded-lg text-sm font-medium transition ${isActive(basePath(c)) ? 'bg-slate-100 text-slate-900' : 'text-slate-700 hover:bg-slate-50'}`}>
-                <span className={`w-7 h-7 rounded-md flex items-center justify-center ${c.bg} ${c.text}`}><c.icon className="w-4 h-4" /></span>
+                {withBadge(<span className={`w-7 h-7 rounded-md flex items-center justify-center ${c.bg} ${c.text}`}><c.icon className="w-4 h-4" /></span>, badgeCount(c.id))}
                 {c.label}
               </Link>
             ))}
