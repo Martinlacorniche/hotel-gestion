@@ -12,9 +12,13 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Menu, X, Home, ChevronDown, Check, LogOut } from 'lucide-react';
+import { Menu, X, Home, ChevronDown, Check, LogOut, GripVertical } from 'lucide-react';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '@/context/AuthContext';
 import { useHotelScope } from '@/hooks/useHotelScope';
+import { supabase } from '@/lib/supabaseClient';
 import {
   TOOLS, TOOL_CHILDREN, isToolVisible, toolHref, type ToolDef, type ToolVisibilityCtx,
 } from '@/lib/tools';
@@ -42,6 +46,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [expanded, setExpanded] = useState<string | null>(null); // hub déplié (accordéon)
   const [flyout, setFlyout] = useState<{ id: string; top: number; left: number } | null>(null); // sous-menu plié
   const [hotelMenu, setHotelMenu] = useState(false);
+  const [navOrder, setNavOrder] = useState<string[]>([]); // ordre perso du menu (par user)
+  // Drag = appui maintenu (220ms) → un tap navigue, un maintien réordonne. Ne casse pas le scroll.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 220, tolerance: 8 } }));
 
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
@@ -52,6 +59,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (isLoading) return;
     if (!user && !isPublic) router.replace('/login');
   }, [isLoading, user, isPublic, router]);
+
+  // Ordre perso du menu : chargé depuis la fiche user (comme planning_hidden_services).
+  const navUid = (user as { id_auth?: string; id?: string } | null)?.id_auth
+    || (user as { id?: string } | null)?.id;
+  useEffect(() => {
+    if (!navUid) return;
+    supabase.from('users').select('nav_order').eq('id_auth', navUid).maybeSingle()
+      .then(({ data }) => { if (Array.isArray(data?.nav_order)) setNavOrder(data.nav_order as string[]); });
+  }, [navUid]);
 
   // Pages publiques : rendu direct, sans sidebar.
   if (isPublic) return <>{children}</>;
@@ -89,6 +105,71 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isActive = (base: string) => (base === '/' ? pathname === '/' : pathname.startsWith(base));
   const childrenOf = (id: string) => (TOOL_CHILDREN[id] || []).filter((c) => isToolVisible(c, ctx));
   const flyoutKids = flyout ? childrenOf(flyout.id) : [];
+
+  // Ordre du menu : items rangés selon la préférence user ; les ids absents
+  // retombent à la fin dans l'ordre par défaut (tri stable). On masque les hubs vides.
+  const rank = (id: string) => { const i = navOrder.indexOf(id); return i < 0 ? Number.MAX_SAFE_INTEGER : i; };
+  const visibleTools = tools.filter((t) => !TOOL_CHILDREN[t.id] || childrenOf(t.id).length > 0);
+  const orderedTools = [...visibleTools].sort((a, b) => rank(a.id) - rank(b.id));
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const ids = orderedTools.map((t) => t.id);
+    const oldI = ids.indexOf(String(active.id));
+    const newI = ids.indexOf(String(over.id));
+    if (oldI < 0 || newI < 0) return;
+    const next = arrayMove(ids, oldI, newI);
+    setNavOrder(next);
+    if (navUid) supabase.from('users').update({ nav_order: next }).eq('id_auth', navUid).then(() => {});
+  };
+
+  // Rendu d'un item de 1er niveau (lien simple, hub à 1 enfant, ou hub accordéon/flyout).
+  const renderTool = (t: ToolDef): React.ReactNode => {
+    const isHub = !!TOOL_CHILDREN[t.id];
+    const kids = isHub ? childrenOf(t.id) : [];
+    const grip = open
+      ? <GripVertical className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+      : undefined;
+
+    if (!isHub || kids.length === 1) {
+      const lead = isHub ? kids[0] : t;
+      return (
+        <Row open={open} href={toolHref(lead, hotelId)} label={lead.label} active={isActive(basePath(lead))} onClick={closeAll}
+          trailing={grip}
+          iconEl={<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${lead.bg} ${lead.text}`}><lead.icon className="w-5 h-5" /></span>} />
+      );
+    }
+
+    const groupActive = isActive(basePath(t)) || kids.some((c) => isActive(basePath(c)));
+    const isExp = expanded === t.id;
+    const iconEl = <span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${t.bg} ${t.text}`}><t.icon className="w-5 h-5" /></span>;
+    return (
+      <>
+        <Row
+          open={open}
+          label={t.label}
+          active={groupActive}
+          iconEl={iconEl}
+          trailing={<span className="flex items-center gap-1">{grip}<ChevronDown className={`w-4 h-4 shrink-0 text-slate-400 transition ${isExp ? 'rotate-180' : ''}`} /></span>}
+          onClick={(e) => {
+            if (open) { setExpanded((v) => (v === t.id ? null : t.id)); return; }
+            if (flyout?.id === t.id) { setFlyout(null); return; }
+            const r = (e!.currentTarget as HTMLElement).getBoundingClientRect();
+            setFlyout({ id: t.id, top: r.top, left: r.right + 8 });
+          }}
+        />
+        {open && isExp && (
+          <div className="mt-1 ml-7 pl-3 border-l border-slate-100 space-y-1">
+            {kids.map((c) => (
+              <Row key={c.id} open compact href={toolHref(c, hotelId)} label={c.label} active={isActive(basePath(c))} onClick={closeAll}
+                iconEl={<span className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${c.bg} ${c.text}`}><c.icon className="w-4 h-4" /></span>} />
+            ))}
+          </div>
+        )}
+      </>
+    );
+  };
 
   // Switch hôtel : on identifie l'outil de la page courante pour griser l'hôtel
   // où cette page n'existe pas (ex. Clim → Voiles seulement) sur la bascule directe.
@@ -196,51 +277,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Row open={open} href="/" label="Accueil" active={isActive('/')} onClick={closeAll}
             iconEl={<span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center"><Home className="w-5 h-5" /></span>} />
 
-          {tools.map((t) => {
-            const isHub = !!TOOL_CHILDREN[t.id];
-            const kids = isHub ? childrenOf(t.id) : [];
-            if (isHub && kids.length === 0) return null;
-
-            // Lien simple : outil normal, ou hub à 1 seul enfant → pointe direct dessus
-            if (!isHub || kids.length === 1) {
-              const lead = isHub ? kids[0] : t;
-              const href = isHub ? (lead.href as string) : toolHref(t, hotelId);
-              return (
-                <Row key={t.id} open={open} href={href} label={lead.label} active={isActive(basePath(lead))} onClick={closeAll}
-                  iconEl={<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${lead.bg} ${lead.text}`}><lead.icon className="w-5 h-5" /></span>} />
-              );
-            }
-
-            // Hub ≥2 enfants : plié → flyout ; déplié → accordéon.
-            const groupActive = isActive(basePath(t)) || kids.some((c) => isActive(basePath(c)));
-            const isExp = expanded === t.id;
-            const iconEl = <span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${t.bg} ${t.text}`}><t.icon className="w-5 h-5" /></span>;
-            return (
-              <div key={t.id}>
-                <Row
-                  open={open}
-                  label={t.label}
-                  active={groupActive}
-                  iconEl={iconEl}
-                  trailing={<ChevronDown className={`w-4 h-4 shrink-0 text-slate-400 transition ${isExp ? 'rotate-180' : ''}`} />}
-                  onClick={(e) => {
-                    if (open) { setExpanded((v) => (v === t.id ? null : t.id)); return; }
-                    if (flyout?.id === t.id) { setFlyout(null); return; }
-                    const r = (e!.currentTarget as HTMLElement).getBoundingClientRect();
-                    setFlyout({ id: t.id, top: r.top, left: r.right + 8 });
-                  }}
-                />
-                {open && isExp && (
-                  <div className="mt-1 ml-7 pl-3 border-l border-slate-100 space-y-1">
-                    {kids.map((c) => (
-                      <Row key={c.id} open compact href={c.href as string} label={c.label} active={isActive(basePath(c))} onClick={closeAll}
-                        iconEl={<span className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${c.bg} ${c.text}`}><c.icon className="w-4 h-4" /></span>} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {open ? (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={orderedTools.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                {orderedTools.map((t) => <SortableTool key={t.id} id={t.id}>{renderTool(t)}</SortableTool>)}
+              </SortableContext>
+            </DndContext>
+          ) : (
+            orderedTools.map((t) => <div key={t.id}>{renderTool(t)}</div>)
+          )}
         </nav>
 
         {/* Footer : avatar (toujours) → profil ; nom + déconnexion en déplié */}
@@ -268,7 +313,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="fixed inset-0 z-40" onClick={() => setFlyout(null)} />
           <div className="fixed z-50 w-52 bg-white rounded-xl shadow-xl border border-slate-100 p-1.5 animate-in fade-in slide-in-from-left-1 duration-150" style={{ top: flyout.top, left: flyout.left }}>
             {flyoutKids.map((c) => (
-              <Link key={c.id} href={c.href as string} onClick={() => setFlyout(null)}
+              <Link key={c.id} href={toolHref(c, hotelId)} onClick={() => setFlyout(null)}
                 className={`flex items-center gap-2.5 px-2 py-2 rounded-lg text-sm font-medium transition ${isActive(basePath(c)) ? 'bg-slate-100 text-slate-900' : 'text-slate-700 hover:bg-slate-50'}`}>
                 <span className={`w-7 h-7 rounded-md flex items-center justify-center ${c.bg} ${c.text}`}><c.icon className="w-4 h-4" /></span>
                 {c.label}
@@ -309,6 +354,23 @@ function Row({
       {open && trailing}
     </>
   );
-  if (href) return <Link href={href} title={label} onClick={() => onClick?.()} className={cls}>{inner}</Link>;
+  if (href) return <Link href={href} title={label} onClick={() => onClick?.()} className={cls} draggable={false}>{inner}</Link>;
   return <button type="button" title={label} onClick={(e) => onClick?.(e)} className={cls}>{inner}</button>;
+}
+
+// Wrapper drag & drop d'un item de 1er niveau (menu déplié). Appui maintenu (220ms)
+// → glisser pour réordonner ; un tap navigue normalement (le lien reste cliquable).
+function SortableTool({ id, children }: { id: string; children: React.ReactNode }) {
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    position: 'relative',
+    zIndex: isDragging ? 50 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...listeners} className={isDragging ? 'opacity-80' : ''}>
+      {children}
+    </div>
+  );
 }

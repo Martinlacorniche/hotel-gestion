@@ -4,7 +4,7 @@
 import {
   CalendarDays, BookOpen, ShoppingCart, Car, Stamp, Package, Wrench,
   Thermometer, CreditCard, Tv2, Wifi, Wind, Monitor, Handshake,
-  ListChecks, DoorOpen, Tag, Users, Euro, KeyRound, ConciergeBell, Martini,
+  ListChecks, DoorOpen, Tag, Users, Euro, KeyRound, ConciergeBell, Martini, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -22,7 +22,7 @@ export type ToolDef = {
 };
 
 export const TOOLS: ToolDef[] = [
-  { id: 'caisse',       label: 'Caisse',       href: (id) => `/caisse?hotel_id=${id}`,      icon: Euro,         bg: 'bg-slate-50',   text: 'text-slate-700' },
+  { id: 'thune',        label: 'La thune',     href: (id) => `/caisse?hotel_id=${id}`,      icon: Wallet,       bg: 'bg-slate-50',   text: 'text-slate-700' },
   { id: 'serrures',     label: 'Clefs',        href: '/serrures',                           icon: KeyRound,     bg: 'bg-violet-50',  text: 'text-violet-700', condition: 'voiles' },
   { id: 'planning',     label: 'Planning',     href: '/planning',                           icon: CalendarDays, bg: 'bg-indigo-50',  text: 'text-indigo-600' },
   { id: 'infos',        label: 'Infos',        href: '/infos',                              icon: BookOpen,     bg: 'bg-indigo-50',  text: 'text-indigo-700' },
@@ -31,9 +31,14 @@ export const TOOLS: ToolDef[] = [
   { id: 'technique',    label: 'Technique',    href: '/technique',                          icon: Wrench,       bg: 'bg-yellow-50',  text: 'text-yellow-700' },
   { id: 'commandes',    label: 'Commandes',    href: '/commandes',                          icon: ShoppingCart, bg: 'bg-orange-50',  text: 'text-orange-700' },
   { id: 'haccp',        label: 'HACCP',        href: '/haccp',                              icon: Thermometer,  bg: 'bg-rose-50',    text: 'text-rose-700' },
-  { id: 'encaissement', label: 'Encaissement', href: '/encaissement',                       icon: CreditCard,   bg: 'bg-emerald-50', text: 'text-emerald-700' },
   { id: 'rooftop',      label: 'Rooftop',      href: '/rooftop',                            icon: Martini,      bg: 'bg-amber-50',   text: 'text-amber-700', condition: 'voiles' },
   // « Groupes & mariages » n'a pas de tuile : accès via la page Commercial.
+];
+
+// Sous-menu « La thune » : la caisse (tiroir) + l'encaissement (TPE / liens de paiement).
+export const THUNE_CHILDREN: ToolDef[] = [
+  { id: 'caisse',       label: 'Caisse',       href: (id) => `/caisse?hotel_id=${id}`, icon: Euro,       bg: 'bg-slate-50',   text: 'text-slate-700' },
+  { id: 'encaissement', label: 'Encaissement', href: '/encaissement',                  icon: CreditCard, bg: 'bg-emerald-50', text: 'text-emerald-700' },
 ];
 
 // Sous-outils du hub « Technique » — utilisés par la sidebar pour proposer un
@@ -72,6 +77,7 @@ export const CLIENTS_CHILDREN: ToolDef[] = [
 
 // Hubs ayant un sous-menu déroulant dans la sidebar (id de l'outil → enfants).
 export const TOOL_CHILDREN: Record<string, ToolDef[]> = {
+  thune: THUNE_CHILDREN,
   planning: PLANNING_CHILDREN,
   commercial: COMMERCIAL_CHILDREN,
   clients: CLIENTS_CHILDREN,
