@@ -16,6 +16,7 @@ import { Martini, Plus, Trash2, CalendarX2, Users, Ban, Armchair, Check, Clock, 
 import toast from "react-hot-toast";
 import { RooftopCarteTab, BlacklistTab, VOILES_ID } from "@/components/rooftop/RooftopEditors";
 import { PosTab } from "@/components/rooftop/RooftopPos";
+import { FichesTab } from "@/components/rooftop/RooftopFiches";
 
 export default function RooftopPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -42,6 +43,7 @@ export default function RooftopPage() {
           <TabsList className="w-full mb-6">
             <TabsTrigger value="resas" className="flex-1">Réservations</TabsTrigger>
             <TabsTrigger value="pos" className="flex-1">POS</TabsTrigger>
+            <TabsTrigger value="fiches" className="flex-1">Fiches</TabsTrigger>
             <TabsTrigger value="carte" className="flex-1">Carte</TabsTrigger>
             <TabsTrigger value="reglages" className="flex-1">Réglages</TabsTrigger>
             <TabsTrigger value="blacklist" className="flex-1">Blacklist</TabsTrigger>
@@ -49,6 +51,7 @@ export default function RooftopPage() {
 
           <TabsContent value="resas"><ResasTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="pos"><PosTab hotelId={VOILES_ID} /></TabsContent>
+          <TabsContent value="fiches"><FichesTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="carte"><RooftopCarteTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="reglages"><ReglagesTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="blacklist"><BlacklistTab hotelId={VOILES_ID} /></TabsContent>
