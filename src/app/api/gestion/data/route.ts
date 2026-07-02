@@ -22,6 +22,7 @@ export async function GET(req: Request) {
     : { data: [] as unknown[] };
 
   const { data: revenus } = await supabaseAdmin.from('gestion_revenus').select('*').eq('mois', mois);
+  const { data: produits } = await supabaseAdmin.from('gestion_produits').select('produit_ref,unite_conso,facteur,poste');
 
   const refs = [...new Set(((lignes || []) as { produit_ref?: string }[]).map((l) => l.produit_ref).filter(Boolean))];
   const { data: prix } = refs.length
@@ -30,5 +31,5 @@ export async function GET(req: Request) {
         .in('produit_ref', refs as string[])
     : { data: [] as unknown[] };
 
-  return NextResponse.json({ mois, achats: achats || [], lignes: lignes || [], revenus: revenus || [], prix: prix || [] });
+  return NextResponse.json({ mois, achats: achats || [], lignes: lignes || [], revenus: revenus || [], prix: prix || [], produits: produits || [] });
 }

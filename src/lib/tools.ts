@@ -4,7 +4,7 @@
 import {
   CalendarDays, BookOpen, ShoppingCart, Car, Stamp, Package, Wrench,
   Thermometer, CreditCard, Tv2, Wifi, Wind, Monitor, Handshake,
-  ListChecks, DoorOpen, Tag, Users, Euro, KeyRound, ConciergeBell, Martini, Wallet, LineChart,
+  ListChecks, DoorOpen, Tag, Users, Euro, KeyRound, ConciergeBell, Martini, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -23,7 +23,8 @@ export type ToolDef = {
 
 export const TOOLS: ToolDef[] = [
   { id: 'thune',        label: 'La thune',     href: (id) => `/caisse?hotel_id=${id}`,      icon: Wallet,       bg: 'bg-slate-50',   text: 'text-slate-700' },
-  { id: 'gestion',      label: 'Gestion',      href: '/gestion',                            icon: LineChart,    bg: 'bg-emerald-50', text: 'text-emerald-700', condition: 'admin' },
+  // Gestion (cockpit Pennylane) — masqué le temps du chantier ; réactiver en décommentant.
+  // { id: 'gestion',      label: 'Gestion',      href: '/gestion',                            icon: LineChart,    bg: 'bg-emerald-50', text: 'text-emerald-700', condition: 'admin' },
   { id: 'serrures',     label: 'Clefs',        href: '/serrures',                           icon: KeyRound,     bg: 'bg-violet-50',  text: 'text-violet-700', condition: 'voiles' },
   { id: 'planning',     label: 'Planning',     href: '/planning',                           icon: CalendarDays, bg: 'bg-indigo-50',  text: 'text-indigo-600' },
   { id: 'infos',        label: 'Infos',        href: '/infos',                              icon: BookOpen,     bg: 'bg-indigo-50',  text: 'text-indigo-700' },

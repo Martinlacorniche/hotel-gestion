@@ -55,5 +55,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  if (body.action === 'produit') {
+    const ref = String(body.produit_ref || '');
+    if (!ref) return NextResponse.json({ error: 'produit_ref requis' }, { status: 400 });
+    const row: Record<string, unknown> = { produit_ref: ref, updated_at: new Date().toISOString() };
+    if ('unite_conso' in body) row.unite_conso = body.unite_conso ? String(body.unite_conso) : null;
+    if ('unite_achat' in body) row.unite_achat = body.unite_achat ? String(body.unite_achat) : null;
+    if ('poste' in body) row.poste = body.poste ? String(body.poste) : null;
+    if ('facteur' in body) row.facteur = body.facteur === '' || body.facteur == null ? null : Number(body.facteur);
+    const { error } = await supabaseAdmin.from('gestion_produits').upsert(row, { onConflict: 'produit_ref' });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ error: 'action inconnue' }, { status: 400 });
 }
