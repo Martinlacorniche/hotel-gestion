@@ -782,18 +782,27 @@ export default function PlanningPage() {
     planningEntries.forEach((e: any) => {
       if (e.status === 'published' && weekStrs.includes(e.date)) pubByCell.set(`${e.user_id}|${e.date}`, e);
     });
+    // Heures comparées au format HH:MM (Postgres renvoie "09:00:00", le form "09:00").
+    const hhmm = (t: any) => String(t || '').slice(0, 5);
     const sameShift = (a: any, b: any) =>
-      (a?.shift || '') === (b?.shift || '') &&
-      (a?.start_time || '') === (b?.start_time || '') &&
-      (a?.end_time || '') === (b?.end_time || '');
+      String(a?.shift || '').trim() === String(b?.shift || '').trim() &&
+      hhmm(a?.start_time) === hhmm(b?.start_time) &&
+      hhmm(a?.end_time) === hhmm(b?.end_time);
     const isEmpty = (e: any) => !e?.shift && !e?.start_time && !e?.end_time;
-    const hasRealDraft = planningEntries.some((e: any) => {
+    const realDraftCells = planningEntries.filter((e: any) => {
       if (e.status !== 'draft' || !weekStrs.includes(e.date)) return false;
       const pub = pubByCell.get(`${e.user_id}|${e.date}`);
       return pub ? !sameShift(e, pub) : !isEmpty(e);
     });
-    if (daysUntilWeek >= 0 && daysUntilWeek < SEUILS.prevenanceJours && hasRealDraft)
-      alerts.unshift({ uid: '', name: '', type: 'prevenance', label: `Planning non publié à J-${daysUntilWeek} (délai ${SEUILS.prevenanceJours}j)` });
+    if (daysUntilWeek >= 0 && daysUntilWeek < SEUILS.prevenanceJours && realDraftCells.length > 0) {
+      const nameByUid = new Map<string, string>(employees.map((emp: any) => [emp.id_auth, emp.name]));
+      const details = realDraftCells.slice(0, 5)
+        .map((e: any) => `${nameByUid.get(e.user_id) || '?'} ${format(new Date(e.date), 'EEE dd/MM', { locale: fr })}`)
+        .join(', ');
+      const extra = realDraftCells.length > 5 ? ` +${realDraftCells.length - 5}` : '';
+      alerts.unshift({ uid: '', name: '', type: 'prevenance',
+        label: `Planning non publié à J-${daysUntilWeek} (délai ${SEUILS.prevenanceJours}j) — ${realDraftCells.length} en brouillon : ${details}${extra}` });
+    }
 
     return { totals, alerts, cellFlags };
   }, [isAdmin, rows, planningEntries, weekDates, currentWeekStart, currentHotel]);
