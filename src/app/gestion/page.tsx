@@ -84,6 +84,7 @@ export default function GestionPage() {
     const r = await fetch(`/api/gestion/prix?ref=${encodeURIComponent(ref)}`, { headers: { Authorization: `Bearer ${t}` } });
     const j = await r.json(); if (r.ok) setPrixHist(j.history || []);
   };
+  const showPrix = (ref: string) => { loadPrixHist(ref); document.getElementById("prix-explorer")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
 
   const extractWindow = () => {
     const [y, m] = mois.split("-").map(Number);
@@ -197,7 +198,7 @@ export default function GestionPage() {
             {achats.length === 0 && <p className="text-center text-slate-400 py-6">Aucune facture pour {fmtMonth(mois)}. Lance l&apos;extraction 👆</p>}
 
             {/* Explorateur prix annuel */}
-            <section>
+            <section id="prix-explorer" className="scroll-mt-4">
               <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Search size={15} /> Suivi de prix — un produit sur l&apos;année</h3>
               <div className="bg-white rounded-xl border border-slate-200 p-4">
                 <select value={prixSel} onChange={(e) => loadPrixHist(e.target.value)} className="h-9 w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 text-sm">
@@ -231,7 +232,12 @@ export default function GestionPage() {
                     <tbody className="divide-y divide-slate-50">
                       {prixEvol.map((r) => (
                         <tr key={r.ref} className={r.delta != null && r.delta > 3 ? "bg-rose-50/40" : ""}>
-                          <td className="px-4 py-2 text-slate-700">{r.ref} {r.unite && <span className="text-slate-400 text-[11px]">/{r.unite}</span>}</td>
+                          <td className="px-4 py-2">
+                            <button onClick={() => showPrix(r.ref)} title="Voir l'historique de prix sur l'année" className="inline-flex items-center gap-1.5 text-left text-slate-700 hover:text-[#004e7c] hover:underline">
+                              <LineChart size={13} className="text-slate-300 shrink-0" /> {r.ref}
+                            </button>
+                            {r.unite && <span className="text-slate-400 text-[11px]"> /{r.unite}</span>}
+                          </td>
                           <td className="px-4 py-2 text-right tabular-nums font-medium">{eur2(r.last)}<div className="text-[10px] text-slate-400 font-normal">{fdate(r.lastDate)}</div></td>
                           <td className="px-4 py-2 text-right tabular-nums text-slate-400">{r.prev != null ? <>{eur2(r.prev)}<div className="text-[10px]">{fdate(r.prevDate || "")}</div></> : "—"}</td>
                           <td className="px-4 py-2 text-right tabular-nums">{r.delta == null ? <span className="text-slate-300">—</span> : <span className={`inline-flex items-center gap-1 font-semibold ${r.delta > 0 ? "text-rose-600" : r.delta < 0 ? "text-emerald-600" : "text-slate-400"}`}>{r.delta > 0 ? <TrendingUp size={13} /> : r.delta < 0 ? <TrendingDown size={13} /> : null}{r.delta > 0 ? "+" : ""}{r.delta.toFixed(1)}%</span>}</td>
