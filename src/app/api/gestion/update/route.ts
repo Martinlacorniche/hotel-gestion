@@ -35,5 +35,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  if (body.action === 'ligne_delete') {
+    const id = String(body.id || '');
+    if (!id) return NextResponse.json({ error: 'id requis' }, { status: 400 });
+    const { error } = await supabaseAdmin.from('gestion_achats_lignes').delete().eq('id', id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === 'ligne_patch') {
+    const id = String(body.id || '');
+    if (!id) return NextResponse.json({ error: 'id requis' }, { status: 400 });
+    const patch: Record<string, unknown> = {};
+    if ('hors_poste' in body) patch.hors_poste = !!body.hors_poste;
+    if ('poste' in body) patch.poste = body.poste ? String(body.poste) : null;
+    if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'rien à modifier' }, { status: 400 });
+    const { error } = await supabaseAdmin.from('gestion_achats_lignes').update(patch).eq('id', id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ error: 'action inconnue' }, { status: 400 });
 }
