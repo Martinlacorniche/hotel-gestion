@@ -6,14 +6,14 @@ import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { supabase } from '@/lib/supabaseClient';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import { ThemedBackground } from '@/components/ThemedBackground';
-import { addDays, format, startOfWeek, isWithinInterval, addWeeks, differenceInCalendarDays } from 'date-fns';
+import { addDays, format, startOfWeek, differenceInCalendarDays } from 'date-fns';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useRouter } from 'next/navigation';
 import { 
   Lock, Unlock, ArrowDown, CheckCircle, ArrowUp, Plus, Calendar as CalendarIcon, 
   ChevronLeft, ChevronRight, Filter, Printer, Share2, Scissors, Trash2, 
-  User, Clock, AlertCircle, Wrench, Copy, Eye, EyeOff, Pencil
+  User, Clock, AlertCircle, Copy, Eye, EyeOff, Pencil
 } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -180,6 +180,8 @@ export default function PlanningPage() {
       map.set(key, map.has(key) ? pickLatest(map.get(key), d) : d);
     }
 
+    // id/status volontairement retirés du spread : on republie une nouvelle ligne sans l'id du brouillon.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const toPublish = Array.from(map.values()).map(({ id, status, ...d }) => ({ ...d, status: 'published', published_at: new Date().toISOString() }));
     const { error: insErr } = await supabase.from('planning_entries').upsert(toPublish, { onConflict: ['hotel_id', 'user_id', 'date', 'status'] });
     if (insErr) { toast.error("Erreur publication"); return; }
@@ -206,7 +208,7 @@ export default function PlanningPage() {
   };
 
   const router = useRouter();
-  const [hotels, setHotels] = useState([]);
+  const [, setHotels] = useState([]);
   // Hôtel sélectionné = contexte global (synchro sidebar + autres pages).
   const { selectedHotelId } = useSelectedHotel();
   const [currentHotel, setCurrentHotel] = useState(null);
@@ -246,7 +248,7 @@ export default function PlanningPage() {
 
   const [rows, setRows] = useState([]);
   const [users, setUsers] = useState([]);
-  const [handlerUsers, setHandlerUsers] = useState<Record<string, { id_auth: string; name?: string; email?: string }>>({});
+  const [, setHandlerUsers] = useState<Record<string, { id_auth: string; name?: string; email?: string }>>({});
   const [planningEntries, setPlanningEntries] = useState([]);
   const [cpRequests, setCpRequests] = useState([]);
 
@@ -423,7 +425,7 @@ export default function PlanningPage() {
   const feries = feriesFR(year);
   const WEEKS_M = 52 / 12;
   const overlapMin = (a1: number, a2: number, b1: number, b2: number) => Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
-  const nightMinOf = (e: any) => { if (!e.start_time || !e.end_time) return 0; const [sh, sm] = e.start_time.split(':').map(Number); const [eh, em] = e.end_time.split(':').map(Number); let s = sh * 60 + sm, en = eh * 60 + em; if (en <= s) en += 1440; return overlapMin(s, en, 1320, 1860) + overlapMin(s, en, 0, 420); };
+  const nightMinOf = (e: any) => { if (!e.start_time || !e.end_time) return 0; const [sh, sm] = e.start_time.split(':').map(Number); const [eh, em] = e.end_time.split(':').map(Number); const s = sh * 60 + sm; let en = eh * 60 + em; if (en <= s) en += 1440; return overlapMin(s, en, 1320, 1860) + overlapMin(s, en, 0, 420); };
   // Contrats de CET hôtel (match explicite, ou "groupe"/null rattaché à l'hôtel
   // de rattachement) — pour que la paie d'un salarié multi-hôtels soit ventilée
   // par établissement (heures comptées par hotel_id des planning_entries).
@@ -567,8 +569,6 @@ export default function PlanningPage() {
 };
 
   const closeDuplicationModal = () => { setIsDuplicationModalOpen(false); setDuplicationSource(null); };
-  const targetWeekStart = targetStartDate ? startOfWeek(targetStartDate, { weekStartsOn: 1 }) : null;
-  const targetWeekEnd = targetWeekStart ? addDays(targetWeekStart, 6) : null;
   const quarterHours = ['00', '15', '30', '45'];
 
   const handleShiftDrop = async (targetUserId, targetDate) => {
@@ -648,7 +648,6 @@ export default function PlanningPage() {
   const pendingReqs = cpRequests.filter(r => r.status === 'pending' && isActive(r));
   const visibleRequests = showAllCp ? cpRequests : pendingReqs;
 
-  const normalizeTime = (t) => { if (!t) return ''; const [h='0', m='0'] = t.split(':'); return `${String(parseInt(h)).padStart(2,'0')}:${String(parseInt(m)).padStart(2,'0')}`; };
   const toHHmm = (t) => (t ? String(t).slice(0, 5) : '');
   const toHHmmss = (t) => { if (!t) return null; const s = String(t); if (s.length === 8) return s; if (s.length === 5) return s + ':00'; const [h='0', m='0'] = s.split(':'); return `${String(parseInt(h)).padStart(2,'0')}:${String(parseInt(m)).padStart(2,'0')}:00`; };
 
@@ -670,10 +669,6 @@ export default function PlanningPage() {
     return `${Math.floor(total / 60)}h${String(total % 60).padStart(2, '0')}`;
   };
 
-  const getWorkingDays = (userId) => {
-    const userEntries = entriesView.filter(e => e.user_id === userId && weekDates.some(d => format(d, 'yyyy-MM-dd') === e.date));
-    return new Set(userEntries.filter(e => e.shift && !['Repos', 'Maladie', 'CP', 'Injustifié', 'Sans solde'].includes(e.shift)).map(e => e.date)).size;
-  };
 
   // ── SURVEILLANCE (admin) : garde-fous légaux + compteurs semaine/mois. ──
   // Couverture par service = phase 1b (besoin du mapping shift→service requis).
@@ -1580,7 +1575,7 @@ export default function PlanningPage() {
             <div className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
                <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold text-slate-800">Gestion des Absences</h2>
-                  <label className="flex items-center gap-2 text-sm font-medium text-slate-600 bg-slate-50 px-3 py-1 rounded-full cursor-pointer"><input type="checkbox" checked={showAllCp} onChange={() => setShowAllCp(!showAllCp)}/> Voir l'historique</label>
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-600 bg-slate-50 px-3 py-1 rounded-full cursor-pointer"><input type="checkbox" checked={showAllCp} onChange={() => setShowAllCp(!showAllCp)}/> Voir l&apos;historique</label>
                </div>
                
                <div className="flex-1 overflow-y-auto space-y-3 pr-2">
@@ -1589,7 +1584,7 @@ export default function PlanningPage() {
                         <div>
                            <div className="font-bold text-slate-800">{users.find(u => u.id_auth === req.user_id)?.name || '...'}</div>
                            <div className="text-sm text-slate-600 mt-1">Du <span className="font-semibold">{format(new Date(req.start_date), 'dd MMM')}</span> au <span className="font-semibold">{format(new Date(req.end_date), 'dd MMM')}</span></div>
-                           {req.commentaire && <div className="text-xs text-slate-400 italic mt-1">"{req.commentaire}"</div>}
+                           {req.commentaire && <div className="text-xs text-slate-400 italic mt-1">« {req.commentaire} »</div>}
                            {(req.status !== 'pending') && <div className="text-[10px] text-slate-400 mt-2 uppercase font-bold tracking-wider">{req.status === 'approved' ? 'Accepté' : 'Refusé'} par {req.handled_by_name || 'Admin'}</div>}
                         </div>
                         <div className="flex items-center gap-2">
