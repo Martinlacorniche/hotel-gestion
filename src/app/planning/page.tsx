@@ -789,8 +789,12 @@ export default function PlanningPage() {
       hhmm(a?.start_time) === hhmm(b?.start_time) &&
       hhmm(a?.end_time) === hhmm(b?.end_time);
     const isEmpty = (e: any) => !e?.shift && !e?.start_time && !e?.end_time;
+    // Salariés réellement affichés : on ignore les brouillons orphelins (user désactivé/
+    // retiré du roster) — leur ligne n'existe plus, ils ne peuvent ni se voir ni se publier.
+    const activeUids = new Set(employees.map((emp: any) => emp.id_auth));
     const realDraftCells = planningEntries.filter((e: any) => {
       if (e.status !== 'draft' || !weekStrs.includes(e.date)) return false;
+      if (!activeUids.has(e.user_id)) return false;
       const pub = pubByCell.get(`${e.user_id}|${e.date}`);
       return pub ? !sameShift(e, pub) : !isEmpty(e);
     });
