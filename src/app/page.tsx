@@ -346,7 +346,9 @@ export default function HotelDashboard() {
     const currentMonth = formatDate(new Date(), 'yyyy-MM');
     supabase
       .from('mews_occupancy')
-      .select('month, occupancy, occupied_nights, available_nights, updated_at')
+      // `*` : tolère l'absence des colonnes revenu tant que la migration 66 n'est
+      // pas appliquée (dégrade en saisie manuelle au lieu de planter la lecture).
+      .select('*')
       .eq('hotel_id', hotelId)
       .gte('month', currentMonth)
       .order('month', { ascending: true })
@@ -1410,15 +1412,19 @@ const birthdayMessage = useMemo(() => {
                       { key: "prix_moyen", label: "Prix Moyen", suffix: "€", icon: "🏷️", color: "bg-emerald-50 text-emerald-600" },
                       { key: "guest_review", label: "Note Guest", suffix: "/10", icon: "⭐", color: "bg-purple-50 text-purple-600" },
                     ].map((def, i) => {
-                      // TO Les Voiles : valeur live Mews du mois sélectionné (lecture
-                      // seule), sinon valeur saisie manuellement (autres hôtels / KPI).
+                      // Les Voiles : CA / taux d'occupation / prix moyen remplis en
+                      // direct depuis le cache Mews du mois sélectionné (lecture seule).
+                      // La Corniche et la Note Guest restent en saisie manuelle.
                       const isVoiles = currentHotel?.nom?.trim() === 'Les Voiles';
                       const selMonth = formatDate(selectedDate, 'yyyy-MM');
-                      const liveTO = isVoiles
-                        ? occupancy?.find((o: any) => o.month === selMonth)?.occupancy
-                        : undefined;
-                      const isLiveTO = def.key === 'taux_occupation' && liveTO != null;
-                      const value = isLiveTO ? liveTO : kpis?.[def.key];
+                      const liveRow = isVoiles ? occupancy?.find((o: any) => o.month === selMonth) : undefined;
+                      const liveVal =
+                        def.key === 'taux_occupation' ? liveRow?.occupancy :
+                        def.key === 'ca' ? liveRow?.heberg_ttc :
+                        def.key === 'prix_moyen' ? liveRow?.prix_moyen :
+                        undefined;
+                      const isLiveTO = liveVal != null;   // « live » = valeur Mews (non éditable)
+                      const value = isLiveTO ? liveVal : kpis?.[def.key];
                       const target = kpis?.[`${def.key}_objectif`];
                       const progress = value && target ? Math.min(100, (value / target) * 100) : 0;
                       

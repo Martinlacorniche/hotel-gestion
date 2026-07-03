@@ -224,3 +224,100 @@ export async function getMonthlyOccupancy(
     };
   });
 }
+
+// ============================================================================
+// CA & PM (prix moyen) — revenu par mois, via orderItems (scope ouvert 2026-07).
+// ============================================================================
+// « Réalisé » pour le passé, « portefeuille » (on-the-books) pour le mois courant
+// et le futur : Mews pré-poste les nuits futures des réservations engagées, donc
+// une simple fenêtre `ConsumedUtc` couvrant le mois capte les deux.
+//
+// Règle validée avec l'exploitant (compta Voiles, TTC) :
+//   • On EXCLUT les lignes AccountingState === 'Canceled' (vraies annulations).
+//   • CA = Σ GrossValue (TTC) de toutes les lignes restantes ; caHt = Σ NetValue.
+//   • Hébergement = lignes Type ∈ {SpaceOrder, CancellationFee} (chambres +
+//     no-show/frais d'annulation facturés), en TTC. Sert de base au PM.
+//   • PM (prix moyen chambre) = hébergement TTC ÷ nuitées occupées (occupancy).
+
+const ACCOMMODATION_TYPES = new Set(['SpaceOrder', 'CancellationFee']);
+
+type OrderItem = {
+  Id: string;
+  Type: string;
+  AccountingState: string;
+  ConsumedUtc: string | null;
+  ClosedUtc: string | null;
+  Amount?: { NetValue?: number; GrossValue?: number; Currency?: string };
+};
+
+async function fetchOrderItems(startUtc: string, endUtc: string): Promise<OrderItem[]> {
+  const all: OrderItem[] = [];
+  let cursor: string | undefined;
+  for (let guard = 0; guard < 50; guard++) {
+    const Limitation: Record<string, unknown> = { Count: 1000 };
+    if (cursor) Limitation.Cursor = cursor;
+    const data = await callMews<{ OrderItems: OrderItem[]; Cursor?: string }>('orderItems/getAll', {
+      ConsumedUtc: { StartUtc: startUtc, EndUtc: endUtc },
+      Limitation,
+    });
+    const batch = data.OrderItems || [];
+    all.push(...batch);
+    if (batch.length < 1000 || !data.Cursor) break;
+    cursor = data.Cursor;
+  }
+  return all;
+}
+
+export type MonthlyRevenue = {
+  month: string;      // 'YYYY-MM' (mois civil Paris)
+  caTtc: number;      // CA total TTC (toutes lignes non annulées)
+  caHt: number;       // CA total HT
+  hebergTtc: number;  // revenu hébergement TTC (base du PM)
+};
+
+// Revenu mensuel sur `horizon` mois à partir du mois courant (Paris).
+export async function getMonthlyRevenue(now: Date = new Date(), horizon = 6): Promise<MonthlyRevenue[]> {
+  const months = targetMonths(now, horizon);
+  const monthSet = new Set(months.map((x) => x.key));
+  const first = months[0].key;
+  const last = months[months.length - 1].key;
+
+  const startMs = Date.UTC(+first.slice(0, 4), +first.slice(5, 7) - 1, 1) - 86400e3;
+  const endMs = Date.UTC(+last.slice(0, 4), +last.slice(5, 7), 1) + 86400e3;
+
+  // Découpe < 100 j + dédoublonnage par Id (une ligne peut chevaucher deux tranches).
+  const seen = new Set<string>();
+  const items: OrderItem[] = [];
+  for (let s = startMs; s < endMs; s += MAX_INTERVAL_DAYS * 86400e3) {
+    const e = Math.min(s + MAX_INTERVAL_DAYS * 86400e3, endMs);
+    const batch = await fetchOrderItems(new Date(s).toISOString(), new Date(e).toISOString());
+    for (const it of batch) {
+      if (it.Id && seen.has(it.Id)) continue;
+      if (it.Id) seen.add(it.Id);
+      items.push(it);
+    }
+  }
+
+  const agg: Record<string, { caTtc: number; caHt: number; hebergTtc: number }> = {};
+  for (const k of monthSet) agg[k] = { caTtc: 0, caHt: 0, hebergTtc: 0 };
+  for (const it of items) {
+    if (it.AccountingState === 'Canceled') continue;
+    const anchor = it.ConsumedUtc || it.ClosedUtc;
+    if (!anchor) continue;
+    const mk = parisDateStr(new Date(anchor)).slice(0, 7);
+    if (!monthSet.has(mk)) continue;
+    const ttc = Number(it.Amount?.GrossValue || 0);
+    const ht = Number(it.Amount?.NetValue || 0);
+    agg[mk].caTtc += ttc;
+    agg[mk].caHt += ht;
+    if (ACCOMMODATION_TYPES.has(it.Type)) agg[mk].hebergTtc += ttc;
+  }
+
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return months.map(({ key }) => ({
+    month: key,
+    caTtc: r2(agg[key].caTtc),
+    caHt: r2(agg[key].caHt),
+    hebergTtc: r2(agg[key].hebergTtc),
+  }));
+}

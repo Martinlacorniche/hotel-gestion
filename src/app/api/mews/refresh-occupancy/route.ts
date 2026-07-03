@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { getMonthlyOccupancy } from '@/lib/mews';
+import { getMonthlyOccupancy, getMonthlyRevenue } from '@/lib/mews';
 
 // POST (ou GET) /api/mews/refresh-occupancy
 //
@@ -47,19 +47,34 @@ async function handle(req: Request) {
     return NextResponse.json({ ok: false, error: 'capacité 0 (aucune chambre en base)' }, { status: 500 });
   }
 
-  // 3) Calcul de l'occupation mensuelle prévisionnelle côté Mews.
-  const months = await getMonthlyOccupancy(capacity, new Date(), HORIZON_MONTHS);
+  // 3) Occupation prévisionnelle + revenu (CA / hébergement) côté Mews.
+  //    Le revenu utilise orderItems/getAll (scope ouvert 2026-07) : réalisé pour
+  //    le passé récent, portefeuille (on-the-books) pour le mois courant + futur.
+  const [months, revenue] = await Promise.all([
+    getMonthlyOccupancy(capacity, new Date(), HORIZON_MONTHS),
+    getMonthlyRevenue(new Date(), HORIZON_MONTHS),
+  ]);
+  const revByMonth = new Map(revenue.map((r) => [r.month, r]));
 
   // 4) Upsert du cache (1 ligne par mois). onConflict (hotel_id, month).
+  //    PM (prix moyen chambre) = hébergement TTC ÷ nuitées occupées.
   const nowIso = new Date().toISOString();
-  const rows = months.map((m) => ({
-    hotel_id: voilesId,
-    month: m.month,
-    occupied_nights: m.occupiedNights,
-    available_nights: m.availableNights,
-    occupancy: m.occupancy,
-    updated_at: nowIso,
-  }));
+  const rows = months.map((m) => {
+    const rev = revByMonth.get(m.month);
+    const hebergTtc = rev?.hebergTtc ?? 0;
+    const prixMoyen = m.occupiedNights > 0 ? Math.round(hebergTtc / m.occupiedNights) : 0;
+    return {
+      hotel_id: voilesId,
+      month: m.month,
+      occupied_nights: m.occupiedNights,
+      available_nights: m.availableNights,
+      occupancy: m.occupancy,
+      ca_ttc: rev?.caTtc ?? 0,
+      heberg_ttc: hebergTtc,
+      prix_moyen: prixMoyen,
+      updated_at: nowIso,
+    };
+  });
   const { error: upErr } = await supabaseAdmin
     .from('mews_occupancy')
     .upsert(rows, { onConflict: 'hotel_id,month' });
@@ -67,7 +82,7 @@ async function handle(req: Request) {
     return NextResponse.json({ ok: false, error: `upsert: ${upErr.message}` }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, capacity, horizon: HORIZON_MONTHS, months });
+  return NextResponse.json({ ok: true, capacity, horizon: HORIZON_MONTHS, months, revenue });
 }
 
 export async function POST(req: Request) {
