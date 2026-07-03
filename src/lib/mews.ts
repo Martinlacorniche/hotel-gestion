@@ -241,6 +241,10 @@ export async function getMonthlyOccupancy(
 
 const ACCOMMODATION_TYPES = new Set(['SpaceOrder', 'CancellationFee']);
 
+// orderItems/getAll impose « interval must not exceed 3M1D » (≠ 100 j des
+// réservations). On découpe donc en tranches < 3 mois (marge de sécurité).
+const MAX_REVENUE_INTERVAL_DAYS = 80;
+
 type OrderItem = {
   Id: string;
   Type: string;
@@ -285,11 +289,11 @@ export async function getMonthlyRevenue(now: Date = new Date(), horizon = 6): Pr
   const startMs = Date.UTC(+first.slice(0, 4), +first.slice(5, 7) - 1, 1) - 86400e3;
   const endMs = Date.UTC(+last.slice(0, 4), +last.slice(5, 7), 1) + 86400e3;
 
-  // Découpe < 100 j + dédoublonnage par Id (une ligne peut chevaucher deux tranches).
+  // Découpe < 3 mois (limite orderItems) + dédoublonnage par Id.
   const seen = new Set<string>();
   const items: OrderItem[] = [];
-  for (let s = startMs; s < endMs; s += MAX_INTERVAL_DAYS * 86400e3) {
-    const e = Math.min(s + MAX_INTERVAL_DAYS * 86400e3, endMs);
+  for (let s = startMs; s < endMs; s += MAX_REVENUE_INTERVAL_DAYS * 86400e3) {
+    const e = Math.min(s + MAX_REVENUE_INTERVAL_DAYS * 86400e3, endMs);
     const batch = await fetchOrderItems(new Date(s).toISOString(), new Date(e).toISOString());
     for (const it of batch) {
       if (it.Id && seen.has(it.Id)) continue;
