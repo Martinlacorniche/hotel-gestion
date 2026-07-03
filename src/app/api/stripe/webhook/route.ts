@@ -92,7 +92,7 @@ export async function POST(req: Request) {
         // cette session (multi-chambres d'un même hôtel = une session).
         const { data: confirmed } = await supabaseAdmin.from('groupe_reservations')
           .update({ statut: 'confirmee', derniere_action: 'creation', modified_at: new Date().toISOString() })
-          .eq('stripe_checkout_id', s.id).eq('statut', 'en_attente_paiement').select('id');
+          .eq('stripe_checkout_id', s.id).in('statut', ['en_attente_paiement', 'paiement_differe']).select('id');
         // Email de confirmation au client (uniquement si on vient bien de confirmer une résa invité).
         if (confirmed && confirmed.length > 0) {
           try { await sendGuestConfirmation(s.id, pay?.hotel_id); } catch (e) { console.warn('Email confirmation invité:', e instanceof Error ? e.message : e); }
