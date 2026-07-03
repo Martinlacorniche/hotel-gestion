@@ -21,8 +21,9 @@ export const dynamic = 'force-dynamic';
 //   1. hotels.email_equipe (source unique, éditable en base)
 //   2. TEAM_EMAIL_VOILES / TEAM_EMAIL_CORNICHE (repli par hôtel)
 //   3. GROUPES_ALERT_EMAIL / ALERT_EMAIL (repli partagé)
-//   4. l'admin (le temps de brancher les vraies adresses).
-function teamEmailFor(hotelNom: string, emailEquipe: string | null): string {
+// Si rien ne se résout → null : on N'envoie PAS (mieux vaut une alerte
+// non partie et retentée qu'un mail interne dans une boîte au hasard).
+function teamEmailFor(hotelNom: string, emailEquipe: string | null): string | null {
   if (emailEquipe) return emailEquipe;
   const n = (hotelNom || '').toLowerCase();
   const perHotel = n.includes('voiles')
@@ -30,7 +31,7 @@ function teamEmailFor(hotelNom: string, emailEquipe: string | null): string {
     : n.includes('corniche')
       ? process.env.TEAM_EMAIL_CORNICHE
       : undefined;
-  return perHotel || process.env.GROUPES_ALERT_EMAIL || process.env.ALERT_EMAIL || 'martinvitte@gmail.com';
+  return perHotel || process.env.GROUPES_ALERT_EMAIL || process.env.ALERT_EMAIL || null;
 }
 
 function parisToday(): string {
@@ -127,6 +128,11 @@ export async function POST(req: NextRequest) {
       for (const [hid, chambres] of parHotel.entries()) {
         const nom = hotelName(hid);
         const to = teamEmailFor(nom, hotelRow(hid)?.email_equipe ?? null);
+        if (!to) {
+          allSent = false;
+          console.error('relance-limite: aucune adresse équipe pour', g.id, hid, nom);
+          continue;
+        }
         const numeros = chambres
           .map(c => numeroOf(c.chambre_id))
           .filter(n => n && n !== '—')
