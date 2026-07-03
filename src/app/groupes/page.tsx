@@ -768,10 +768,12 @@ function GroupesTab({
         byKey.get(key)!.rooms.push(c);
       }
       for (const grp of byKey.values()) grp.rooms.sort(byNumero);
-      out.push({ hotel: h, groups: [...byKey.values()] });
+      // Catégories triées par room_types.ordre (classique → premium), sans-type en dernier.
+      const ordreOf = (key: string) => key.startsWith('__notype') ? 9999 : (roomTypes.find(rt => rt.id === key)?.ordre ?? 9999);
+      out.push({ hotel: h, groups: [...byKey.values()].sort((a, b) => ordreOf(a.key) - ordreOf(b.key)) });
     }
     return out;
-  }, [hotels, chambres, roomTypeName]);
+  }, [hotels, chambres, roomTypeName, roomTypes]);
 
   const nbSelected = Object.keys(selected).length;
 
@@ -960,10 +962,10 @@ function GroupesTab({
                   <p className="text-sm font-medium text-slate-700 mb-2">Paiement en ligne</p>
                   <div className="grid grid-cols-2 gap-2">
                     {([
-                      { k: 'immediat', t: 'Immédiat', d: 'Paiement Stripe à la réservation (30 min).' },
-                      { k: 'differe', t: 'Différé', d: 'Chambre tenue, lien envoyé à une date choisie.' },
-                      { k: 'optionnel', t: 'Optionnel', d: 'Résa gratuite, bouton « Payer maintenant » dispo.' },
-                      { k: 'aucun', t: 'Aucun', d: 'Engagement à la signature, pas de paiement.' },
+                      { k: 'immediat', t: 'Immédiat', d: 'Paiement à la réservation (30 min pour régler).' },
+                      { k: 'differe', t: 'Programmé', d: 'Chambre tenue ; le lien de paiement part à une date choisie.' },
+                      { k: 'optionnel', t: 'Sur place', d: 'Règlement à l\'hôtel ; le client peut aussi payer en ligne à l\'avance.' },
+                      { k: 'aucun', t: 'Sans paiement', d: 'Engagement à la signature, aucun règlement en ligne.' },
                     ] as const).map(m => (
                       <button
                         key={m.k}
