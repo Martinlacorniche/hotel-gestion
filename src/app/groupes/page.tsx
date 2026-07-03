@@ -458,6 +458,42 @@ function GroupesTab({
     })();
   }, [newLeadId]);
 
+  // ── Brouillon auto-sauvé (création) : ne plus rien perdre en changeant d'onglet
+  // ou de page. Persistance à chaque frappe dans localStorage, restauration au
+  // retour, nettoyage à l'enregistrement / annulation (voir resetForm).
+  const DRAFT_KEY = 'groupes:new-draft';
+
+  // Persiste le formulaire de CRÉATION (pas l'édition) tant qu'il est ouvert.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !showForm || editing) return;
+    const draft = {
+      nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible,
+      paiementObligatoire, messageAccueil, contactNom, contactEmail, notes,
+      selected, tarifByType,
+    };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
+  }, [showForm, editing, nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible,
+      paiementObligatoire, messageAccueil, contactNom, contactEmail, notes, selected, tarifByType]);
+
+  // Restaure un brouillon au montage (sauf si on arrive depuis un dossier / édition).
+  useEffect(() => {
+    if (typeof window === 'undefined' || newLeadId || editing) return;
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    try {
+      const d = JSON.parse(raw);
+      const hasContent = d && (d.nom || d.dateArrivee || d.dateDepart || (d.selected && Object.keys(d.selected).length));
+      if (!hasContent) return;
+      setNom(d.nom || ''); setDateArrivee(d.dateArrivee || ''); setDateDepart(d.dateDepart || ''); setDateLimite(d.dateLimite || '');
+      setConditions(d.conditions || ''); setPlanVisible(d.planVisible ?? true); setPaiementObligatoire(d.paiementObligatoire ?? false);
+      setMessageAccueil(d.messageAccueil || ''); setContactNom(d.contactNom || ''); setContactEmail(d.contactEmail || ''); setNotes(d.notes || '');
+      setSelected(d.selected || {}); setTarifByType(d.tarifByType || {});
+      setShowForm(true);
+      toast('Brouillon restauré', { icon: '📝' });
+    } catch { /* json invalide */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const roomTypeName = useCallback(
     (id: string | null) => roomTypes.find(rt => rt.id === id)?.nom || 'Sans type',
     [roomTypes],
@@ -472,6 +508,8 @@ function GroupesTab({
     setCoverUrl(null); setCoverFile(null);
     setSelected({}); setTarifByType({});
     if (coverInputRef.current) coverInputRef.current.value = '';
+    // Le brouillon a rempli son rôle (enregistré ou annulé) → on le purge.
+    if (typeof window !== 'undefined') { try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ } }
   }
 
   // Fermer le formulaire : en édition → retour au détail du groupe ;
