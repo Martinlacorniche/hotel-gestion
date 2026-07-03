@@ -691,8 +691,10 @@ export function PosTab({ hotelId }: { hotelId: string }) {
               <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Répartition des ventes (TTC)</span>
               <ul className="mt-2 space-y-1.5 text-sm">
                 <li className="flex justify-between"><span className="text-slate-500">Soft (10%)</span><span className="font-medium tabular-nums">{euro(c.parType.soft)}</span></li>
-                <li className="flex justify-between"><span className="text-slate-500">Food (10%)</span><span className="font-medium tabular-nums">{euro(c.parType.food)}</span></li>
                 <li className="flex justify-between"><span className="text-slate-500">Alcool (10/20%)</span><span className="font-medium tabular-nums">{euro(c.parType.alcool)}</span></li>
+                {c.parType.food > 0 && (
+                  <li className="flex justify-between"><span className="text-slate-500">Food (10%)</span><span className="font-medium tabular-nums">{euro(c.parType.food)}</span></li>
+                )}
               </ul>
             </div>
           </div>
