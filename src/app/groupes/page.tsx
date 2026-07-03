@@ -86,6 +86,8 @@ interface Groupe {
   conditions_annulation: string | null;
   plan_visible: boolean;
   paiement_obligatoire?: boolean;
+  mode_paiement?: string | null;
+  date_envoi_paiement?: string | null;
   cover_image_url: string | null;
   message_accueil: string | null;
   contact_nom: string | null;
@@ -424,7 +426,8 @@ function GroupesTab({
   const [dateLimite, setDateLimite] = useState('');
   const [conditions, setConditions] = useState('');
   const [planVisible, setPlanVisible] = useState(true);
-  const [paiementObligatoire, setPaiementObligatoire] = useState(false);
+  const [modePaiement, setModePaiement] = useState<'immediat' | 'differe' | 'optionnel' | 'aucun'>('immediat');
+  const [dateEnvoiPaiement, setDateEnvoiPaiement] = useState('');
   const [messageAccueil, setMessageAccueil] = useState('');
   const [contactNom, setContactNom] = useState('');
   const [contactEmail, setContactEmail] = useState('');
@@ -468,12 +471,12 @@ function GroupesTab({
     if (typeof window === 'undefined' || !showForm || editing) return;
     const draft = {
       nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible,
-      paiementObligatoire, messageAccueil, contactNom, contactEmail, notes,
+      modePaiement, dateEnvoiPaiement, messageAccueil, contactNom, contactEmail, notes,
       selected, tarifByType,
     };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
   }, [showForm, editing, nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible,
-      paiementObligatoire, messageAccueil, contactNom, contactEmail, notes, selected, tarifByType]);
+      modePaiement, dateEnvoiPaiement, messageAccueil, contactNom, contactEmail, notes, selected, tarifByType]);
 
   // Restaure un brouillon au montage (sauf si on arrive depuis un dossier / édition).
   useEffect(() => {
@@ -485,7 +488,8 @@ function GroupesTab({
       const hasContent = d && (d.nom || d.dateArrivee || d.dateDepart || (d.selected && Object.keys(d.selected).length));
       if (!hasContent) return;
       setNom(d.nom || ''); setDateArrivee(d.dateArrivee || ''); setDateDepart(d.dateDepart || ''); setDateLimite(d.dateLimite || '');
-      setConditions(d.conditions || ''); setPlanVisible(d.planVisible ?? true); setPaiementObligatoire(d.paiementObligatoire ?? false);
+      setConditions(d.conditions || ''); setPlanVisible(d.planVisible ?? true);
+      setModePaiement(d.modePaiement ?? 'immediat'); setDateEnvoiPaiement(d.dateEnvoiPaiement ?? '');
       setMessageAccueil(d.messageAccueil || ''); setContactNom(d.contactNom || ''); setContactEmail(d.contactEmail || ''); setNotes(d.notes || '');
       setSelected(d.selected || {}); setTarifByType(d.tarifByType || {});
       setShowForm(true);
@@ -503,7 +507,7 @@ function GroupesTab({
   function resetForm() {
     setEditing(null);
     setNom(''); setDateArrivee(''); setDateDepart(''); setDateLimite('');
-    setConditions(''); setPlanVisible(true); setPaiementObligatoire(false); setMessageAccueil('');
+    setConditions(''); setPlanVisible(true); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
     setContactNom(''); setContactEmail(''); setNotes('');
     setCoverUrl(null); setCoverFile(null);
     setSelected({}); setTarifByType({});
@@ -532,7 +536,8 @@ function GroupesTab({
     setDateLimite(g.date_limite);
     setConditions(g.conditions_annulation || '');
     setPlanVisible(g.plan_visible);
-    setPaiementObligatoire(g.paiement_obligatoire ?? false);
+    setModePaiement((g.mode_paiement as 'immediat' | 'differe' | 'optionnel' | 'aucun') ?? (g.paiement_obligatoire ? 'immediat' : 'aucun'));
+    setDateEnvoiPaiement(g.date_envoi_paiement ?? '');
     setMessageAccueil(g.message_accueil || '');
     setContactNom(g.contact_nom || '');
     setContactEmail(g.contact_email || '');
@@ -589,6 +594,7 @@ function GroupesTab({
     if (!dateArrivee || !dateDepart) return toast.error('Indique les dates d’arrivée et de départ.');
     if (!dateLimite) return toast.error('Indique la date limite d’inscription.');
     if (dateDepart < dateArrivee) return toast.error('Le départ doit être après l’arrivée.');
+    if (modePaiement === 'differe' && !dateEnvoiPaiement) return toast.error('Indique la date d’envoi du lien de paiement.');
 
     const entries = Object.entries(selected);
     if (entries.length === 0) return toast.error('Sélectionne au moins une chambre pour le bloc.');
@@ -608,7 +614,9 @@ function GroupesTab({
       date_limite: dateLimite,
       conditions_annulation: conditions.trim() || null,
       plan_visible: planVisible,
-      paiement_obligatoire: paiementObligatoire,
+      mode_paiement: modePaiement,
+      date_envoi_paiement: modePaiement === 'differe' ? (dateEnvoiPaiement || null) : null,
+      paiement_obligatoire: modePaiement === 'immediat', // compat route reserve actuelle
       message_accueil: messageAccueil.trim() || null,
       contact_nom: contactNom.trim() || null,
       contact_email: contactEmail.trim() || null,
@@ -948,13 +956,41 @@ function GroupesTab({
                   </span>
                 </label>
 
-                <label className="flex items-center gap-2 cursor-pointer select-none rounded-lg border border-slate-200 p-3">
-                  <input type="checkbox" checked={paiementObligatoire} onChange={e => setPaiementObligatoire(e.target.checked)} className="w-5 h-5 accent-rose-600" />
-                  <span className="text-sm font-medium text-slate-700">
-                    Paiement en ligne <strong>obligatoire</strong> pour valider la réservation
-                    <span className="block text-xs font-normal text-slate-400">Sinon : l'invité s'engage à la signature, le paiement reste facultatif.</span>
-                  </span>
-                </label>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-sm font-medium text-slate-700 mb-2">Paiement en ligne</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { k: 'immediat', t: 'Immédiat', d: 'Paiement Stripe à la réservation (30 min).' },
+                      { k: 'differe', t: 'Différé', d: 'Chambre tenue, lien envoyé à une date choisie.' },
+                      { k: 'optionnel', t: 'Optionnel', d: 'Résa gratuite, bouton « Payer maintenant » dispo.' },
+                      { k: 'aucun', t: 'Aucun', d: 'Engagement à la signature, pas de paiement.' },
+                    ] as const).map(m => (
+                      <button
+                        key={m.k}
+                        type="button"
+                        onClick={() => setModePaiement(m.k)}
+                        className={`text-left rounded-lg border p-2.5 transition ${
+                          modePaiement === m.k
+                            ? 'border-rose-500 bg-rose-50 ring-1 ring-rose-200'
+                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
+                        <span className={`block text-sm font-semibold ${modePaiement === m.k ? 'text-rose-700' : 'text-slate-700'}`}>{m.t}</span>
+                        <span className="block text-[11px] text-slate-400 leading-tight mt-0.5">{m.d}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {modePaiement === 'differe' && (
+                    <label className="block mt-3">
+                      <span className="text-xs font-medium text-slate-500">Date d'envoi du lien de paiement</span>
+                      <input
+                        type="date"
+                        value={dateEnvoiPaiement}
+                        onChange={e => setDateEnvoiPaiement(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-rose-400 focus:outline-none"
+                      />
+                      <span className="block text-[11px] text-slate-400 mt-1">Le client aura <strong>48h</strong> pour payer ; sans paiement, la chambre est relâchée automatiquement.</span>
+                    </label>
+                  )}
+                </div>
 
                 <div className="flex gap-2">
                   <Button type="button" variant="outline" onClick={closeForm} className="h-11">Annuler</Button>
