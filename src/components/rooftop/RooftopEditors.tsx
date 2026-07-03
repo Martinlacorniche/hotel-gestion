@@ -5,6 +5,7 @@
 // Chaque éditeur reçoit `hotelId` en prop (plus de dépendance à un contexte).
 
 import { useEffect, useState } from "react";
+import { tvaTypeForCategorie } from "@/lib/rooftopTva";
 import { supabase } from "@/lib/supabaseClient";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { Input } from "@/components/ui/input";
@@ -67,6 +68,7 @@ export function BarTab({ hotelId }: { hotelId: string }) {
   const [categories, setCategories] = useState<string[]>(DEFAULT_BAR_CATEGORIES);
   const [catEn, setCatEn] = useState<Record<string, string>>({});
   const [catPrix, setCatPrix] = useState<Record<string, string>>({});
+  const [catTva, setCatTva] = useState<Record<string, string>>({}); // cat → 'soft' | 'alcool' (TVA)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -118,6 +120,8 @@ export function BarTab({ hotelId }: { hotelId: string }) {
         if (enCats) setCatEn(enCats);
         const prixCats = tileData.config?.categories_prix as Record<string, string> | undefined;
         if (prixCats) setCatPrix(prixCats);
+        const tvaCats = tileData.config?.categories_tva as Record<string, string> | undefined;
+        if (tvaCats) setCatTva(tvaCats);
       }
     });
   }, [hotelId, barSlug]);
@@ -153,6 +157,15 @@ export function BarTab({ hotelId }: { hotelId: string }) {
     else delete next[cat];
     setCatPrix(next);
     persistCatPrix(next);
+  };
+
+  // Type de TVA par CATÉGORIE (soft 10% / alcool 10-20%) — pilote la facturation POS.
+  const persistCatTva = async (next: Record<string, string>) => persistConfig({ categories_tva: next });
+
+  const setCatTvaValue = (cat: string, type: "soft" | "alcool") => {
+    const next = { ...catTva, [cat]: type };
+    setCatTva(next);
+    persistCatTva(next);
   };
 
   const toggleHiddenCat = async (cat: string) => {
@@ -274,6 +287,12 @@ export function BarTab({ hotelId }: { hotelId: string }) {
       setCatPrix(nextPrix);
       await persistCatPrix(nextPrix);
     }
+    if (catTva[cat]) {
+      const nextTva = { ...catTva };
+      delete nextTva[cat];
+      setCatTva(nextTva);
+      await persistCatTva(nextTva);
+    }
     toast.success(`Catégorie "${cat}" supprimée`);
   };
 
@@ -316,6 +335,13 @@ export function BarTab({ hotelId }: { hotelId: string }) {
       setCatPrix(nextPrix);
       await persistCatPrix(nextPrix);
     }
+    if (catTva[oldCat]) {
+      const nextTva = { ...catTva };
+      nextTva[newName] = nextTva[oldCat];
+      delete nextTva[oldCat];
+      setCatTva(nextTva);
+      await persistCatTva(nextTva);
+    }
     setEditingCat(null);
     toast.success("Catégorie renommée ✓");
   };
@@ -339,7 +365,7 @@ export function BarTab({ hotelId }: { hotelId: string }) {
         const isHidden = hiddenCats.has(cat);
         return (
           <div key={cat} className={`bg-white rounded-xl border overflow-hidden ${isHidden ? "border-slate-100 opacity-60" : "border-slate-200"}`}>
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50">
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50">
               <div className="flex flex-col gap-0.5">
                 <button onClick={() => moveCategory(idx, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={13} /></button>
                 <button onClick={() => moveCategory(idx, 1)} disabled={idx === categories.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={13} /></button>
@@ -371,6 +397,25 @@ export function BarTab({ hotelId }: { hotelId: string }) {
                   placeholder="€"
                   className="h-6 w-16 text-[11px] text-center tabular-nums"
                 />
+              </div>
+              {/* TVA de la catégorie (facturation POS) — soft 10% / alcool 10-20% */}
+              <div className="flex items-center rounded-md border border-slate-200 overflow-hidden shrink-0" title="TVA appliquée à la facture : Soft = 10%, Alcool = 50% à 10% + 50% à 20%">
+                <span className="px-1.5 text-[9px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-50 border-r border-slate-200">TVA</span>
+                {(["soft", "alcool"] as const).map(t => {
+                  const on = tvaTypeForCategorie(cat, catTva) === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setCatTvaValue(cat, t)}
+                      className={`px-2 h-6 text-[10px] font-semibold whitespace-nowrap transition ${
+                        on
+                          ? (t === "alcool" ? "bg-rose-500 text-white" : "bg-emerald-500 text-white")
+                          : "bg-white text-slate-400 hover:bg-slate-50"}`}>
+                      {t === "soft" ? "Soft" : "Alcool"}
+                    </button>
+                  );
+                })}
               </div>
               <div className="flex items-center gap-1">
                 <Input

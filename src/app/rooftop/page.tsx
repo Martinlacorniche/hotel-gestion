@@ -12,7 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Martini, Plus, Trash2, CalendarX2, Users, Ban, Armchair, Check, Clock, X } from "lucide-react";
+import { Martini, Plus, Trash2, CalendarX2, Users, Ban, Armchair, Check, Clock, X, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 import { RooftopCarteTab, BlacklistTab, VOILES_ID } from "@/components/rooftop/RooftopEditors";
 import { PosTab } from "@/components/rooftop/RooftopPos";
@@ -68,9 +68,6 @@ function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function toYmd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 function fmtDate(s: string): string {
   try {
     return new Date(`${s}T00:00:00`).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
@@ -102,7 +99,7 @@ function ResasTab({ hotelId }: { hotelId: string }) {
   const [tables, setTables] = useState<ActiveTable[]>([]);
   const [loading, setLoading] = useState(true);
   const [openTable, setOpenTable] = useState<string | null>(null);
-  const [closedDays, setClosedDays] = useState<Set<string>>(new Set());
+  const [closedPeriods, setClosedPeriods] = useState<{ debut: string; fin: string }[]>([]);
   const [services, setServices] = useState<string[]>([]);
 
   // Création d'une résa au clic sur une table libre
@@ -128,8 +125,8 @@ function ResasTab({ hotelId }: { hotelId: string }) {
 
   // Jours fermés (pour la bannière) + heures de service (pour le formulaire)
   useEffect(() => {
-    supabase.from("rooftop_closures").select("date_fermee").eq("hotel_id", hotelId)
-      .then(({ data }) => setClosedDays(new Set(((data as { date_fermee: string }[]) || []).map(c => c.date_fermee))));
+    supabase.from("rooftop_closures").select("date_debut,date_fin").eq("hotel_id", hotelId)
+      .then(({ data }) => setClosedPeriods(((data as { date_debut: string; date_fin: string }[]) || []).map(c => ({ debut: c.date_debut, fin: c.date_fin }))));
     supabase.from("rooftop_services").select("heure").eq("hotel_id", hotelId).eq("actif", true).order("ordre")
       .then(({ data }) => setServices(((data as { heure: string | null }[]) || []).map(s => (s.heure || "").trim()).filter(Boolean)));
   }, [hotelId]);
@@ -142,7 +139,12 @@ function ResasTab({ hotelId }: { hotelId: string }) {
   const couvertsReserved = tables.reduce((s, t) => s + (resaByTable.has(t.id) ? (resaByTable.get(t.id)!.couverts || 0) : 0), 0);
   const freeTables = tables.filter(t => !resaByTable.has(t.id));
   const aPlacer = resas.filter(r => r.statut !== "annulee" && (!r.table_id || !tables.some(t => t.id === r.table_id)));
-  const dayClosed = closedDays.has(date);
+  const dayClosed = closedPeriods.some(p => date >= p.debut && date <= p.fin);
+  const shiftDate = (delta: number) => {
+    const d = new Date(date + "T00:00:00");
+    d.setDate(d.getDate() + delta);
+    setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+  };
 
   const cancelResa = async (r: Resa) => {
     if (!(await confirmDialog(`Annuler la réservation de ${r.nom} ?`))) return;
@@ -252,7 +254,15 @@ function ResasTab({ hotelId }: { hotelId: string }) {
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 bg-slate-50">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Plan de salle</span>
+            <button onClick={() => shiftDate(-1)} title="Jour précédent"
+              className="h-10 w-10 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 active:scale-95 transition">
+              <ChevronLeft size={18} />
+            </button>
             <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-10 w-44 text-sm" />
+            <button onClick={() => shiftDate(1)} title="Jour suivant"
+              className="h-10 w-10 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 active:scale-95 transition">
+              <ChevronRight size={18} />
+            </button>
           </div>
           <div className="flex items-center gap-3 text-sm text-slate-600">
             <span className="font-semibold tabular-nums">{reservedCount}</span>
@@ -565,7 +575,7 @@ function TablesTab({ hotelId }: { hotelId: string }) {
 // ─────────────────────────────────────────────────────────────
 // TAB RÉGLAGES — services (rotation future) + jours fermés (plages)
 // ─────────────────────────────────────────────────────────────
-type Closure = { id: string; date_fermee: string; motif: string | null };
+type Closure = { id: string; date_debut: string; date_fin: string; motif: string | null };
 type Service = { id: string; nom: string; heure: string | null; actif: boolean; ordre: number };
 
 function ReglagesTab({ hotelId }: { hotelId: string }) {
@@ -585,7 +595,7 @@ function ReglagesTab({ hotelId }: { hotelId: string }) {
   useEffect(() => {
     supabase.from("rooftop_services").select("*").eq("hotel_id", hotelId).order("ordre")
       .then(({ data }) => setServices((data as Service[]) || []));
-    supabase.from("rooftop_closures").select("*").eq("hotel_id", hotelId).order("date_fermee")
+    supabase.from("rooftop_closures").select("id,date_debut,date_fin,motif").eq("hotel_id", hotelId).order("date_debut")
       .then(({ data }) => setClosures((data as Closure[]) || []));
   }, [hotelId]);
 
@@ -626,40 +636,34 @@ function ReglagesTab({ hotelId }: { hotelId: string }) {
     toast.success("Service supprimé");
   };
 
-  // ── Jours fermés (plage de dates) ──
+  // ── Fermetures : une PÉRIODE = une ligne (plus de génération jour-par-jour) ──
   const addClosure = async () => {
     const from = closureFrom.trim();
     if (!from) return;
-    const to = closureTo.trim() || from;
-    const start = new Date(`${from}T00:00:00`);
-    const end = new Date(`${to}T00:00:00`);
-    if (end < start) { toast.error("La date de fin est avant le début"); return; }
-    // Garde-fou : max ~92 jours d'un coup
-    const spanDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-    if (spanDays > 92) { toast.error("Plage trop longue (92 jours max)"); return; }
-
-    const rows: { hotel_id: string; date_fermee: string; motif: string | null }[] = [];
-    for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
-      rows.push({ hotel_id: hotelId, date_fermee: toYmd(cur), motif: closureMotif.trim() || null });
-    }
+    const to = closureTo.trim() || from; // « Au » optionnel → journée seule
+    if (to < from) { toast.error("La date de fin est avant le début"); return; }
     setAddingClosure(true);
-    // ignoreDuplicates : les jours déjà fermés sont ignorés silencieusement.
     const { data, error } = await supabase.from("rooftop_closures")
-      .upsert(rows, { onConflict: "hotel_id,date_fermee", ignoreDuplicates: true })
-      .select();
+      .insert({ hotel_id: hotelId, date_debut: from, date_fin: to, motif: closureMotif.trim() || null })
+      .select("id,date_debut,date_fin,motif").single();
     setAddingClosure(false);
-    if (error) { toast.error(error.message ?? "Erreur"); return; }
-    const added = (data as Closure[]) || [];
-    setClosures(prev => [...prev, ...added].sort((a, b) => a.date_fermee.localeCompare(b.date_fermee)));
+    if (error) {
+      // La contrainte anti-chevauchement (exclusion gist) rejette une période qui recoupe une existante.
+      toast.error(/exclu|overlap|conflic/i.test(error.message || "")
+        ? "Cette période recoupe une fermeture déjà enregistrée"
+        : (error.message ?? "Erreur"));
+      return;
+    }
+    setClosures(prev => [...prev, data as Closure].sort((a, b) => a.date_debut.localeCompare(b.date_debut)));
     setClosureFrom(""); setClosureTo(""); setClosureMotif("");
-    toast.success(added.length > 0 ? `${added.length} jour${added.length > 1 ? "s" : ""} fermé${added.length > 1 ? "s" : ""} ✓` : "Ces jours étaient déjà fermés");
+    toast.success("Fermeture enregistrée ✓");
   };
 
   const removeClosure = async (id: string) => {
-    if (!(await confirmDialog("Rouvrir ce jour à la réservation ?"))) return;
+    if (!(await confirmDialog("Rouvrir cette période à la réservation ?"))) return;
     setClosures(prev => prev.filter(c => c.id !== id));
     await supabase.from("rooftop_closures").delete().eq("id", id);
-    toast.success("Jour rouvert");
+    toast.success("Période rouverte");
   };
 
   return (
@@ -731,7 +735,9 @@ function ReglagesTab({ hotelId }: { hotelId: string }) {
           <ul className="divide-y divide-slate-50 border border-slate-100 rounded-lg">
             {closures.map(c => (
               <li key={c.id} className="flex items-center gap-3 px-3 py-2">
-                <span className="text-sm text-slate-700 capitalize">{fmtDate(c.date_fermee)}</span>
+                <span className="text-sm text-slate-700 capitalize">
+                  {c.date_debut === c.date_fin ? fmtDate(c.date_debut) : `Du ${fmtDate(c.date_debut)} au ${fmtDate(c.date_fin)}`}
+                </span>
                 {c.motif && <span className="text-[12px] text-slate-400 italic truncate">{c.motif}</span>}
                 <button onClick={() => removeClosure(c.id)} className="ml-auto text-slate-200 hover:text-red-400 transition shrink-0" title="Rouvrir">
                   <Trash2 size={14} />
