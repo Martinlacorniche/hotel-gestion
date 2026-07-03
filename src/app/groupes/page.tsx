@@ -174,12 +174,14 @@ export default function GroupesPage() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const base = supabase.from('hotels').select('id, nom').order('nom');
-      const userHotelId = user.hotel_id || user.default_hotel_id;
-      const { data } = isSuperadmin ? await base : await base.eq('id', userHotelId || '');
+      // Tous les rôles voient tous les hôtels : un bloc de groupe peut être
+      // multi-hôtel (Corniche + Voiles) et rien n'est confidentiel ici. La
+      // frontière de sécurité, c'est le rôle (création réservée aux admins),
+      // pas le hotel_id de rattachement.
+      const { data } = await supabase.from('hotels').select('id, nom').order('nom');
       setHotels((data || []) as Hotel[]);
     })();
-  }, [user, isSuperadmin]);
+  }, [user]);
 
   const hotelIds = useMemo(() => hotels.map(h => h.id), [hotels]);
   const hotelName = useCallback((id: string) => hotels.find(h => h.id === id)?.nom || '—', [hotels]);
@@ -200,13 +202,11 @@ export default function GroupesPage() {
     if (gr.error) toast.error('Groupes : ' + gr.error.message);
     setRoomTypes((rt.data || []) as RoomType[]);
     setChambres((ch.data || []) as Chambre[]);
-    const accessible = new Set(hotelIds);
-    const list = ((gr.data || []) as Groupe[]).filter(g =>
-      isSuperadmin || (g.groupe_chambres || []).some(c => accessible.has(c.hotel_id))
-    );
-    setGroupes(list);
+    // Tous les groupes sont visibles par tous les rôles (multi-hôtel, rien de
+    // confidentiel). Chaque carte porte déjà le badge du/des hôtel(s) concerné(s).
+    setGroupes((gr.data || []) as Groupe[]);
     setLoading(false);
-  }, [hotelIds, isSuperadmin]);
+  }, [hotelIds]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
