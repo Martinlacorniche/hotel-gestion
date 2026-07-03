@@ -191,11 +191,48 @@ def setup_encoder() -> None:
             ver = _encoder.get_version()
             if ver:
                 log.info(f"Encodeur détecté : {ver}")
+                _encoder_status["detail"] = ver
         finally:
             _encoder.disconnect()
+        _encoder_status["ok"] = True
         log.info("Encodeur libre (sera connecté à la demande à chaque job)")
     except EncoderError as e:
+        _encoder_status["ok"] = False
         log.warning(f"Encodeur indispo au boot ({e}). On retentera à chaque job.")
+
+
+# ── Battement de cœur (voyant en ligne côté /serrures) ────────────────────────
+
+# État courant de l'encodeur publié dans le heartbeat. `ok` = encodeur détecté au
+# boot ou dernier job réussi ; passe à False si le boot n'a pas vu l'encodeur.
+_encoder_status: dict[str, Any] = {"ok": bool(USE_REAL_ENCODER), "detail": None}
+_last_heartbeat = 0.0
+HEARTBEAT_INTERVAL_SEC = 10.0
+
+
+def send_heartbeat(force: bool = False) -> None:
+    """Upsert une ligne agent_heartbeat (une par hôtel). Non bloquant : un échec
+    réseau ne doit jamais tuer l'agent ni bloquer l'encodage."""
+    global _last_heartbeat
+    now = time.time()
+    if not force and now - _last_heartbeat < HEARTBEAT_INTERVAL_SEC:
+        return
+    _last_heartbeat = now
+    try:
+        requests.post(
+            f"{SUPABASE_URL}/rest/v1/agent_heartbeat",
+            headers={**HEADERS, "Prefer": "resolution=merge-duplicates"},
+            json={
+                "hotel_id": HOTEL_ID,
+                "last_seen": utc_now_iso(),
+                "encoder_ok": bool(_encoder_status["ok"]),
+                "detail": _encoder_status["detail"],
+                "updated_at": utc_now_iso(),
+            },
+            timeout=8,
+        )
+    except Exception:
+        log.debug("heartbeat échec (non bloquant)")
 
 
 # ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -391,8 +428,11 @@ def main_loop() -> None:
     except Exception:
         log.exception("Reclaim échec")
 
+    send_heartbeat(force=True)
+
     while True:
         try:
+            send_heartbeat()
             job = claim_next_job()
             if job is None:
                 time.sleep(POLL_INTERVAL_SEC)
@@ -403,6 +443,7 @@ def main_loop() -> None:
                 resultat = encode_card(job)
                 finish_job(job["id"], "done", resultat)
                 activate_sejours((job.get("payload") or {}).get("sejourIds", []))
+                _encoder_status["ok"] = True
                 log.info(f"Job {job['id']} done")
             except Exception as e:
                 log.exception(f"Échec encodage job {job['id']}")

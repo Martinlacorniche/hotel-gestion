@@ -105,6 +105,7 @@ export default function SerruresPage() {
   const [revokeResults, setRevokeResults] = useState<Record<string, RevokeResult[]>>({});
   const authorizedRef = useRef<Set<string>>(new Set());
   const [lowBatteries, setLowBatteries] = useState<{ numero: string; battery: number }[]>([]);
+  const [agentStatus, setAgentStatus] = useState<{ online: boolean; encoderOk: boolean } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [showCoverage, setShowCoverage] = useState(false);
   const [coverage, setCoverage] = useState<Coverage | null>(null);
@@ -164,6 +165,16 @@ export default function SerruresPage() {
     }
   }, []);
 
+  const loadAgent = useCallback(async () => {
+    try {
+      const res = await fetch('/api/serrures/agent', { cache: 'no-store', headers: await authHeaders() });
+      const json = await res.json();
+      if (json.ok) setAgentStatus({ online: json.online, encoderOk: json.encoderOk });
+    } catch {
+      setAgentStatus({ online: false, encoderOk: false });
+    }
+  }, []);
+
   const loadDebug = useCallback(async () => {
     try {
       const res = await fetch('/api/serrures/jobs?limit=25', {
@@ -206,6 +217,14 @@ export default function SerruresPage() {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [load, loadPasses, loadCartes]);
+
+  // Voyant agent encodeur : rafraîchi toutes les 15 s pour que la réception voie
+  // en temps quasi réel si l'encodage est opérationnel (lecture DB légère).
+  useEffect(() => {
+    loadAgent();
+    const t = setInterval(loadAgent, 15_000);
+    return () => clearInterval(t);
+  }, [loadAgent]);
 
   // Alerte batterie faible (≤10%) pour les équipes : rafraîchi toutes les 30 min
   // (la batterie bouge lentement ; lecture cloud, aucun impact sur les serrures).
@@ -619,7 +638,27 @@ export default function SerruresPage() {
     <main className="min-h-screen">
       <ThemedBackground />
       <header className="sticky top-0 z-10 bg-stone-50/80 backdrop-blur border-b border-stone-200/60 px-8 py-4 flex items-center justify-between">
-        <h1 className="text-sm font-medium tracking-wide uppercase text-stone-500">Serrures</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-sm font-medium tracking-wide uppercase text-stone-500">Serrures</h1>
+          {agentStatus && (
+            agentStatus.online && agentStatus.encoderOk ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Encodeur en ligne
+              </span>
+            ) : agentStatus.online ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                Agent en ligne · encodeur non détecté
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2.5 py-1">
+                <span className="w-2 h-2 rounded-full bg-rose-500" />
+                Encodeur hors ligne — prévenir un responsable
+              </span>
+            )
+          )}
+        </div>
         {isAdmin && (
           <div className="flex items-center gap-1">
             <button
