@@ -51,7 +51,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Drag = appui maintenu (220ms) → un tap navigue, un maintien réordonne. Ne casse pas le scroll.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 220, tolerance: 8 } }));
   // Badge « groupes à traiter » (Commercial). Rafraîchi à chaque navigation.
-  const groupesUnread = useGroupesAlert(hotels.map((h) => h.id), pathname);
+  // Scopé sur l'hôtel du rail : la pastille ne s'allume que pour les groupes
+  // ayant une chambre dans l'hôtel courant (cohérent avec le récap /groupes).
+  // Fallback tous hôtels tant qu'aucun hôtel n'est encore sélectionné.
+  const groupesUnread = useGroupesAlert(
+    selectedHotelId ? [selectedHotelId] : hotels.map((h) => h.id),
+    pathname,
+  );
 
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
