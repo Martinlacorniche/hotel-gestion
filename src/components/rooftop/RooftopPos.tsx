@@ -404,11 +404,14 @@ export function PosTab({ hotelId }: { hotelId: string }) {
         }
       });
     }
+    // Répartition des ventes : une formule ALCOOL = 50% food (10%) + 50% alcool (20%).
+    // (La ventilation TVA, elle, part du ttc complet via ventileAll — inchangée.)
     const parType = { soft: 0, food: 0, alcool: 0 };
     const lignes = its.map(it => {
       const type: TvaType = it.tva_type ?? (it.source === "plat" ? "food" : "soft");
       const ttc = round2((Number(it.prix) || 0) * (it.qty || 1));
-      parType[type] += ttc;
+      if (type === "alcool") { parType.food += ttc / 2; parType.alcool += ttc / 2; }
+      else parType[type] += ttc;
       return { ttc, type };
     });
     setCloture({
@@ -691,11 +694,10 @@ export function PosTab({ hotelId }: { hotelId: string }) {
               <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Répartition des ventes (TTC)</span>
               <ul className="mt-2 space-y-1.5 text-sm">
                 <li className="flex justify-between"><span className="text-slate-500">Soft (10%)</span><span className="font-medium tabular-nums">{euro(c.parType.soft)}</span></li>
-                <li className="flex justify-between"><span className="text-slate-500">Alcool (10/20%)</span><span className="font-medium tabular-nums">{euro(c.parType.alcool)}</span></li>
-                {c.parType.food > 0 && (
-                  <li className="flex justify-between"><span className="text-slate-500">Food (10%)</span><span className="font-medium tabular-nums">{euro(c.parType.food)}</span></li>
-                )}
+                <li className="flex justify-between"><span className="text-slate-500">Food (10%)</span><span className="font-medium tabular-nums">{euro(c.parType.food)}</span></li>
+                <li className="flex justify-between"><span className="text-slate-500">Alcool (20%)</span><span className="font-medium tabular-nums">{euro(c.parType.alcool)}</span></li>
               </ul>
+              <p className="mt-2 text-[10px] text-slate-400">Formule alcool : 50% food (10%) + 50% alcool (20%).</p>
             </div>
           </div>
         )}
