@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
+import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -142,6 +143,7 @@ function publicLink(code: string) {
 // ============================================================================
 export default function GroupesPage() {
   const { user, isLoading } = useAuth();
+  const { selectedHotelId } = useSelectedHotel();
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [chambres, setChambres] = useState<Chambre[]>([]);
@@ -210,6 +212,16 @@ export default function GroupesPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // Récap filtré par l'hôtel sélectionné dans le rail global : un groupe
+  // apparaît « côté Corniche » s'il a une chambre Corniche, « côté Voiles »
+  // s'il a une chambre Voiles, des deux côtés s'il est multi-hôtel. Le state
+  // `groupes` reste complet (détail/édition d'un groupe d'un autre hôtel OK).
+  const recapGroupes = useMemo(() =>
+    selectedHotelId
+      ? groupes.filter(g => (g.groupe_chambres || []).some(c => c.hotel_id === selectedHotelId))
+      : groupes,
+    [groupes, selectedHotelId]);
+
   if (isLoading) {
     return <div className="p-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin" /></div>;
   }
@@ -275,7 +287,7 @@ export default function GroupesPage() {
             </CardContent></Card>
           )
         ) : recapMode ? (
-          <GroupesRecap groupes={groupes} hotelName={hotelName} hotelsCount={hotels.length} isAdmin={isAdmin} />
+          <GroupesRecap groupes={recapGroupes} hotelName={hotelName} hotelsCount={hotels.length} isAdmin={isAdmin} />
         ) : (
           <GroupesTab
             hotels={hotels}
