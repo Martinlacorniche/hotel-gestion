@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { ThemedBackground } from "@/components/ThemedBackground";
@@ -12,7 +12,8 @@ import { useAuth } from "@/context/AuthContext";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Martini, Plus, Trash2, CalendarX2, Users, Ban, Armchair, Check, Clock, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Martini, Plus, Trash2, CalendarX2, Users, Ban, Armchair, Check, Clock, X, ChevronLeft, ChevronRight, ChevronDown, BarChart3, CreditCard, Banknote, BedDouble } from "lucide-react";
+import { ventileAll, totauxFromBuckets, round2, type TvaType, type TvaTotaux } from "@/lib/rooftopTva";
 import toast from "react-hot-toast";
 import { RooftopCarteTab, BlacklistTab, VOILES_ID } from "@/components/rooftop/RooftopEditors";
 import { PosTab } from "@/components/rooftop/RooftopPos";
@@ -45,16 +46,16 @@ export default function RooftopPage() {
             <TabsTrigger value="pos" className="flex-1">POS</TabsTrigger>
             <TabsTrigger value="fiches" className="flex-1">Fiches</TabsTrigger>
             <TabsTrigger value="carte" className="flex-1">Carte</TabsTrigger>
+            <TabsTrigger value="gestion" className="flex-1">Gestion</TabsTrigger>
             <TabsTrigger value="reglages" className="flex-1">Réglages</TabsTrigger>
-            <TabsTrigger value="blacklist" className="flex-1">Blacklist</TabsTrigger>
           </TabsList>
 
           <TabsContent value="resas"><ResasTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="pos"><PosTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="fiches"><FichesTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="carte"><RooftopCarteTab hotelId={VOILES_ID} /></TabsContent>
+          <TabsContent value="gestion"><GestionTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="reglages"><ReglagesTab hotelId={VOILES_ID} /></TabsContent>
-          <TabsContent value="blacklist"><BlacklistTab hotelId={VOILES_ID} /></TabsContent>
         </Tabs>
       </div>
     </div>
@@ -578,6 +579,181 @@ function TablesTab({ hotelId }: { hotelId: string }) {
 type Closure = { id: string; date_debut: string; date_fin: string; motif: string | null };
 type Service = { id: string; nom: string; heure: string | null; actif: boolean; ordre: number };
 
+// Section repliable « clic pour découvrir » (réglages compacts).
+function Section({ icon, title, subtitle, defaultOpen, children }: {
+  icon: ReactNode; title: string; subtitle?: string; defaultOpen?: boolean; children: ReactNode;
+}) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <div>
+      <button onClick={() => setOpen(o => !o)}
+        className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left hover:bg-slate-50 active:scale-[0.995] transition">
+        <span className="text-slate-500">{icon}</span>
+        <div className="flex-1 min-w-0">
+          <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">{title}</span>
+          {subtitle && <p className="text-[11px] text-slate-400 truncate">{subtitle}</p>}
+        </div>
+        <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <div className="mt-2">{children}</div>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB GESTION — stats du jour + résumé clôture + data du mois
+// ─────────────────────────────────────────────────────────────
+const euroG = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
+type DayStats = { ca: number; nb: number; parPaiement: { tpe: number; espece: number; chambre: number }; tva: TvaTotaux };
+type MonthStats = { ca: number; nb: number; byDay: { date: string; ca: number }[] };
+
+function GestionTab({ hotelId }: { hotelId: string }) {
+  const today = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+  const [date, setDate] = useState(today);
+  const [loading, setLoading] = useState(true);
+  const [day, setDay] = useState<DayStats | null>(null);
+  const [month, setMonth] = useState<MonthStats | null>(null);
+  const shiftDate = (delta: number) => {
+    const dd = new Date(date + "T00:00:00");
+    dd.setDate(dd.getDate() + delta);
+    setDate(`${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, "0")}-${String(dd.getDate()).padStart(2, "0")}`);
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    (async () => {
+      const d = new Date(date + "T00:00:00");
+      const first = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+      const lastD = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const last = `${lastD.getFullYear()}-${String(lastD.getMonth() + 1).padStart(2, "0")}-${String(lastD.getDate()).padStart(2, "0")}`;
+
+      const { data: mData } = await supabase.from("rooftop_orders")
+        .select("id,total,payment_method,date_service")
+        .eq("hotel_id", hotelId).eq("statut", "encaissee")
+        .gte("date_service", first).lte("date_service", last);
+      const mOrds = (mData as { id: string; total: number; payment_method: string | null; date_service: string }[]) || [];
+
+      // ── Jour ──
+      const dayOrds = mOrds.filter(o => o.date_service === date);
+      const dayIds = dayOrds.map(o => o.id);
+      const parPaiement = { tpe: 0, espece: 0, chambre: 0 };
+      let lignes: { ttc: number; type: TvaType }[] = [];
+      if (dayIds.length) {
+        const [{ data: itemsData }, { data: paysData }] = await Promise.all([
+          supabase.from("rooftop_order_items").select("prix,qty,source,tva_type,order_id").in("order_id", dayIds),
+          supabase.from("rooftop_order_payments").select("order_id,method,amount").in("order_id", dayIds),
+        ]);
+        const paysByOrder = new Map<string, { method: string; amount: number }[]>();
+        ((paysData as { order_id: string; method: string; amount: number }[]) || []).forEach(p => {
+          const a = paysByOrder.get(p.order_id) ?? []; a.push(p); paysByOrder.set(p.order_id, a);
+        });
+        dayOrds.forEach(o => {
+          const ps = paysByOrder.get(o.id);
+          if (ps && ps.length) ps.forEach(p => { const m = p.method as keyof typeof parPaiement; if (m in parPaiement) parPaiement[m] += Number(p.amount) || 0; });
+          else { const m = o.payment_method as keyof typeof parPaiement; if (m in parPaiement) parPaiement[m] += Number(o.total) || 0; }
+        });
+        lignes = ((itemsData as { prix: number; qty: number; source: string; tva_type: TvaType | null }[]) || []).map(it => ({
+          ttc: round2((Number(it.prix) || 0) * (it.qty || 1)),
+          type: (it.tva_type ?? (it.source === "plat" ? "food" : "soft")) as TvaType,
+        }));
+      }
+      setDay({
+        ca: round2(dayOrds.reduce((s, o) => s + (Number(o.total) || 0), 0)),
+        nb: dayOrds.length,
+        parPaiement: { tpe: round2(parPaiement.tpe), espece: round2(parPaiement.espece), chambre: round2(parPaiement.chambre) },
+        tva: totauxFromBuckets(ventileAll(lignes)),
+      });
+
+      // ── Mois (CA par jour) ──
+      const byDayMap = new Map<string, number>();
+      mOrds.forEach(o => byDayMap.set(o.date_service, (byDayMap.get(o.date_service) ?? 0) + (Number(o.total) || 0)));
+      const byDay = [...byDayMap.entries()].map(([date, ca]) => ({ date, ca: round2(ca) })).sort((a, b) => b.date.localeCompare(a.date));
+      setMonth({ ca: round2(mOrds.reduce((s, o) => s + (Number(o.total) || 0), 0)), nb: mOrds.length, byDay });
+      setLoading(false);
+    })();
+  }, [hotelId, date]);
+
+  const moisLabel = new Date(date + "T00:00:00").toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+  const jourLabel = new Date(date + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const maxDayCa = Math.max(1, ...(month?.byDay ?? []).map(x => x.ca));
+
+  return (
+    <div className="space-y-6">
+      {/* ── NAVIGATION DATE ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => shiftDate(-1)} title="Jour précédent" className="h-10 w-10 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 active:scale-95 transition"><ChevronLeft size={18} /></button>
+        <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-10 w-44 text-sm" />
+        <button onClick={() => shiftDate(1)} title="Jour suivant" className="h-10 w-10 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 active:scale-95 transition"><ChevronRight size={18} /></button>
+        <span className="ml-1 text-sm font-semibold text-[#013a5c] capitalize">{date === today ? "Aujourd'hui" : jourLabel}</span>
+      </div>
+
+      {loading || !day || !month ? (
+        <p className="text-center text-sm text-slate-400 py-8">Chargement…</p>
+      ) : (
+        <>
+      {/* ── JOUR ── */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-2 flex items-center gap-2"><BarChart3 size={14} /> Résumé du jour</p>
+        <div className="grid md:grid-cols-2 gap-4 items-start">
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-baseline justify-between">
+              <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">CA TTC du jour</span>
+              <span className="text-2xl font-bold text-[#013a5c] tabular-nums">{euroG(day.ca)}</span>
+            </div>
+            <p className="mt-1 text-[12px] text-slate-400">{day.nb} addition{day.nb > 1 ? "s" : ""} encaissée{day.nb > 1 ? "s" : ""}</p>
+            <ul className="mt-3 space-y-1.5 text-sm border-t border-slate-100 pt-3">
+              <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><CreditCard size={14} /> Carte (TPE)</span><span className="font-medium tabular-nums">{euroG(day.parPaiement.tpe)}</span></li>
+              <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><Banknote size={14} /> Espèces</span><span className="font-medium tabular-nums">{euroG(day.parPaiement.espece)}</span></li>
+              <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><BedDouble size={14} /> Transfert chambre</span><span className="font-medium tabular-nums">{euroG(day.parPaiement.chambre)}</span></li>
+            </ul>
+          </div>
+          <div className="bg-white rounded-xl border border-[#004e7c]/30 p-4">
+            <span className="text-xs font-semibold uppercase tracking-widest text-[#004e7c]">Ventilation TVA du jour</span>
+            <table className="mt-2 w-full text-sm">
+              <thead><tr className="text-[11px] uppercase tracking-wider text-slate-400"><th className="text-left font-medium pb-1">Taux</th><th className="text-right font-medium pb-1">Base HT</th><th className="text-right font-medium pb-1">TVA</th></tr></thead>
+              <tbody className="tabular-nums">
+                <tr><td className="text-slate-500 py-0.5">10%</td><td className="text-right">{euroG(day.tva.ht10)}</td><td className="text-right">{euroG(day.tva.tva10)}</td></tr>
+                <tr><td className="text-slate-500 py-0.5">20%</td><td className="text-right">{euroG(day.tva.ht20)}</td><td className="text-right">{euroG(day.tva.tva20)}</td></tr>
+                <tr className="border-t border-slate-100 font-semibold text-[#013a5c]"><td className="py-1">Total</td><td className="text-right">{euroG(day.tva.totalHt)}</td><td className="text-right">{euroG(day.tva.totalTva)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* ── CE MOIS ── */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-2 capitalize">{moisLabel}</p>
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex items-baseline justify-between mb-3">
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">CA TTC du mois</span>
+            <span className="text-2xl font-bold text-[#013a5c] tabular-nums">{euroG(month.ca)}</span>
+          </div>
+          {month.byDay.length === 0 ? (
+            <p className="text-sm text-slate-400">Aucune vente ce mois-ci.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {month.byDay.map(row => (
+                <li key={row.date} className="flex items-center gap-3 text-sm">
+                  <span className="w-24 shrink-0 text-slate-500 capitalize">{new Date(row.date + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}</span>
+                  <span className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden"><span className="block h-full bg-[#004e7c]/70 rounded-full" style={{ width: `${Math.round((row.ca / maxDayCa) * 100)}%` }} /></span>
+                  <span className="w-20 text-right font-medium tabular-nums text-slate-700">{euroG(row.ca)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-[11px] text-slate-400">{month.nb} addition{month.nb > 1 ? "s" : ""} encaissée{month.nb > 1 ? "s" : ""} sur le mois.</p>
+        </div>
+      </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ReglagesTab({ hotelId }: { hotelId: string }) {
   // Services
   const [services, setServices] = useState<Service[]>([]);
@@ -667,15 +843,13 @@ function ReglagesTab({ hotelId }: { hotelId: string }) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* ── TABLES ────────────────────────────────────── */}
-      <TablesTab hotelId={hotelId} />
+    <div className="space-y-3">
+      <Section icon={<Armchair size={14} />} title="Tables" subtitle="Plan de salle & capacité">
+        <TablesTab hotelId={hotelId} />
+      </Section>
 
-      {/* ── SERVICES ──────────────────────────────────── */}
+      <Section icon={<Clock size={14} />} title="Services" subtitle="Horaires de service (rotation)">
       <div className="bg-white rounded-xl border border-slate-200 p-4">
-        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">
-          <Clock size={14} /> Services
-        </p>
         <p className="text-[11px] text-slate-400 mb-3">Aujourd&apos;hui un seul service ; ajoutez-en pour préparer une rotation.</p>
         <div className="flex flex-wrap items-end gap-2 mb-3">
           <Input value={newSvcNom} onChange={e => setNewSvcNom(e.target.value)}
@@ -709,11 +883,10 @@ function ReglagesTab({ hotelId }: { hotelId: string }) {
         )}
       </div>
 
-      {/* ── JOURS FERMÉS (plages) ─────────────────────── */}
+      </Section>
+
+      <Section icon={<CalendarX2 size={14} />} title="Jours fermés" subtitle="Fermetures de la vente en ligne">
       <div className="bg-white rounded-xl border border-slate-200 p-4">
-        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
-          <CalendarX2 size={14} /> Jours fermés (vente en ligne)
-        </p>
         <div className="flex flex-wrap items-end gap-2 mb-3">
           <label className="block space-y-1">
             <span className="text-[11px] text-slate-500">Du</span>
@@ -747,6 +920,11 @@ function ReglagesTab({ hotelId }: { hotelId: string }) {
           </ul>
         )}
       </div>
+      </Section>
+
+      <Section icon={<Ban size={14} />} title="Blacklist" subtitle="Clients bloqués / no-show">
+        <BlacklistTab hotelId={hotelId} />
+      </Section>
     </div>
   );
 }
