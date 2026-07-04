@@ -541,7 +541,7 @@ export function PosTab({ hotelId }: { hotelId: string }) {
                             defaultValue={String(i.prix)}
                             onBlur={e => editPrice(i, e.target.value)}
                             onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                            className="w-16 h-7 rounded border border-slate-200 px-1.5 text-[12px] tabular-nums text-slate-600 focus:border-[#004e7c] focus:outline-none"
+                            className="w-20 h-11 rounded border border-slate-200 px-2 text-sm tabular-nums text-slate-600 focus:border-[#004e7c] focus:outline-none"
                             aria-label={`Prix unitaire de ${i.nom}`}
                           />
                           <span className="text-[11px] text-slate-400">€/u</span>
@@ -575,7 +575,7 @@ export function PosTab({ hotelId }: { hotelId: string }) {
                           </span>
                           <span className="flex items-center gap-2">
                             <span className="tabular-nums text-slate-600">{euro(p.amount)}</span>
-                            <button onClick={() => removePayment(p)} title="Retirer ce règlement" className="text-slate-300 hover:text-red-500"><X size={13} /></button>
+                            <button onClick={() => removePayment(p)} title="Retirer ce règlement" className="p-2 -m-1 text-slate-300 hover:text-red-500"><X size={16} /></button>
                           </span>
                         </li>
                       ))}

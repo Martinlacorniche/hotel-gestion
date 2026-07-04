@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Eye, EyeOff, ChevronUp, ChevronDown, Save, Plus, Trash2, Loader2, Check, Sparkles,
+  Copy, ExternalLink,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -367,8 +368,8 @@ export function BarTab({ hotelId }: { hotelId: string }) {
           <div key={cat} className={`bg-white rounded-xl border overflow-hidden ${isHidden ? "border-slate-100 opacity-60" : "border-slate-200"}`}>
             <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50">
               <div className="flex flex-col gap-0.5">
-                <button onClick={() => moveCategory(idx, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={13} /></button>
-                <button onClick={() => moveCategory(idx, 1)} disabled={idx === categories.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={13} /></button>
+                <button onClick={() => moveCategory(idx, -1)} disabled={idx === 0} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={13} /></button>
+                <button onClick={() => moveCategory(idx, 1)} disabled={idx === categories.length - 1} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={13} /></button>
               </div>
               {editingCat === cat ? (
                 <input
@@ -395,7 +396,7 @@ export function BarTab({ hotelId }: { hotelId: string }) {
                   onChange={e => setCatPrix(prev => ({ ...prev, [cat]: e.target.value }))}
                   onBlur={e => setCatPrixValue(cat, e.target.value)}
                   placeholder="€"
-                  className="h-6 w-16 text-[11px] text-center tabular-nums"
+                  className="h-10 w-20 text-sm text-center tabular-nums"
                 />
               </div>
               {/* TVA de la catégorie (facturation POS) — soft 10% / alcool 10-20% */}
@@ -408,7 +409,7 @@ export function BarTab({ hotelId }: { hotelId: string }) {
                       key={t}
                       type="button"
                       onClick={() => setCatTvaValue(cat, t)}
-                      className={`px-2 h-6 text-[10px] font-semibold whitespace-nowrap transition ${
+                      className={`px-3 h-10 text-xs font-semibold whitespace-nowrap transition ${
                         on
                           ? (t === "alcool" ? "bg-rose-500 text-white" : "bg-emerald-500 text-white")
                           : "bg-white text-slate-400 hover:bg-slate-50"}`}>
@@ -423,7 +424,7 @@ export function BarTab({ hotelId }: { hotelId: string }) {
                   onChange={e => setCatEn(prev => ({ ...prev, [cat]: e.target.value }))}
                   onBlur={e => setCatEnValue(cat, e.target.value)}
                   placeholder="EN"
-                  className="h-6 w-24 text-[11px] uppercase tracking-wider"
+                  className="h-10 w-28 text-sm uppercase tracking-wider"
                 />
                 <TranslateBtn source={cat} onResult={v => setCatEnValue(cat, v)} />
               </div>
@@ -443,26 +444,26 @@ export function BarTab({ hotelId }: { hotelId: string }) {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => toggleActif(item)}
-                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[#004e7c] border-[#004e7c]" : "border-slate-300"}`}
+                        className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[#004e7c] border-[#004e7c]" : "border-slate-300"}`}
                       >
-                        {item.actif && <Check size={10} className="text-white" />}
+                        {item.actif && <Check size={18} className="text-white" />}
                       </button>
-                      <Input value={d.nom} onChange={e => patch(item.id, "nom", e.target.value)} className="h-7 text-sm flex-1" />
-                      <Input value={d.quantite} onChange={e => patch(item.id, "quantite", e.target.value)} className="h-7 w-14 text-sm text-center tabular-nums" placeholder="cl" type="number" min="0" />
+                      <Input value={d.nom} onChange={e => patch(item.id, "nom", e.target.value)} className="h-11 text-sm flex-1" />
+                      <Input value={d.quantite} onChange={e => patch(item.id, "quantite", e.target.value)} className="h-11 w-14 text-sm text-center tabular-nums" placeholder="cl" type="number" min="0" />
                       <button
                         onClick={() => toggleLocal(item)}
                         title="Produit local"
-                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition shrink-0 ${item.local ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "border-slate-200 text-slate-300 hover:text-slate-400"}`}
+                        className={`text-sm px-2.5 py-2 rounded-md border transition shrink-0 ${item.local ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "border-slate-200 text-slate-300 hover:text-slate-400"}`}
                       >
                         🌿
                       </button>
                       {dirty.has(item.id) && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
-                      <button onClick={() => deleteItem(item.id)} className="text-slate-200 hover:text-red-400 transition shrink-0">
-                        <Trash2 size={13} />
+                      <button onClick={() => deleteItem(item.id)} className="p-2 -m-1 text-slate-300 hover:text-red-400 transition shrink-0">
+                        <Trash2 size={16} />
                       </button>
                     </div>
 
-                    <button onClick={() => toggleExpanded(item.id)} className="ml-6 inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-[#004e7c] transition">
+                    <button onClick={() => toggleExpanded(item.id)} className="ml-6 inline-flex items-center gap-1 py-2 text-sm font-medium text-slate-400 hover:text-[#004e7c] transition">
                       {expanded.has(item.id) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       {expanded.has(item.id) ? "Masquer les détails" : "Détails (traductions, description)"}
                     </button>
@@ -470,12 +471,12 @@ export function BarTab({ hotelId }: { hotelId: string }) {
                     {expanded.has(item.id) && (
                       <div className="ml-6 space-y-1.5 pt-1">
                         <div className="flex items-center gap-2">
-                          <Input value={d.nom_en} onChange={e => patch(item.id, "nom_en", e.target.value)} className="h-7 text-sm italic text-slate-500" placeholder="Nom EN" />
+                          <Input value={d.nom_en} onChange={e => patch(item.id, "nom_en", e.target.value)} className="h-11 text-sm italic text-slate-500" placeholder="Nom EN" />
                           <TranslateBtn source={d.nom} onResult={v => patch(item.id, "nom_en", v)} />
                         </div>
-                        <Input value={d.description} onChange={e => patch(item.id, "description", e.target.value)} className="h-7 text-sm text-slate-400" placeholder="Description (facultatif)" />
+                        <Input value={d.description} onChange={e => patch(item.id, "description", e.target.value)} className="h-11 text-sm text-slate-400" placeholder="Description (facultatif)" />
                         <div className="flex items-center gap-2">
-                          <Input value={d.description_en} onChange={e => patch(item.id, "description_en", e.target.value)} className="h-7 text-sm italic text-slate-400" placeholder="Description EN (facultatif)" />
+                          <Input value={d.description_en} onChange={e => patch(item.id, "description_en", e.target.value)} className="h-11 text-sm italic text-slate-400" placeholder="Description EN (facultatif)" />
                           <TranslateBtn source={d.description} onResult={v => patch(item.id, "description_en", v)} />
                         </div>
                       </div>
@@ -486,8 +487,8 @@ export function BarTab({ hotelId }: { hotelId: string }) {
             </ul>
 
             <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
-              <Input placeholder="Nom de l'article" value={newNom[cat] ?? ""} onChange={e => setNewNom(prev => ({ ...prev, [cat]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(cat)} className="h-8 text-sm flex-1" />
-              <Button size="sm" onClick={() => addItem(cat)} disabled={adding || !newNom[cat]?.trim()} className="h-8 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
+              <Input placeholder="Nom de l'article" value={newNom[cat] ?? ""} onChange={e => setNewNom(prev => ({ ...prev, [cat]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(cat)} className="h-11 text-sm flex-1" />
+              <Button size="sm" onClick={() => addItem(cat)} disabled={adding || !newNom[cat]?.trim()} className="h-11 px-4 bg-[#004e7c] hover:bg-[#003d61] text-white">
                 <Plus size={14} />
               </Button>
             </div>
@@ -498,8 +499,8 @@ export function BarTab({ hotelId }: { hotelId: string }) {
       <div className="bg-white rounded-xl border border-dashed border-slate-300 p-4">
         <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-2">Nouvelle catégorie</p>
         <div className="flex gap-2">
-          <Input placeholder="Ex: Cocktails sans alcool" value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCategorie()} className="h-8 text-sm" />
-          <Button size="sm" onClick={addCategorie} disabled={!newCat.trim() || categories.includes(newCat.trim())} className="h-8 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
+          <Input placeholder="Ex: Cocktails sans alcool" value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCategorie()} className="h-11 text-sm" />
+          <Button size="sm" onClick={addCategorie} disabled={!newCat.trim() || categories.includes(newCat.trim())} className="h-11 px-4 bg-[#004e7c] hover:bg-[#003d61] text-white">
             <Plus size={14} />
           </Button>
         </div>
@@ -512,6 +513,44 @@ export function BarTab({ hotelId }: { hotelId: string }) {
 // TAB CARTE ROOFTOP (Voiles) — tout au même endroit :
 // gauche = la bouffe (rooftop_plats), droite = les boissons (wifi_bar).
 // ─────────────────────────────────────────────────────────────
+// Lien public de la carte du rooftop, à envoyer facilement au client depuis la réception.
+const ROOFTOP_CARTE_URL = "https://sitehtbm.netlify.app/rooftop-les-voiles";
+
+export function CarteLienPublic() {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-slate-700">🔗 Carte en ligne · à envoyer au client</p>
+        <a
+          href={ROOFTOP_CARTE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="break-all text-xs text-sky-600 hover:underline"
+        >
+          {ROOFTOP_CARTE_URL}
+        </a>
+      </div>
+      <div className="flex shrink-0 gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            navigator.clipboard.writeText(ROOFTOP_CARTE_URL);
+            toast.success("Lien de la carte copié");
+          }}
+        >
+          <Copy className="mr-1 h-4 w-4" /> Copier le lien
+        </Button>
+        <a href={ROOFTOP_CARTE_URL} target="_blank" rel="noopener noreferrer">
+          <Button size="sm">
+            <ExternalLink className="mr-1 h-4 w-4" /> Ouvrir
+          </Button>
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export function RooftopCarteTab({ hotelId }: { hotelId: string }) {
   return (
     <div className="grid lg:grid-cols-2 gap-5 items-start">
@@ -692,28 +731,28 @@ export function PlatsTab({ hotelId }: { hotelId: string }) {
                   <li key={item.id} className="px-4 py-3 space-y-1.5">
                     <div className="flex items-center gap-2">
                       <div className="flex flex-col gap-0.5">
-                        <button onClick={() => moveItem(key, idx, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={13} /></button>
-                        <button onClick={() => moveItem(key, idx, 1)} disabled={idx === list.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={13} /></button>
+                        <button onClick={() => moveItem(key, idx, -1)} disabled={idx === 0} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={13} /></button>
+                        <button onClick={() => moveItem(key, idx, 1)} disabled={idx === list.length - 1} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={13} /></button>
                       </div>
                       <button
                         onClick={() => toggleActif(item)}
                         title={item.actif ? "Visible" : "Masqué"}
-                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[#004e7c] border-[#004e7c]" : "border-slate-300"}`}
+                        className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[#004e7c] border-[#004e7c]" : "border-slate-300"}`}
                       >
-                        {item.actif && <Check size={10} className="text-white" />}
+                        {item.actif && <Check size={18} className="text-white" />}
                       </button>
-                      <Input value={d.nom} onChange={e => patch(item.id, "nom", e.target.value)} className="h-7 text-sm flex-1" placeholder="Nom du plat" />
-                      <Input value={d.prix} onChange={e => patch(item.id, "prix", e.target.value)} className="h-7 w-20 text-sm text-center tabular-nums" placeholder="Prix" />
+                      <Input value={d.nom} onChange={e => patch(item.id, "nom", e.target.value)} className="h-11 text-sm flex-1" placeholder="Nom du plat" />
+                      <Input value={d.prix} onChange={e => patch(item.id, "prix", e.target.value)} className="h-11 w-20 text-sm text-center tabular-nums" placeholder="Prix" />
                       <button
                         onClick={() => toggleVege(item)}
                         title="Végétarien"
-                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition shrink-0 ${item.vege ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "border-slate-200 text-slate-300 hover:text-slate-400"}`}
+                        className={`text-sm px-2.5 py-2 rounded-md border transition shrink-0 ${item.vege ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "border-slate-200 text-slate-300 hover:text-slate-400"}`}
                       >
                         🌱
                       </button>
                       {dirty.has(item.id) && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
-                      <button onClick={() => deleteItem(item.id)} className="text-slate-200 hover:text-red-400 transition shrink-0">
-                        <Trash2 size={13} />
+                      <button onClick={() => deleteItem(item.id)} className="p-2 -m-1 text-slate-300 hover:text-red-400 transition shrink-0">
+                        <Trash2 size={16} />
                       </button>
                     </div>
 
@@ -724,7 +763,7 @@ export function PlatsTab({ hotelId }: { hotelId: string }) {
                     </div>
 
                     {/* Détails secondaires repliés : traductions, options, marque, photo */}
-                    <button onClick={() => toggleExpanded(item.id)} className="ml-6 inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-[#004e7c] transition">
+                    <button onClick={() => toggleExpanded(item.id)} className="ml-6 inline-flex items-center gap-1 py-2 text-sm font-medium text-slate-400 hover:text-[#004e7c] transition">
                       {expanded.has(item.id) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       {expanded.has(item.id) ? "Masquer les détails" : "Détails (traductions, options, marque, photo)"}
                     </button>
@@ -732,17 +771,17 @@ export function PlatsTab({ hotelId }: { hotelId: string }) {
                     {expanded.has(item.id) && (
                       <div className="ml-6 space-y-1.5 pt-1">
                         <div className="flex items-center gap-2">
-                          <Input value={d.nom_en} onChange={e => patch(item.id, "nom_en", e.target.value)} className="h-7 text-sm italic text-slate-500" placeholder="Nom EN" />
+                          <Input value={d.nom_en} onChange={e => patch(item.id, "nom_en", e.target.value)} className="h-11 text-sm italic text-slate-500" placeholder="Nom EN" />
                           <TranslateBtn source={d.nom} onResult={v => patch(item.id, "nom_en", v)} />
                         </div>
-                        <Input value={d.description_en} onChange={e => patch(item.id, "description_en", e.target.value)} className="h-7 text-sm italic text-slate-500" placeholder="Description EN" />
+                        <Input value={d.description_en} onChange={e => patch(item.id, "description_en", e.target.value)} className="h-11 text-sm italic text-slate-500" placeholder="Description EN" />
                         <div className="flex items-center gap-2">
-                          <Input value={d.options} onChange={e => patch(item.id, "options", e.target.value)} className="h-7 text-sm flex-1" placeholder="Options (ex. Sauce au choix : Barbecue ou Mayonnaise)" />
+                          <Input value={d.options} onChange={e => patch(item.id, "options", e.target.value)} className="h-11 text-sm flex-1" placeholder="Options (ex. Sauce au choix : Barbecue ou Mayonnaise)" />
                           <TranslateBtn source={d.options} onResult={v => patch(item.id, "options_en", v)} />
                         </div>
                         <div className="flex items-center gap-2">
-                          <Input value={d.marque} onChange={e => patch(item.id, "marque", e.target.value)} className="h-7 text-sm w-44" placeholder="Marque / artisan" />
-                          <Input value={d.photo_url} onChange={e => patch(item.id, "photo_url", e.target.value)} className="h-7 text-sm flex-1" placeholder="URL photo (optionnel)" />
+                          <Input value={d.marque} onChange={e => patch(item.id, "marque", e.target.value)} className="h-11 text-sm w-44" placeholder="Marque / artisan" />
+                          <Input value={d.photo_url} onChange={e => patch(item.id, "photo_url", e.target.value)} className="h-11 text-sm flex-1" placeholder="URL photo (optionnel)" />
                         </div>
                       </div>
                     )}
@@ -752,8 +791,8 @@ export function PlatsTab({ hotelId }: { hotelId: string }) {
             </ul>
 
             <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
-              <Input placeholder="Nouveau plat…" value={newNom[key] ?? ""} onChange={e => setNewNom(prev => ({ ...prev, [key]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(key)} className="h-8 text-sm flex-1" />
-              <Button size="sm" onClick={() => addItem(key)} disabled={adding || !newNom[key]?.trim()} className="h-8 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
+              <Input placeholder="Nouveau plat…" value={newNom[key] ?? ""} onChange={e => setNewNom(prev => ({ ...prev, [key]: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem(key)} className="h-11 text-sm flex-1" />
+              <Button size="sm" onClick={() => addItem(key)} disabled={adding || !newNom[key]?.trim()} className="h-11 px-4 bg-[#004e7c] hover:bg-[#003d61] text-white">
                 <Plus size={14} />
               </Button>
             </div>
@@ -839,7 +878,7 @@ export function BlacklistTab({ hotelId }: { hotelId: string }) {
                 </p>
                 {it.motif && <p className="text-[12px] text-slate-400 italic truncate">{it.motif}</p>}
               </div>
-              <button onClick={() => remove(it.id)} className="text-slate-200 hover:text-red-400 transition shrink-0" title="Retirer">
+              <button onClick={() => remove(it.id)} className="p-2 -m-1 text-slate-300 hover:text-red-400 transition shrink-0" title="Retirer">
                 <Trash2 size={14} />
               </button>
             </li>

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Martini, Plus, Trash2, CalendarX2, Users, Ban, Armchair, Check, Clock, X, ChevronLeft, ChevronRight, ChevronDown, BarChart3, CreditCard, Banknote, BedDouble } from "lucide-react";
 import { ventileAll, totauxFromBuckets, round2, type TvaType, type TvaTotaux } from "@/lib/rooftopTva";
 import toast from "react-hot-toast";
-import { RooftopCarteTab, BlacklistTab, VOILES_ID } from "@/components/rooftop/RooftopEditors";
+import { RooftopCarteTab, BlacklistTab, CarteLienPublic, VOILES_ID } from "@/components/rooftop/RooftopEditors";
 import { PosTab } from "@/components/rooftop/RooftopPos";
 import { FichesTab } from "@/components/rooftop/RooftopFiches";
 
@@ -251,6 +251,7 @@ function ResasTab({ hotelId }: { hotelId: string }) {
 
   return (
     <div className="space-y-6">
+      <CarteLienPublic />
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 bg-slate-50">
           <div className="flex items-center gap-2">
@@ -440,7 +441,7 @@ function ResasTab({ hotelId }: { hotelId: string }) {
                   <span className="text-slate-400 text-[12px]">· {r.couverts} couv. · {r.heure}</span>
                   {freeTables.length > 0 && (
                     <select value="" onChange={e => { if (e.target.value) reassignResa(r, e.target.value); }}
-                      className="ml-auto h-7 rounded border border-slate-200 bg-white text-[12px] px-1 focus:outline-none focus:border-[#004e7c]">
+                      className="ml-auto h-11 rounded-lg border border-slate-200 bg-white text-sm px-2.5 focus:outline-none focus:border-[#004e7c]">
                       <option value="">Placer à…</option>
                       {freeTables.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}
                     </select>
