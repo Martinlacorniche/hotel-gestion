@@ -362,3 +362,11 @@ export async function addExternalPayment(params: {
   );
   return { id: res.ExternalPaymentId ?? null };
 }
+
+// Annuler un paiement dans Mews (correction d'erreur de saisie). Passe l'état à
+// 'Canceled'. Corps À LA RACINE : { PaymentId, State }. Vérifié prod 2026-07-04
+// (200). Échoue si le paiement est déjà sur une note clôturée côté PMS — dans ce
+// cas la correction doit se faire à la main dans Mews.
+export async function cancelPayment(paymentId: string): Promise<void> {
+  await callMews('payments/updateState', { PaymentId: paymentId, State: 'Canceled' });
+}

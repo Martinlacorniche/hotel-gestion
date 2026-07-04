@@ -297,9 +297,26 @@ export function PosTab({ hotelId }: { hotelId: string }) {
   // Retirer un règlement saisi par erreur (tant que l'addition n'est pas verrouillée).
   const removePayment = async (p: Payment) => {
     if (!active || active.statut === "encaissee") return;
-    // Déjà consigné dans Mews : le retrait local ne l'annule PAS côté PMS.
-    if (p.mews_payment_id && !(await confirmDialog(
-      "Ce règlement est déjà enregistré dans Mews. Le retirer ici ne l'annule pas côté Mews (à corriger à la main dans le PMS). Continuer ?"))) return;
+    // Déjà consigné dans Mews : le retrait doit AUSSI l'annuler côté PMS.
+    if (p.mews_payment_id) {
+      if (!(await confirmDialog(
+        "Ce règlement est enregistré dans Mews. Le retirer va aussi l'annuler dans Mews. Continuer ?"))) return;
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) { toast.error("Session expirée"); return; }
+      try {
+        const res = await fetch("/api/rooftop/mews-payment/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ paymentId: p.id }),
+        });
+        const json = await res.json();
+        // Annulation Mews refusée (note clôturée p.ex.) → on NE retire pas la ligne.
+        if (!res.ok || !json.ok) { toast.error(json.error || "Annulation Mews impossible — à corriger dans le PMS"); return; }
+      } catch {
+        toast.error("Annulation Mews échouée (réseau) — ligne conservée"); return;
+      }
+    }
     setPayments(prev => prev.filter(x => x.id !== p.id));
     await supabase.from("rooftop_order_payments").delete().eq("id", p.id);
   };
