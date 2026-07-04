@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useSelectedHotel } from '@/context/SelectedHotelContext';
+import { useAuth } from '@/context/AuthContext';
 
 export type Hotel = { id: string; nom: string; [key: string]: unknown };
 
@@ -18,14 +19,26 @@ export type Hotel = { id: string; nom: string; [key: string]: unknown };
  */
 export function useHotelScope(select: string = 'id, nom') {
   const { selectedHotelId, setSelectedHotelId, initialized } = useSelectedHotel();
+  const { user, isLoading } = useAuth();
   const [hotels, setHotels] = useState<Hotel[]>([]);
 
+  // Charge la liste des hôtels UNE FOIS LA SESSION AUTH PRÊTE. Sinon (bug mobile /
+  // tablette) le fetch pouvait partir avant la restauration de session → RLS
+  // renvoie une liste vide, sans retry → `currentHotel` restait nul → menu du rail
+  // incomplet (items conditionnés par l'hôtel masqués) jusqu'à un rechargement.
+  // On dépend de `isLoading`/`user?.id` pour (re)fetcher dès que l'auth est prête
+  // et à chaque changement d'utilisateur (login/logout).
   useEffect(() => {
+    if (isLoading) return;
+    let cancelled = false;
     supabase
       .from('hotels')
       .select(select)
-      .then(({ data }) => setHotels((data as unknown as Hotel[]) || []));
-  }, [select]);
+      .then(({ data }) => {
+        if (!cancelled) setHotels((data as unknown as Hotel[]) || []);
+      });
+    return () => { cancelled = true; };
+  }, [select, isLoading, user?.id]);
 
   // Dernier recours : si l'init du contexte est terminée (auth chargée) et que
   // l'user n'a AUCUN hôtel attribué (ex. superadmin), on retombe sur le 1er hôtel.
