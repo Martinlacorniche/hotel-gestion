@@ -367,6 +367,20 @@ export async function addExternalPayment(params: {
 // 'Canceled'. Corps À LA RACINE : { PaymentId, State }. Vérifié prod 2026-07-04
 // (200). Échoue si le paiement est déjà sur une note clôturée côté PMS — dans ce
 // cas la correction doit se faire à la main dans Mews.
-export async function cancelPayment(paymentId: string): Promise<void> {
-  await callMews('payments/updateState', { PaymentId: paymentId, State: 'Canceled' });
+// IDEMPOTENT : si le paiement est DÉJÀ annulé, Mews renvoie une transition
+// invalide état→même état (ex. « ...de "Annulé" à "Annulé" ») — on considère
+// l'annulation faite plutôt que d'échouer. Détection indépendante de la langue :
+// on compare les deux états cités dans le message (identiques = no-op).
+export async function cancelPayment(paymentId: string): Promise<{ alreadyCanceled: boolean }> {
+  try {
+    await callMews('payments/updateState', { PaymentId: paymentId, State: 'Canceled' });
+    return { alreadyCanceled: false };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '';
+    const states = [...msg.matchAll(/["'«»“”]([^"'«»“”]+)["'«»“”]/g)].map(m => m[1].trim().toLowerCase());
+    if (states.length >= 2 && states[states.length - 1] === states[states.length - 2]) {
+      return { alreadyCanceled: true };
+    }
+    throw e;
+  }
 }
