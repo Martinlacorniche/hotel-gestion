@@ -347,19 +347,18 @@ export async function addExternalPayment(params: {
   notes?: string;
 }): Promise<{ id: string | null }> {
   const { accountId, grossValue, type, currency = 'EUR', externalIdentifier, notes } = params;
-  const res = await callMews<{ Payments?: Array<{ Id?: string }>; Payment?: { Id?: string }; Id?: string }>(
+  // Corps À LA RACINE (pas enveloppé dans Payments[]). Amount EXIGE TaxCodes,
+  // même vide pour un règlement sans taxe. Environnement gross (TTC) → GrossValue.
+  // Vérifié en prod le 2026-07-04 : 200 { ExternalPaymentId }.
+  const res = await callMews<{ ExternalPaymentId?: string }>(
     'payments/addExternal',
     {
-      Payments: [{
-        AccountId: accountId,
-        Amount: { Currency: currency, GrossValue: grossValue },
-        Type: type,
-        ...(externalIdentifier ? { ExternalIdentifier: externalIdentifier } : {}),
-        ...(notes ? { Notes: notes } : {}),
-      }],
+      AccountId: accountId,
+      Amount: { Currency: currency, GrossValue: grossValue, TaxCodes: [] },
+      Type: type,
+      ...(externalIdentifier ? { ExternalIdentifier: externalIdentifier } : {}),
+      ...(notes ? { Notes: notes } : {}),
     },
   );
-  // La réponse peut arriver sous plusieurs formes selon la version connector.
-  const id = res.Payments?.[0]?.Id ?? res.Payment?.Id ?? res.Id ?? null;
-  return { id };
+  return { id: res.ExternalPaymentId ?? null };
 }
