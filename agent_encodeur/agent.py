@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import sys
 import time
 from datetime import datetime, timezone
@@ -208,6 +209,30 @@ def setup_encoder() -> None:
 _encoder_status: dict[str, Any] = {"ok": bool(USE_REAL_ENCODER), "detail": None}
 _last_heartbeat = 0.0
 HEARTBEAT_INTERVAL_SEC = 10.0
+
+# ── Anti-veille système ───────────────────────────────────────────────────────
+# Le PC réception doit rester joignable 24/7 pour encoder les clés (check-ins de
+# nuit compris). Incident 2026-07-04 : quelqu'un a cliqué « Mettre en veille » au
+# lieu de « Verrouiller » en partant → PC endormi 22h04→06h22, aucune clé encodée
+# de la nuit. Tant que l'agent tourne, on interdit à Windows de dormir via
+# SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED). L'écran peut
+# toujours s'éteindre ; seule la mise en veille système est bloquée.
+_ES_CONTINUOUS = 0x80000000
+_ES_SYSTEM_REQUIRED = 0x00000001
+
+
+def prevent_sleep() -> None:
+    """Empêche la veille système tant que l'agent tourne (Windows uniquement)."""
+    if platform.system() != "Windows":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED
+        )
+    except Exception:
+        log.debug("prevent_sleep échec (non bloquant)")
 
 
 def send_heartbeat(force: bool = False) -> None:
@@ -428,10 +453,12 @@ def main_loop() -> None:
     except Exception:
         log.exception("Reclaim échec")
 
+    prevent_sleep()
     send_heartbeat(force=True)
 
     while True:
         try:
+            prevent_sleep()
             send_heartbeat()
             job = claim_next_job()
             if job is None:
