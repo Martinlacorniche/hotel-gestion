@@ -27,7 +27,7 @@ type Order = {
 };
 const ORDER_COLS = "id,table_id,reservation_id,couvert_nom,statut,total,payment_method,room_ref,numero,client_nom,client_email";
 type ResaLite = { id: string; nom: string; couverts: number; heure: string; table_id: string | null; presence: string | null };
-type Payment = { id: string; method: string; amount: number; room_ref: string | null };
+type Payment = { id: string; method: string; amount: number; room_ref: string | null; mews_payment_id?: string | null };
 type Cloture = {
   nbAdditions: number;
   totalTtc: number;
@@ -178,7 +178,7 @@ export function PosTab({ hotelId }: { hotelId: string }) {
     setBusy(true);
     const [{ data }, { data: pays }] = await Promise.all([
       supabase.from("rooftop_order_items").select("id,source,ref_id,nom,prix,qty,tva_type").eq("order_id", order.id).order("created_at"),
-      supabase.from("rooftop_order_payments").select("id,method,amount,room_ref").eq("order_id", order.id).order("created_at"),
+      supabase.from("rooftop_order_payments").select("id,method,amount,room_ref,mews_payment_id").eq("order_id", order.id).order("created_at"),
     ]);
     setBusy(false);
     setItems(((data as OrderRow[]) || []).map(r => ({ ...r, prix: Number(r.prix) })));
@@ -230,6 +230,28 @@ export function PosTab({ hotelId }: { hotelId: string }) {
   const paid = payments.reduce((s, p) => s + p.amount, 0);
   const remaining = round2(total - paid);
 
+  // Push d'un règlement vers Mews (payments/addExternal côté serveur). Best-effort :
+  // le règlement local est déjà écrit ; ici on ne fait qu'y refléter la synchro.
+  const syncPaymentToMews = async (paymentId: string) => {
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) { toast.error("Règlement OK, mais session expirée pour la synchro Mews"); return; }
+      const res = await fetch("/api/rooftop/mews-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ paymentId }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) { toast.error("Règlement OK, mais non synchronisé dans Mews"); return; }
+      if (json.mewsPaymentId) {
+        setPayments(prev => prev.map(p => p.id === paymentId ? { ...p, mews_payment_id: json.mewsPaymentId } : p));
+      }
+    } catch {
+      toast.error("Règlement OK, mais push Mews échoué (réseau)");
+    }
+  };
+
   const addPayment = async () => {
     if (!active) return;
     if (!payMethod) { toast.error("Choisir un mode de paiement"); return; }
@@ -241,12 +263,18 @@ export function PosTab({ hotelId }: { hotelId: string }) {
     const { data, error } = await supabase.from("rooftop_order_payments").insert({
       order_id: active.id, hotel_id: hotelId, date_service: date,
       method: payMethod, amount: amt, room_ref: payMethod === "chambre" ? roomRef.trim() : null,
-    }).select("id,method,amount,room_ref").single();
+    }).select("id,method,amount,room_ref,mews_payment_id").single();
     if (error) { setBusy(false); toast.error(error.message || "Erreur"); return; }
-    const next = [...payments, { ...(data as Payment), amount: Number((data as Payment).amount) }];
+    const row = data as Payment;
+    const next = [...payments, { ...row, amount: Number(row.amount) }];
     setPayments(next);
     setPayAmount(""); setPayMethod(null); setRoomRef("");
     const newPaid = next.reduce((s, p) => s + p.amount, 0);
+
+    // Consigner le règlement dans Mews (TPE/espèces uniquement ; le transfert
+    // chambre serait une charge, non poussée). Best-effort : n'échoue jamais
+    // l'encaissement, le règlement local reste la source.
+    if (row.method === "tpe" || row.method === "espece") void syncPaymentToMews(row.id);
 
     if (newPaid + 0.005 >= total) {
       // Addition soldée → verrouillée.
@@ -269,6 +297,9 @@ export function PosTab({ hotelId }: { hotelId: string }) {
   // Retirer un règlement saisi par erreur (tant que l'addition n'est pas verrouillée).
   const removePayment = async (p: Payment) => {
     if (!active || active.statut === "encaissee") return;
+    // Déjà consigné dans Mews : le retrait local ne l'annule PAS côté PMS.
+    if (p.mews_payment_id && !(await confirmDialog(
+      "Ce règlement est déjà enregistré dans Mews. Le retirer ici ne l'annule pas côté Mews (à corriger à la main dans le PMS). Continuer ?"))) return;
     setPayments(prev => prev.filter(x => x.id !== p.id));
     await supabase.from("rooftop_order_payments").delete().eq("id", p.id);
   };

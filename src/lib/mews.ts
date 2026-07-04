@@ -1,6 +1,9 @@
-// Client Mews Connector API — LECTURE SEULE.
+// Client Mews Connector API.
 // Établissement : Hôtel Les Voiles (prod, https://api.mews.com).
-// On ne fait qu'observer : aucune écriture vers Mews.
+// Majoritairement LECTURE (occupation, revenu). UNE écriture cadrée :
+// enregistrer un paiement déjà encaissé ailleurs (TPE/espèces du POS Rooftop)
+// via payments/addExternal — cf. addExternalPayment plus bas. Aucune charge/
+// conso n'est poussée (orders/add reste fermé côté scope Mews).
 //
 // Scope du connecteur (vérifié 2026-06-23) : reservations/getAll et
 // resources/getAll OK avec extent minimal ; adresses / pièces d'identité
@@ -324,4 +327,39 @@ export async function getMonthlyRevenue(now: Date = new Date(), horizon = 6): Pr
     caHt: r2(agg[key].caHt),
     hebergTtc: r2(agg[key].hebergTtc),
   }));
+}
+
+// ── ÉCRITURE : enregistrer un paiement externe dans Mews ─────────────────────
+// payments/addExternal N'ENCAISSE RIEN : il consigne dans Mews un règlement
+// déjà pris ailleurs (TPE physique ou espèces). Type OBLIGATOIRE en
+// environnement légal français : 'Cash' (espèces) ou 'CreditCard' (TPE carte).
+// Le paiement se rattache à un compte Mews (AccountId), pas à une note précise.
+// Vérifié en prod le 2026-07-04 (scope écriture ouvert). Cf. mémoire
+// project_mews_occupancy / project_rooftop_pos_resa.
+export type MewsExternalPaymentType = 'Cash' | 'CreditCard';
+
+export async function addExternalPayment(params: {
+  accountId: string;
+  grossValue: number;
+  type: MewsExternalPaymentType;
+  currency?: string;
+  externalIdentifier?: string;
+  notes?: string;
+}): Promise<{ id: string | null }> {
+  const { accountId, grossValue, type, currency = 'EUR', externalIdentifier, notes } = params;
+  const res = await callMews<{ Payments?: Array<{ Id?: string }>; Payment?: { Id?: string }; Id?: string }>(
+    'payments/addExternal',
+    {
+      Payments: [{
+        AccountId: accountId,
+        Amount: { Currency: currency, GrossValue: grossValue },
+        Type: type,
+        ...(externalIdentifier ? { ExternalIdentifier: externalIdentifier } : {}),
+        ...(notes ? { Notes: notes } : {}),
+      }],
+    },
+  );
+  // La réponse peut arriver sous plusieurs formes selon la version connector.
+  const id = res.Payments?.[0]?.Id ?? res.Payment?.Id ?? res.Id ?? null;
+  return { id };
 }
