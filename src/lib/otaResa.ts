@@ -37,7 +37,8 @@ export type OtaResa = {
   firstNightAmount: string | null; // montant 1ère nuit (récap), pour l'annulation hors délai
   nights: number | null;
   guests: number | null;
-  roomType: string | null;        // "Chambre Double - Confort"
+  roomType: string | null;        // "Chambre Double - Confort" / "Double room - Superior…"
+  breakfast: boolean | null;      // petit-déjeuner inclus ? (Prestation)
   ratePlan: string | null;        // "OTA BB"
   amount: string | null;          // "112,50 €"
   chargeAmount: string | null;    // montant à débiter sur la carte (résa directe NANR)
@@ -106,11 +107,21 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
   const arrival = fieldAfter(lines, /^Arrivée\s*:/i);
   const departure = fieldAfter(lines, /^Départ\s*:/i);
 
-  // Chambre : ligne "1 Chambre Double - Confort" (récap) → sans le compteur.
+  // Chambre : ligne récap "1 Chambre Double…" (FR) ou "1 Double room - Superior…" (EN) →
+  // sans le compteur. On exige un chiffre en tête (ligne du récapitulatif) et on exclut
+  // les lignes petit-déj / taxe.
   let roomType: string | null = null;
   for (const l of lines) {
-    const m = l.match(/^(?:\d+\s+)?(Chambre\s+.+)$/i);
-    if (m && !/OTA/i.test(m[1])) { roomType = m[1].trim(); break; }
+    const m = l.match(/^\d+\s+(.*(?:chambre|\broom\b|suite|twin|studio).*)$/i);
+    if (m && !/petit|déjeuner|breakfast|\btax/i.test(m[1])) { roomType = m[1].trim(); break; }
+  }
+
+  // Petit-déjeuner inclus ? (champ « Prestation »). "Room only" = non.
+  const prestation = fieldAfter(lines, /^Prestation\s*:/i);
+  let breakfast: boolean | null = null;
+  if (prestation) {
+    if (/room only|sans petit|logement seul|seule/i.test(prestation)) breakfast = false;
+    else if (/petit[- ]?déjeuner|breakfast|demi[- ]?pension|pension compl/i.test(prestation)) breakfast = true;
   }
 
   const nightsRaw = fieldAfter(lines, /^Durée\s*:/i);
@@ -192,7 +203,7 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
     cancelDateISO, freeCancelDaysBefore, penalty, firstNightAmount,
     nights: nightsRaw ? (parseInt(nightsRaw, 10) || null) : null,
     guests: guestsRaw ? (parseInt(guestsRaw, 10) || null) : null,
-    roomType, ratePlan, chargeAmount,
+    roomType, breakfast, ratePlan, chargeAmount,
     amount: fieldAfter(lines, /^Montant total du séjour/i),
     refundable, cancelText, genius, payment, vccChargeableFrom, specialRequests,
   };
@@ -218,6 +229,9 @@ function shortRate(rp: string | null): string | null {
 
 export function controlNote(r: OtaResa, dejaVenu: boolean | null, cityTax?: number | null): string {
   const bits: string[] = [];
+  if (r.roomType) bits.push(r.roomType);
+  if (r.breakfast === true) bits.push('PDJ INCLUS');
+  else if (r.breakfast === false) bits.push('SANS PDJ');
   const rl = shortRate(r.ratePlan);
   // On n'affiche le libellé tarif que s'il apporte + que le Flex/NANR déjà montré ci-dessous.
   if (rl && rl !== 'FLEXIBLE' && rl !== 'NANR') bits.push(rl);
