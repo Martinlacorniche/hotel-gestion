@@ -281,7 +281,7 @@ export function controlNote(
   else if (r.refundable === false) bits.push(`${chan}NANR`);
   if (r.payment === 'vcc') {
     bits.push(r.vccChargeableFrom ? `VCC à déb. ${ddmm(r.vccChargeableFrom)}` : 'VCC');
-    if (tsByAgency) bits.push('TS incluse (prise en charge agence — ne PAS facturer client)');
+    if (tsByAgency) bits.push('TS incluse selon le mail de prise en charge Djoca (à vérifier — ne PAS facturer client)');
     else bits.push(cityTax != null ? `RSP TS ${cityTax.toFixed(2).replace('.', ',')} €` : 'RSP TS');
   } else if (r.payment === 'charge_card') {
     bits.push(`DÉBITER LA CARTE CLIENT${r.amount ? ` ${r.amount}` : ''}`);
