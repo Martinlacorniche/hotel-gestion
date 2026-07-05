@@ -42,11 +42,11 @@ export type MailInput = {
 };
 
 export type MailCategory =
-  | 'spam_alert' | 'resa_ota' | 'facture' | 'candidature'
+  | 'spam_alert' | 'resa_ota' | 'facture' | 'facture_ota' | 'candidature'
   | 'commercial' | 'client_msg' | 'autre';
 
 export type MailAction =
-  | 'delete' | 'resa_control' | 'route_pennylane' | 'draft_reply'
+  | 'delete' | 'resa_control' | 'route_pennylane' | 'invoice_note' | 'draft_reply'
   | 'commercial_followup' | 'none';
 
 export type Classification = {
@@ -112,6 +112,12 @@ export function classifyMail(mail: MailInput): Classification {
   // 3) Facture fournisseur en PJ -> routage Pennylane (l'entité se lira dans le PDF)
   if (mail.hasAttachments && (rx.facture.test(hay) || looksLikeFacturePdf(names))) {
     return { category: 'facture', action: 'route_pennylane', reason: 'Facture fournisseur (PJ PDF)', detail: { attachments: names } };
+  }
+
+  // 3b) OTA (Hotelbeds…) réclame une copie de facture -> note « facture à envoyer » (compta).
+  if (/hotelbeds/i.test(from) && (/booking ref|invoice|facture/i.test(hay))) {
+    const ref = subj.match(/Ref\.?\s*([0-9][0-9A-Za-z-]{4,})/i)?.[1] || null;
+    return { category: 'facture_ota', action: 'invoice_note', reason: 'Hotelbeds réclame la facture', detail: { ota: 'Hotelbeds', ref } };
   }
 
   // 4) Candidature / alternance -> brouillon « effectifs complets »

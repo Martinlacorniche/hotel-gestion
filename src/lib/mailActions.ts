@@ -283,6 +283,16 @@ async function actRoutePennylane(cfg: HotelMailConfig, row: LogRow): Promise<Exe
   return { status: 'executed', result: { kind: 'pennylane', entity, address, attachment: pdf.name } };
 }
 
+// invoice_note : un OTA (Hotelbeds…) réclame la facture d'une résa → produit une note
+// « facture à envoyer » à coller sur la résa (aucun effet sortant). Corniche ni Voiles Mews.
+async function actInvoiceNote(_cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
+  const ota = (row.detail?.ota as string) || 'OTA';
+  const ref = (row.detail?.ref as string)
+    || (row.subject || '').match(/Ref\.?\s*([0-9][0-9A-Za-z-]{4,})/i)?.[1] || '';
+  const note = `📄 FACTURE À ENVOYER à ${ota}${ref ? ` — résa ${ref}` : ''}`;
+  return { status: 'executed', result: { kind: 'invoice_note', note, ota, ref } };
+}
+
 // ── Dispatch ────────────────────────────────────────────────────────────────
 
 const NOT_WIRED: Record<string, string> = {
@@ -295,6 +305,7 @@ export async function executeRow(cfg: HotelMailConfig, row: LogRow): Promise<Exe
       case 'delete':              return await actDelete(cfg, row);
       case 'draft_reply':         return await actDraftReply(cfg, row);
       case 'resa_control':        return await actResaControl(cfg, row);
+      case 'invoice_note':        return await actInvoiceNote(cfg, row);
       case 'commercial_followup': return await actCommercialFollowup(cfg, row);
       case 'route_pennylane':     return await actRoutePennylane(cfg, row);
       default:
