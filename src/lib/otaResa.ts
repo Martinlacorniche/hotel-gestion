@@ -12,9 +12,10 @@
 
 // vcc         = carte virtuelle (Booking VCC OU Expedia Collect / Expedia Virtual Card) → CCV
 //               couvre l'hébergement, PAS la taxe de séjour → TS à encaisser sur place.
-// hotel_collect = règlement sur place / prise en charge → tout encaisser sur place.
-// prepaid     = payé en ligne à l'OTA. ota_billed = facturé à l'OTA sans CCV (rare).
-export type OtaPayment = 'vcc' | 'hotel_collect' | 'prepaid' | 'ota_billed' | 'unknown';
+// hotel_collect = règlement sur place / prise en charge (OTA) → tout encaisser sur place.
+// on_site     = réservation DIRECTE (moteur de l'hôtel) non prépayée → tout régler sur place.
+// prepaid     = payé en ligne. ota_billed = facturé à l'OTA sans CCV (rare).
+export type OtaPayment = 'vcc' | 'hotel_collect' | 'on_site' | 'prepaid' | 'ota_billed' | 'unknown';
 
 export type OtaResa = {
   ref: string | null;             // Réf. D-EDGE (ex. 7QL1DE)
@@ -145,6 +146,13 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
   } else if (/devra être facturé à/i.test(hay)) {
     payment = 'ota_billed';
   }
+  // Réservation DIRECTE (moteur de l'hôtel, ex. « Hôtels Toulon Bord De Mer ») : pas de CCV.
+  // « Montant payé en ligne » > 0 → prépayé ; sinon → tout à régler sur place.
+  if (payment === 'unknown' && /Moteur de réservation/i.test(hay)) {
+    const paidRaw = fieldAfter(lines, /^Montant payé en ligne/i) || '0';
+    const paid = parseFloat(paidRaw.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+    payment = paid > 0 ? 'prepaid' : 'on_site';
+  }
 
   const comm = fieldAfter(lines, /^Commentaires\s*:/i);
   const specialRequests = comm && !/carte de crédit virtuelle/i.test(comm) ? comm : null;
@@ -193,9 +201,21 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
 // couvre que l'hébergement). Montant exact = total Mews − montant chargé sur la CCV —
 // non calculable à la résa (CCV activée plus tard), d'où « à vérifier ». Hors VCC
 // (prépayé plein / facturé OTA) on n'affirme rien sur la TS : la réception juge.
+// Libellé tarif court pour la note (les libellés directs sont verbeux).
+function shortRate(rp: string | null): string | null {
+  if (!rp) return null;
+  const s = rp.toLowerCase();
+  if (/tarifs? multiples/.test(s)) return 'TARIFS MULTIPLES';
+  if (/non[\s-]?remb|nanr/.test(s)) return 'NANR';
+  if (/flex/.test(s)) return 'FLEXIBLE';
+  return rp.split(/\s+/).slice(0, 4).join(' ').toUpperCase();
+}
+
 export function controlNote(r: OtaResa, dejaVenu: boolean | null, cityTax?: number | null): string {
   const bits: string[] = [];
-  if (r.ratePlan) bits.push(r.ratePlan.toUpperCase());
+  const rl = shortRate(r.ratePlan);
+  // On n'affiche le libellé tarif que s'il apporte + que le Flex/NANR déjà montré ci-dessous.
+  if (rl && rl !== 'FLEXIBLE' && rl !== 'NANR') bits.push(rl);
   if (r.refundable === true) bits.push('FLEX (annul. gratuite)');
   else if (r.refundable === false) bits.push('NANR (non remb.)');
   if (r.payment === 'vcc') {
@@ -206,8 +226,10 @@ export function controlNote(r: OtaResa, dejaVenu: boolean | null, cityTax?: numb
       : 'TS sur place (à vérifier)');
   } else if (r.payment === 'hotel_collect') {
     bits.push('HÔTEL COLLECT — tout encaisser sur place');
+  } else if (r.payment === 'on_site') {
+    bits.push('À RÉGLER SUR PLACE (héberg. + taxe séjour)');
   } else if (r.payment === 'prepaid') {
-    bits.push('PRÉPAYÉ');
+    bits.push('PRÉPAYÉ en ligne');
   } else if (r.payment === 'ota_billed') {
     bits.push('FACTURÉ OTA');
   }
