@@ -96,7 +96,8 @@ export function classifyMail(mail: MailInput): Classification {
     const kind = rx.resaCancel.test(subj) ? 'annulation' : rx.resaMod.test(subj) ? 'modification' : 'nouvelle';
     return {
       category: 'resa_ota',
-      action: kind === 'annulation' ? 'none' : 'resa_control',
+      // Annulation AUSSI en contrôle : vérifier si annulé HORS DÉLAI → à facturer (Martin 2026-07-05).
+      action: 'resa_control',
       reason: `Réservation OTA (${kind})`,
       detail: { kind, ref: dedgeRef(subj) },
     };

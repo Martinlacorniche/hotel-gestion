@@ -1,9 +1,10 @@
 "use client";
 
-// Gestionnaire de mails réception — VUE JOURNAL (superadmin uniquement, Phase 1).
-// Montre ce que l'assistant CLASSERAIT (dry-run) sur la boîte de l'hôtel COURANT,
-// SANS rien supprimer ni envoyer. L'hôtel suit le switch GLOBAL du menu burger
-// (useSelectedHotel) — pas de sélecteur in-page. Dispo pour Voiles + Corniche.
+// Gestionnaire de mails réception — VUE JOURNAL + VALIDATION (superadmin, Phase 2).
+// Montre ce que l'assistant CLASSE sur la boîte de l'hôtel COURANT, et permet de
+// VALIDER / IGNORER chaque action (human-in-the-loop). Le mode par catégorie
+// (off | suggest | auto) se règle en haut. L'hôtel suit le switch GLOBAL du burger.
+// Dispo pour Voiles + Corniche. ⚠️ Mews (déjà venu/tarif) = Voiles uniquement.
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -14,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { hotelConfig } from "@/lib/mailAssistant";
-import { Mail, Loader2, RefreshCw, Inbox } from "lucide-react";
+import { Mail, Loader2, RefreshCw, Inbox, Check, X, ExternalLink, Copy } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
 import toast from "react-hot-toast";
@@ -33,7 +34,12 @@ type Row = {
   detail: Record<string, unknown>;
   status: string;
   dry_run: boolean;
+  result: Record<string, unknown> | null;
+  action_error: string | null;
+  decided_at: string | null;
 };
+
+type Mode = "off" | "suggest" | "auto";
 
 const CAT_META: Record<string, { label: string; badge: string }> = {
   spam_alert:  { label: "Alerte / spam",  badge: "bg-rose-50 text-rose-700 ring-rose-200" },
@@ -54,11 +60,28 @@ const ACTION_LABEL: Record<string, string> = {
   none: "— laisser à l’humain",
 };
 
+const MODE_LABEL: Record<Mode, string> = { off: "Off", suggest: "Valider", auto: "Auto" };
+
 async function authHeaders(): Promise<Record<string, string> | null> {
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
   if (!token) return null;
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+}
+
+// Résumé lisible du résultat d'exécution.
+function resultSummary(r: Row): string | null {
+  const res = r.result || {};
+  if (r.status === "skipped") return "Ignoré";
+  if (r.status === "executed") {
+    if (res.note) return "📋 Note prête";
+    if (res.movedTo === "deleteditems") return "🗑️ Mis en corbeille";
+    if (res.kind === "commercial") return res.mode === "created" ? "📇 Fiche créée" : "📇 Fiche complétée";
+    if (res.kind === "pennylane") return `🧾 → Pennylane (${String(res.entity)})`;
+    if (res.draftId) return "✍️ Brouillon créé";
+    return "Fait";
+  }
+  return null;
 }
 
 export default function MailAssistantPage() {
@@ -67,14 +90,14 @@ export default function MailAssistantPage() {
   const { selectedHotelId } = useSelectedHotel();
   const isSuperadmin = user?.role === "superadmin";
 
-  // L'hôtel courant (switch global du burger) → config boîte + flag Mews.
   const cfg = hotelConfig(selectedHotelId);
 
   const [rows, setRows] = useState<Row[]>([]);
+  const [modes, setModes] = useState<Record<string, Mode>>({});
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Garde d'accès : superadmin uniquement (page discrète, hors menu).
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.push("/login"); return; }
@@ -85,13 +108,17 @@ export default function MailAssistantPage() {
     setLoading(true);
     const headers = await authHeaders();
     if (!headers) { setLoading(false); return; }
-    const resp = await fetch(`/api/mail-assistant/journal?hotel=${key}`, { headers });
-    const j = await resp.json();
-    if (resp.ok && j.ok) setRows(j.rows as Row[]); else toast.error(j.error || "Erreur chargement");
+    const [jr, cr] = await Promise.all([
+      fetch(`/api/mail-assistant/journal?hotel=${key}`, { headers }),
+      fetch(`/api/mail-assistant/config?hotel=${key}`, { headers }),
+    ]);
+    const jj = await jr.json();
+    const cj = await cr.json();
+    if (jr.ok && jj.ok) setRows(jj.rows as Row[]); else toast.error(jj.error || "Erreur chargement");
+    if (cr.ok && cj.ok) setModes(cj.modes as Record<string, Mode>);
     setLoading(false);
   }, []);
 
-  // Recharge quand on bascule d'hôtel via le menu.
   useEffect(() => {
     if (!isSuperadmin) return;
     if (cfg) load(cfg.key); else { setRows([]); setLoading(false); }
@@ -105,10 +132,45 @@ export default function MailAssistantPage() {
     const resp = await fetch(`/api/mail-assistant/journal?hotel=${cfg.key}`, { method: "POST", headers });
     const j = await resp.json();
     if (resp.ok && j.ok) {
-      toast.success(`Tri effectué (${j.logged} nouveau·x) — dry-run, rien supprimé`);
+      toast.success(`Tri effectué (${j.logged} nouveau·x)`);
       await load(cfg.key);
     } else toast.error(j.error || "Échec du tri");
     setRunning(false);
+  };
+
+  const changeMode = async (category: string, mode: Mode) => {
+    if (!cfg) return;
+    setModes((m) => ({ ...m, [category]: mode }));
+    const headers = await authHeaders();
+    if (!headers) return;
+    const resp = await fetch(`/api/mail-assistant/config?hotel=${cfg.key}`, {
+      method: "PUT", headers, body: JSON.stringify({ category, mode }),
+    });
+    if (!resp.ok) { toast.error("Échec màj mode"); await load(cfg.key); }
+  };
+
+  const decide = async (row: Row, decision: "validate" | "skip") => {
+    if (!cfg) return;
+    setBusyId(row.id);
+    const headers = await authHeaders();
+    if (!headers) { setBusyId(null); return; }
+    const resp = await fetch(`/api/mail-assistant/execute?hotel=${cfg.key}`, {
+      method: "POST", headers, body: JSON.stringify({ id: row.id, decision }),
+    });
+    const j = await resp.json();
+    if (resp.ok && j.ok) {
+      toast.success(decision === "skip" ? "Ignoré" : "Action exécutée");
+      await load(cfg.key);
+    } else {
+      toast.error(j.error || "Échec");
+      await load(cfg.key); // recharge pour afficher l'éventuelle erreur d'action
+    }
+    setBusyId(null);
+  };
+
+  const copyNote = async (note: string) => {
+    try { await navigator.clipboard.writeText(note); toast.success("Note copiée"); }
+    catch { toast.error("Copie impossible"); }
   };
 
   if (authLoading || !isSuperadmin) {
@@ -122,7 +184,7 @@ export default function MailAssistantPage() {
       <PageHeader
         icon={Mail}
         title="Assistant mails — journal"
-        subtitle={cfg ? `Aperçu (dry-run) · ${cfg.nom} · ${cfg.mailbox}` : "Aperçu (dry-run)"}
+        subtitle={cfg ? `${cfg.nom} · ${cfg.mailbox}${cfg.mews ? " · Mews" : ""}` : "Aperçu"}
       />
 
       {!cfg ? (
@@ -140,8 +202,40 @@ export default function MailAssistantPage() {
               {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               Trier maintenant
             </Button>
-            <span className="text-xs text-slate-400">Dry-run — rien n’est supprimé ni envoyé.</span>
+            <span className="text-xs text-slate-400">Valider / Ignorer chaque action ci-dessous.</span>
           </div>
+
+          {/* Modes par catégorie (off / valider / auto) */}
+          {Object.keys(modes).length > 0 && (
+            <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Modes par catégorie</div>
+              <div className="flex flex-wrap gap-3">
+                {Object.keys(modes).map((cat) => (
+                  <div key={cat} className="flex items-center gap-1.5">
+                    <span className="text-xs text-slate-600">{(CAT_META[cat] || CAT_META.autre).label}</span>
+                    <div className="inline-flex rounded-lg ring-1 ring-slate-200 overflow-hidden">
+                      {(["off", "suggest", "auto"] as Mode[]).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => changeMode(cat, m)}
+                          className={`px-2 py-1 text-xs font-medium transition ${
+                            modes[cat] === m
+                              ? m === "off" ? "bg-slate-600 text-white" : m === "auto" ? "bg-amber-500 text-white" : "bg-[#004e7c] text-white"
+                              : "bg-white text-slate-500 hover:bg-slate-50"
+                          }`}
+                        >
+                          {MODE_LABEL[m]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 text-[11px] text-slate-400">
+                Off = action désactivée · Valider = attend ton clic · Auto = exécuté au tri (à activer une fois la catégorie éprouvée).
+              </div>
+            </div>
+          )}
 
           {rows.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-4">
@@ -166,27 +260,82 @@ export default function MailAssistantPage() {
                     <th className="text-left font-semibold px-3 py-2">De</th>
                     <th className="text-left font-semibold px-3 py-2">Objet</th>
                     <th className="text-left font-semibold px-3 py-2">Catégorie</th>
-                    <th className="text-left font-semibold px-3 py-2">Action proposée</th>
+                    <th className="text-left font-semibold px-3 py-2">Action</th>
+                    <th className="text-right font-semibold px-3 py-2">État</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {rows.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50/60">
-                      <td className="px-3 py-2 whitespace-nowrap text-slate-400 tabular-nums">
-                        {r.received_at ? format(parseISO(r.received_at), "dd/MM HH:mm", { locale: fr }) : "—"}
-                      </td>
-                      <td className="px-3 py-2 max-w-[10rem] truncate text-slate-600">{r.from_name || r.from_addr}</td>
-                      <td className="px-3 py-2 max-w-[16rem] truncate">{r.subject}</td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${(CAT_META[r.category] || CAT_META.autre).badge}`}>
-                          {(CAT_META[r.category] || CAT_META.autre).label}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-slate-600" title={r.reason || ""}>
-                        {ACTION_LABEL[r.proposed_action] || r.proposed_action}
-                      </td>
-                    </tr>
-                  ))}
+                  {rows.map((r) => {
+                    const mode = modes[r.category];
+                    const done = r.status === "executed" || r.status === "skipped";
+                    const actionable = !done && r.proposed_action !== "none" && mode !== "off";
+                    const summary = resultSummary(r);
+                    return (
+                      <tr key={r.id} className="hover:bg-slate-50/60 align-top">
+                        <td className="px-3 py-2 whitespace-nowrap text-slate-400 tabular-nums">
+                          {r.received_at ? format(parseISO(r.received_at), "dd/MM HH:mm", { locale: fr }) : "—"}
+                        </td>
+                        <td className="px-3 py-2 max-w-[10rem] truncate text-slate-600">{r.from_name || r.from_addr}</td>
+                        <td className="px-3 py-2 max-w-[16rem] truncate">{r.subject}</td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${(CAT_META[r.category] || CAT_META.autre).badge}`}>
+                            {(CAT_META[r.category] || CAT_META.autre).label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-slate-600" title={r.reason || ""}>
+                          {ACTION_LABEL[r.proposed_action] || r.proposed_action}
+                          {r.action_error && (
+                            <div className="text-[11px] text-rose-500 max-w-[14rem] whitespace-normal mt-0.5">{r.action_error}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          {actionable ? (
+                            <div className="inline-flex gap-1">
+                              <button
+                                onClick={() => decide(r, "validate")}
+                                disabled={busyId === r.id}
+                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 text-xs font-medium disabled:opacity-50"
+                              >
+                                {busyId === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                Valider
+                              </button>
+                              <button
+                                onClick={() => decide(r, "skip")}
+                                disabled={busyId === r.id}
+                                className="inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-slate-200 hover:bg-slate-50 text-slate-500 px-2 py-1 text-xs font-medium disabled:opacity-50"
+                              >
+                                <X className="w-3 h-3" />
+                                Ignorer
+                              </button>
+                            </div>
+                          ) : r.result?.note ? (
+                            <div className="inline-flex flex-col items-end gap-1 max-w-[18rem]">
+                              <span className="text-xs text-slate-700 font-medium whitespace-normal text-right">{String(r.result.note)}</span>
+                              <button
+                                onClick={() => copyNote(String(r.result?.note))}
+                                className="inline-flex items-center gap-1 rounded-lg bg-[#004e7c] hover:bg-[#003d61] text-white px-2 py-1 text-xs font-medium"
+                              >
+                                <Copy className="w-3 h-3" /> Copier la note
+                              </button>
+                            </div>
+                          ) : summary ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                              {summary}
+                              {r.result?.webLink ? (
+                                <a href={String(r.result.webLink)} target="_blank" rel="noreferrer" className="text-[#004e7c] hover:underline inline-flex items-center gap-0.5">
+                                  <ExternalLink className="w-3 h-3" /> Ouvrir
+                                </a>
+                              ) : null}
+                            </span>
+                          ) : mode === "off" ? (
+                            <span className="text-xs text-slate-300">désactivé</span>
+                          ) : (
+                            <span className="text-xs text-slate-300">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -384,3 +384,93 @@ export async function cancelPayment(paymentId: string): Promise<{ alreadyCancele
     throw e;
   }
 }
+
+// ── LECTURE : contrôle résa « déjà venu ? » (gestionnaire de mails, Voiles) ───
+// ⚠️ VOILES UNIQUEMENT (La Corniche n'est pas sous Mews). L'appelant doit gater sur
+// cfg.mews. Pièges (cf. memory project_assistant_mails_voiles) : filtres customers/
+// getAll au PLURIEL (LastNames), Extent SANS Documents/Addresses (sinon 401 RGPD).
+
+type MewsCustomer = { Id: string; FirstName?: string; LastName?: string; Email?: string };
+
+// Trouve un profil client par nom (option : prénom pour départager les homonymes).
+export async function findGuest(
+  firstName: string | null, lastName: string | null,
+): Promise<{ id: string; firstName: string; lastName: string; email: string } | null> {
+  if (!lastName) return null;
+  const data = await callMews<{ Customers: MewsCustomer[] }>('customers/getAll', {
+    LastNames: [lastName],
+    Extent: { Customers: true, Documents: false, Addresses: false },
+    Limitation: { Count: 100 },
+  });
+  const list = data.Customers || [];
+  if (!list.length) return null;
+  const fn = (firstName || '').trim().toLowerCase();
+  const match = fn ? list.find((c) => (c.FirstName || '').trim().toLowerCase() === fn) : null;
+  const c = match || list[0];
+  return { id: c.Id, firstName: c.FirstName || '', lastName: c.LastName || '', email: c.Email || '' };
+}
+
+type PastReservation = { Id: string; State: string; ScheduledEndUtc?: string; EndUtc?: string };
+
+// « Déjà venu » = au moins UNE réservation PASSÉE et TRAITÉE (séjour terminé) pour ce
+// client. Balayage par fenêtres de 90 j sur ~18 mois glissants (reservations/getAll
+// TimeFilter End, States Processed, extent minimal). S'arrête au 1er séjour trouvé.
+export async function hasPastStay(customerId: string, now: Date = new Date()): Promise<boolean> {
+  const WINDOW_MS = 90 * 24 * 3600e3;
+  const oldest = now.getTime() - 18 * 30 * 24 * 3600e3;
+  const nowIso = now.toISOString();
+  for (let end = now.getTime(); end > oldest; end -= WINDOW_MS) {
+    const start = Math.max(oldest, end - WINDOW_MS);
+    const data = await callMews<{ Reservations: PastReservation[] }>('reservations/getAll', {
+      CustomerIds: [customerId],
+      StartUtc: new Date(start).toISOString(),
+      EndUtc: new Date(end).toISOString(),
+      TimeFilter: 'End',
+      States: ['Processed'],
+      Extent: { Reservations: true },
+      Limitation: { Count: 100 },
+    });
+    for (const r of data.Reservations || []) {
+      const endUtc = r.ScheduledEndUtc || r.EndUtc;
+      if (endUtc && endUtc < nowIso) return true;
+    }
+  }
+  return false;
+}
+
+type UpcomingReservation = { Id: string; StartUtc?: string; ScheduledStartUtc?: string; Number?: string };
+
+// Retrouve LA réservation d'un client dont l'arrivée = arrivalISO (yyyy-mm-dd), pour la
+// relier à un mail D-Edge. Fenêtre ±3 j autour de l'arrivée ; match exact sur la date.
+export async function findReservation(customerId: string, arrivalISO: string): Promise<string | null> {
+  const day = new Date(`${arrivalISO}T12:00:00Z`).getTime();
+  const data = await callMews<{ Reservations: UpcomingReservation[] }>('reservations/getAll', {
+    CustomerIds: [customerId],
+    StartUtc: new Date(day - 3 * 24 * 3600e3).toISOString(),
+    EndUtc: new Date(day + 3 * 24 * 3600e3).toISOString(),
+    TimeFilter: 'Colliding',
+    Extent: { Reservations: true },
+    Limitation: { Count: 50 },
+  });
+  const list = data.Reservations || [];
+  const exact = list.find((r) => (r.ScheduledStartUtc || r.StartUtc || '').slice(0, 10) === arrivalISO);
+  return (exact || list[0])?.Id ?? null;
+}
+
+type TaxLineItem = { BillingName?: string; Amount?: { Currency?: string; GrossValue?: number } };
+
+// Somme des lignes « Taxe de séjour / City tax » d'une réservation (montant à encaisser
+// SUR PLACE quand le règlement est une CCV — la carte virtuelle ne couvre pas la TS).
+// Lu via orderItems/getAll (BillingName explicite, ex. « Taxe de séjour (Adultes) »).
+export async function cityTaxForReservation(reservationId: string): Promise<{ amount: number; currency: string } | null> {
+  const data = await callMews<{ OrderItems: TaxLineItem[] }>('orderItems/getAll', {
+    ServiceOrderIds: [reservationId],
+    Limitation: { Count: 200 },
+  });
+  const items = (data.OrderItems || []).filter((it) =>
+    /taxe de séjour|city tax|tourist tax/i.test(it.BillingName || ''));
+  if (!items.length) return null;
+  const amount = items.reduce((s, it) => s + (it.Amount?.GrossValue || 0), 0);
+  const currency = items[0].Amount?.Currency || 'EUR';
+  return { amount: Math.round(amount * 100) / 100, currency };
+}

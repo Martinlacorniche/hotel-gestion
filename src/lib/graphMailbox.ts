@@ -79,3 +79,56 @@ export async function listAttachmentNames(mailbox: string, id: string): Promise<
   );
   return (j.value || []).map((a) => a.name || '').filter(Boolean);
 }
+
+// Corps du mail en TEXTE (balises retirées), pour parsing D-Edge / lecture LLM.
+export async function getMessageText(mailbox: string, id: string): Promise<string> {
+  const m = await gm<{ body?: { content?: string } }>(mailbox, `/messages/${id}?$select=body`);
+  const raw = m.body?.content || '';
+  return raw
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, '\n')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+    .split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
+}
+
+// Déplacer un mail : destination = dossier bien connu ('deleteditems','archive','junkemail') ou id de dossier.
+export async function moveMessage(mailbox: string, id: string, destination: string): Promise<void> {
+  await gm(mailbox, `/messages/${id}/move`, { method: 'POST', body: JSON.stringify({ destinationId: destination }) });
+}
+
+export type FileAttachment = { id: string; name: string; contentType: string; size: number; contentBytes: string };
+
+// Pièces jointes FICHIER (avec contenu base64), pour lecture PDF / routage compta.
+export async function listFileAttachments(mailbox: string, id: string): Promise<FileAttachment[]> {
+  const j = await gm<{ value: Record<string, unknown>[] }>(mailbox, `/messages/${id}/attachments`);
+  return (j.value || [])
+    .filter((a) => a['@odata.type'] === '#microsoft.graph.fileAttachment')
+    .map((a) => ({
+      id: String(a.id), name: String(a.name || ''), contentType: String(a.contentType || ''),
+      size: Number(a.size || 0), contentBytes: String(a.contentBytes || ''),
+    }));
+}
+
+// Transférer un mail (garde les PJ) à un destinataire — ENVOI IMMÉDIAT.
+export async function forwardMessage(mailbox: string, id: string, to: string, comment: string): Promise<void> {
+  await gm(mailbox, `/messages/${id}/forward`, {
+    method: 'POST',
+    body: JSON.stringify({ comment, toRecipients: [{ emailAddress: { address: to } }] }),
+  });
+}
+
+// Créer un BROUILLON de réponse (reste dans Brouillons — RIEN n'est envoyé).
+// On préfixe notre texte au fil cité renvoyé par Graph. Renvoie l'id + le lien web du brouillon.
+export async function createReplyDraft(
+  mailbox: string, id: string, htmlPrepend: string,
+): Promise<{ draftId: string; webLink: string }> {
+  const draft = await gm<{ id: string; webLink?: string; body?: { content?: string } }>(
+    mailbox, `/messages/${id}/createReply`, { method: 'POST' },
+  );
+  const quoted = draft.body?.content || '';
+  await gm(mailbox, `/messages/${draft.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ body: { contentType: 'HTML', content: `${htmlPrepend}${quoted}` } }),
+  });
+  return { draftId: draft.id, webLink: draft.webLink || '' };
+}

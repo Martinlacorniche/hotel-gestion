@@ -20,7 +20,7 @@ export async function GET(req: Request) {
 
   let q = supabaseAdmin
     .from('assistant_mail_log')
-    .select('id, created_at, mailbox, from_addr, from_name, subject, received_at, category, proposed_action, reason, detail, status, dry_run')
+    .select('id, created_at, mailbox, from_addr, from_name, subject, received_at, category, proposed_action, reason, detail, status, dry_run, result, action_error, decided_at')
     .order('received_at', { ascending: false, nullsFirst: false })
     .limit(200);
   if (cfg) q = q.eq('mailbox', cfg.mailbox);

@@ -55,3 +55,8 @@ fix_crons_mews.local.sql
 
 # Scratchpad local (scripts d'explo, fichiers temporaires — peut contenir des secrets)
 scratchpad/
+
+# Secret Graph (assistant mails) — ne jamais committer
+.env.mails
+mailsecret*
+mail*voiles*.txt
