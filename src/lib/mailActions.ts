@@ -10,8 +10,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { moveMessage, createReplyDraft, getMessageText, listFileAttachments, forwardMessage } from '@/lib/graphMailbox';
-import { parseOtaResa, controlNote, cancellationNote } from '@/lib/otaResa';
+import { moveMessage, createReplyDraft, getMessageText, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
+import { parseOtaResa, controlNote, cancellationNote, parseAgencyTakeover, ddmm, type AgencyTakeover } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import type { HotelMailConfig, MailCategory } from '@/lib/mailAssistant';
 
@@ -133,7 +133,14 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
     }
   }
 
-  const note = controlNote(r, dejaVenu, cityTax);
+  // Prise en charge agence (Djoca) : si elle couvre la TS, ça PRIME sur le « RSP TS ».
+  let tsByAgency = false;
+  if (r.payment === 'vcc' && r.guestLast) {
+    const takeover = await findAgencyTakeover(cfg.mailbox, r.guestLast, r.arrivalISO).catch(() => null);
+    if (takeover?.tsCovered) tsByAgency = true;
+  }
+
+  const note = controlNote(r, dejaVenu, cityTax, tsByAgency);
   return {
     status: 'executed',
     result: {
@@ -283,6 +290,40 @@ async function actRoutePennylane(cfg: HotelMailConfig, row: LogRow): Promise<Exe
   return { status: 'executed', result: { kind: 'pennylane', entity, address, attachment: pdf.name } };
 }
 
+// Cherche une prise en charge agence (Djoca) dans la boîte, pour le client + l'arrivée
+// d'une résa. Sert à corriger la TS de la note résa (agence couvre la TS).
+async function findAgencyTakeover(
+  mailbox: string, guestLast: string, arrivalISO: string | null,
+): Promise<AgencyTakeover | null> {
+  const inbox = await listInbox(mailbox, 40);
+  const cands = inbox.filter((m) => /djocatravel/i.test(m.fromAddr) || /prise en charge/i.test(m.subject));
+  for (const m of cands) {
+    const body = await getMessageText(mailbox, m.id).catch(() => '');
+    const t = parseAgencyTakeover(m.subject, body);
+    const nameOk = t.guestLast && t.guestLast.toLowerCase() === guestLast.toLowerCase();
+    const dateOk = !arrivalISO || !t.checkInISO || t.checkInISO === arrivalISO;
+    if (nameOk && dateOk) return t;
+  }
+  return null;
+}
+
+// agency_note : prise en charge agence (Djoca) → note pour l'équipe (carte à débiter à
+// l'arrivée, ce que l'agence couvre). Aucun n° de carte complet stocké (4 derniers max).
+async function actAgencyNote(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
+  const body = await getMessageText(cfg.mailbox, row.message_id);
+  const t = parseAgencyTakeover(row.subject || '', body);
+  const parts = [`📌 PRISE EN CHARGE ${t.agency}`];
+  if (t.guestName) parts.push(t.guestName);
+  if (t.checkInISO) parts.push(`arr ${ddmm(t.checkInISO)}`);
+  if (t.room) parts.push(t.room);
+  parts.push(`DÉBITER LA CARTE AGENCE${t.cardLast4 ? ` ···${t.cardLast4}` : ''} à l’arrivée${t.debitAtArrival ? ' (pas de pré-auto)' : ''} — n° dans le mail`);
+  if (t.tsCovered) parts.push('TS incluse — NE PAS facturer au client');
+  return {
+    status: 'executed',
+    result: { kind: 'agency_note', note: parts.join(' · '), agency: t.agency, ref: t.ref, guest: t.guestName, cardLast4: t.cardLast4, tsCovered: t.tsCovered },
+  };
+}
+
 // invoice_note : un OTA (Hotelbeds…) réclame la facture d'une résa → produit une note
 // « facture à envoyer » à coller sur la résa (aucun effet sortant). Corniche ni Voiles Mews.
 async function actInvoiceNote(_cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
@@ -306,6 +347,7 @@ export async function executeRow(cfg: HotelMailConfig, row: LogRow): Promise<Exe
       case 'draft_reply':         return await actDraftReply(cfg, row);
       case 'resa_control':        return await actResaControl(cfg, row);
       case 'invoice_note':        return await actInvoiceNote(cfg, row);
+      case 'agency_note':         return await actAgencyNote(cfg, row);
       case 'commercial_followup': return await actCommercialFollowup(cfg, row);
       case 'route_pennylane':     return await actRoutePennylane(cfg, row);
       default:

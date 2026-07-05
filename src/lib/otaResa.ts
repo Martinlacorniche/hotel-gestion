@@ -217,28 +217,78 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
 // couvre que l'hébergement). Montant exact = total Mews − montant chargé sur la CCV —
 // non calculable à la résa (CCV activée plus tard), d'où « à vérifier ». Hors VCC
 // (prépayé plein / facturé OTA) on n'affirme rien sur la TS : la réception juge.
-export function controlNote(r: OtaResa, dejaVenu: boolean | null, cityTax?: number | null): string {
+// jj/mm depuis un ISO yyyy-mm-dd (sinon renvoie tel quel, ex. "check-in").
+export function ddmm(d: string | null): string {
+  return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : (d || '');
+}
+
+// Prise en charge AGENCE (Djocatravel…) sur une résa OTA : l'agence fournit une carte à
+// débiter et précise ce qu'elle couvre (souvent la taxe de séjour). ⚠️ On ne stocke JAMAIS
+// le n° de carte complet — seulement les 4 derniers (la réception lit la carte dans le mail).
+export type AgencyTakeover = {
+  agency: string;
+  ref: string | null;
+  guestName: string | null;
+  guestLast: string | null;
+  checkInISO: string | null;
+  nights: number | null;
+  room: string | null;
+  tsCovered: boolean;        // l'agence prend en charge la taxe de séjour
+  debitAtArrival: boolean;   // débiter à l'arrivée (pas de pré-autorisation)
+  cardLast4: string | null;
+};
+
+export function parseAgencyTakeover(subject: string, body: string): AgencyTakeover {
+  const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
+  const hay = body;
+  const guestName = fieldAfter(lines, /^GUEST NAME/i);
+  let guestLast: string | null = null;
+  if (guestName) {
+    const cleaned = guestName.replace(/^(Mr|Mme|M\.|Mrs?|Ms)\.?\s+/i, '').trim();
+    guestLast = cleaned.match(/\b([A-ZÀ-Ÿ]{2,})\b/)?.[1] || cleaned.split(/\s+/)[0] || null;
+  }
+  const checkInRaw = fieldAfter(lines, /^CHECK ?IN DATE/i);
+  const checkInISO = checkInRaw ? (checkInRaw.match(/(\d{4}-\d{2}-\d{2})/)?.[1] || null) : null;
+  const nightsRaw = fieldAfter(lines, /^NUMBERS? OF NIGHTS|NIGHTS?\s*\/\s*ROOMS/i);
+  const room = lines.find((l) => /chambre|\broom\b/i.test(l) && !/GUEST|NUMBERS|NIGHTS/i.test(l)) || null;
+  const cardNum = hay.match(/Num[ée]ro\s*:?\s*(\d[\d ]{10,})/i)?.[1]?.replace(/\s/g, '') || null;
+  return {
+    agency: 'Djocatravel',
+    ref: fieldAfter(lines, /^REF fournisseur/i) || subject.match(/Paiement\s+(\d{6,})/i)?.[1] || null,
+    guestName, guestLast, checkInISO,
+    nights: nightsRaw ? (parseInt(nightsRaw, 10) || null) : null,
+    room,
+    tsCovered: /prenons en charge[\s\S]{0,50}taxe de séjour|taxe de séjour[\s\S]{0,30}(pris|charge)/i.test(hay),
+    debitAtArrival: /débiter.{0,30}(arrivée|à l['’ ]?arriv)/i.test(hay) || /pas.{0,15}pré[- ]?auto/i.test(hay),
+    cardLast4: cardNum ? cardNum.slice(-4) : null,
+  };
+}
+
+// Note de contrôle réception — format court langage réception (Martin 2026-07-05) :
+//   Chambre · [SANS PDJ] · OTA FLEX/NANR · VCC à déb. jj/mm · RSP TS <montant> · [GENIUS] · 1ER SÉJOUR
+// - PDJ inclus = défaut maison → on ne l'écrit PAS (seule l'exception « SANS PDJ » compte).
+// - tarif = canal (OTA si Booking/Expedia) + annulable/NANR ; le libellé D-Edge est ignoré.
+// - RSP TS = taxe de séjour réglée sur place (code réception) ; tsByAgency = prise en charge
+//   agence (Djoca précise « TS incluse avec la CCV ») → prime sur le « sur place ».
+export function controlNote(
+  r: OtaResa, dejaVenu: boolean | null, cityTax?: number | null, tsByAgency = false,
+): string {
   const bits: string[] = [];
   if (r.roomType) bits.push(r.roomType);
-  if (r.breakfast === true) bits.push('PDJ INCLUS');
-  else if (r.breakfast === false) bits.push('SANS PDJ');
-  // Le libellé tarif D-Edge (« OTA BB », « Tarifs multiples »…) n'apporte rien d'actionnable
-  // à la réception → on ne garde que le caractère annulable/NANR ci-dessous.
-  if (r.refundable === true) bits.push('FLEX (annul. gratuite)');
-  else if (r.refundable === false) bits.push('NANR (non remb.)');
+  if (r.breakfast === false) bits.push('SANS PDJ');
+  const chan = /booking|expedia|hotelbeds|agoda|hotels?\.com/i.test(r.source || '') ? 'OTA ' : '';
+  if (r.refundable === true) bits.push(`${chan}FLEX`);
+  else if (r.refundable === false) bits.push(`${chan}NANR`);
   if (r.payment === 'vcc') {
-    bits.push(`VCC${r.vccChargeableFrom ? ` déb. ${r.vccChargeableFrom}` : ''}`);
-    // Montant TS exact lu dans Mews (ligne « Taxe de séjour ») quand dispo, sinon à vérifier.
-    bits.push(cityTax != null
-      ? `TS sur place ${cityTax.toFixed(2).replace('.', ',')} €`
-      : 'TS sur place (à vérifier)');
+    bits.push(r.vccChargeableFrom ? `VCC à déb. ${ddmm(r.vccChargeableFrom)}` : 'VCC');
+    if (tsByAgency) bits.push('TS incluse (prise en charge agence — ne PAS facturer client)');
+    else bits.push(cityTax != null ? `RSP TS ${cityTax.toFixed(2).replace('.', ',')} €` : 'RSP TS');
   } else if (r.payment === 'charge_card') {
-    // NANR direct : débiter la carte du montant total du séjour.
     bits.push(`DÉBITER LA CARTE CLIENT${r.amount ? ` ${r.amount}` : ''}`);
   } else if (r.payment === 'hotel_collect') {
     bits.push('HÔTEL COLLECT — tout encaisser sur place');
   } else if (r.payment === 'on_site') {
-    bits.push('À RÉGLER SUR PLACE (héberg. + taxe séjour)');
+    bits.push('À RÉGLER SUR PLACE (héberg. + TS)');
   } else if (r.payment === 'prepaid') {
     bits.push('PRÉPAYÉ en ligne');
   } else if (r.payment === 'ota_billed') {

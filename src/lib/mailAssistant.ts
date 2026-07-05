@@ -42,11 +42,11 @@ export type MailInput = {
 };
 
 export type MailCategory =
-  | 'spam_alert' | 'resa_ota' | 'facture' | 'facture_ota' | 'candidature'
+  | 'spam_alert' | 'resa_ota' | 'prise_en_charge' | 'facture' | 'facture_ota' | 'candidature'
   | 'commercial' | 'client_msg' | 'autre';
 
 export type MailAction =
-  | 'delete' | 'resa_control' | 'route_pennylane' | 'invoice_note' | 'draft_reply'
+  | 'delete' | 'resa_control' | 'agency_note' | 'route_pennylane' | 'invoice_note' | 'draft_reply'
   | 'commercial_followup' | 'none';
 
 export type Classification = {
@@ -112,6 +112,11 @@ export function classifyMail(mail: MailInput): Classification {
   // 3) Facture fournisseur en PJ -> routage Pennylane (l'entité se lira dans le PDF)
   if (mail.hasAttachments && (rx.facture.test(hay) || looksLikeFacturePdf(names))) {
     return { category: 'facture', action: 'route_pennylane', reason: 'Facture fournisseur (PJ PDF)', detail: { attachments: names } };
+  }
+
+  // 2c) Prise en charge agence (Djocatravel) sur une résa OTA -> note pour l'équipe.
+  if (/djocatravel/i.test(from) || (/prise en charge/i.test(subj) && /paiement/i.test(subj))) {
+    return { category: 'prise_en_charge', action: 'agency_note', reason: 'Prise en charge agence (Djocatravel)', detail: { agency: 'Djocatravel' } };
   }
 
   // 3b) OTA (Hotelbeds…) réclame une copie de facture -> note « facture à envoyer » (compta).

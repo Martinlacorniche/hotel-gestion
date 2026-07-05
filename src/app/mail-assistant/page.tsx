@@ -44,6 +44,7 @@ type Mode = "off" | "suggest" | "auto";
 const CAT_META: Record<string, { label: string; badge: string }> = {
   spam_alert:  { label: "Alerte / spam",  badge: "bg-rose-50 text-rose-700 ring-rose-200" },
   resa_ota:    { label: "Réservation",    badge: "bg-sky-50 text-sky-700 ring-sky-200" },
+  prise_en_charge: { label: "Prise en charge", badge: "bg-teal-50 text-teal-700 ring-teal-200" },
   facture:     { label: "Facture",        badge: "bg-violet-50 text-violet-700 ring-violet-200" },
   facture_ota: { label: "Facture OTA",    badge: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200" },
   candidature: { label: "Candidature",    badge: "bg-amber-50 text-amber-700 ring-amber-200" },
@@ -55,6 +56,7 @@ const CAT_META: Record<string, { label: string; badge: string }> = {
 const ACTION_LABEL: Record<string, string> = {
   delete: "🗑️ Supprimer",
   resa_control: "📋 Contrôle résa",
+  agency_note: "📌 Prise en charge",
   route_pennylane: "🧾 → Pennylane",
   invoice_note: "📄 Facture à envoyer",
   draft_reply: "✍️ Brouillon réponse",
