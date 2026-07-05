@@ -217,24 +217,13 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
 // couvre que l'hébergement). Montant exact = total Mews − montant chargé sur la CCV —
 // non calculable à la résa (CCV activée plus tard), d'où « à vérifier ». Hors VCC
 // (prépayé plein / facturé OTA) on n'affirme rien sur la TS : la réception juge.
-// Libellé tarif court pour la note (les libellés directs sont verbeux).
-function shortRate(rp: string | null): string | null {
-  if (!rp) return null;
-  const s = rp.toLowerCase();
-  if (/tarifs? multiples/.test(s)) return 'TARIFS MULTIPLES';
-  if (/non[\s-]?remb|nanr/.test(s)) return 'NANR';
-  if (/flex/.test(s)) return 'FLEXIBLE';
-  return rp.split(/\s+/).slice(0, 4).join(' ').toUpperCase();
-}
-
 export function controlNote(r: OtaResa, dejaVenu: boolean | null, cityTax?: number | null): string {
   const bits: string[] = [];
   if (r.roomType) bits.push(r.roomType);
   if (r.breakfast === true) bits.push('PDJ INCLUS');
   else if (r.breakfast === false) bits.push('SANS PDJ');
-  const rl = shortRate(r.ratePlan);
-  // On n'affiche le libellé tarif que s'il apporte + que le Flex/NANR déjà montré ci-dessous.
-  if (rl && rl !== 'FLEXIBLE' && rl !== 'NANR') bits.push(rl);
+  // Le libellé tarif D-Edge (« OTA BB », « Tarifs multiples »…) n'apporte rien d'actionnable
+  // à la réception → on ne garde que le caractère annulable/NANR ci-dessous.
   if (r.refundable === true) bits.push('FLEX (annul. gratuite)');
   else if (r.refundable === false) bits.push('NANR (non remb.)');
   if (r.payment === 'vcc') {
