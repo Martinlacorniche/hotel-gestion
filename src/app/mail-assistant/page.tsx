@@ -311,12 +311,23 @@ export default function MailAssistantPage() {
                           ) : r.result?.note ? (
                             <div className="inline-flex flex-col items-end gap-1 max-w-[18rem]">
                               <span className="text-xs text-slate-700 font-medium whitespace-normal text-right">{String(r.result.note)}</span>
-                              <button
-                                onClick={() => copyNote(String(r.result?.note))}
-                                className="inline-flex items-center gap-1 rounded-lg bg-[#004e7c] hover:bg-[#003d61] text-white px-2 py-1 text-xs font-medium"
-                              >
-                                <Copy className="w-3 h-3" /> Copier la note
-                              </button>
+                              <div className="inline-flex gap-1">
+                                <button
+                                  onClick={() => copyNote(String(r.result?.note))}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-[#004e7c] hover:bg-[#003d61] text-white px-2 py-1 text-xs font-medium"
+                                >
+                                  <Copy className="w-3 h-3" /> Copier la note
+                                </button>
+                                <button
+                                  onClick={() => decide(r, "validate")}
+                                  disabled={busyId === r.id}
+                                  title="Régénérer la note (après correction)"
+                                  className="inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-slate-200 hover:bg-slate-50 text-slate-500 px-2 py-1 text-xs font-medium disabled:opacity-50"
+                                >
+                                  {busyId === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                  Rejouer
+                                </button>
+                              </div>
                             </div>
                           ) : summary ? (
                             <span className="inline-flex items-center gap-1 text-xs text-slate-500">

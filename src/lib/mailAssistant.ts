@@ -58,6 +58,7 @@ export type Classification = {
 
 const rx = {
   stockAlert: /n['’ ]?est plus disponible|plus disponible à la vente/i,
+  bookingNoise: /résumé de votre compte|identifiant de l['’ ]?hôtel|account summary/i,
   resaNew: /nouvelle réservation/i,
   resaMod: /modification de réservation/i,
   resaCancel: /annulation de réservation/i,
@@ -89,6 +90,11 @@ export function classifyMail(mail: MailInput): Classification {
   // 1) Alerte stock D-Edge -> suppression systématique
   if (rx.stockAlert.test(hay)) {
     return { category: 'spam_alert', action: 'delete', reason: 'Alerte stock D-Edge (hôtel non dispo à la vente)', detail: {} };
+  }
+
+  // 1b) Notifs de compte Booking (résumé de compte, identifiants hôtel) -> suppression (bruit).
+  if (/booking\.com$/i.test(from) && rx.bookingNoise.test(hay)) {
+    return { category: 'spam_alert', action: 'delete', reason: 'Notification de compte Booking (sans action)', detail: {} };
   }
 
   // 2) Résa OTA (D-Edge / Booking) -> contrôle résa

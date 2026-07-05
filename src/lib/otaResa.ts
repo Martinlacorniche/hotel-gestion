@@ -13,9 +13,10 @@
 // vcc         = carte virtuelle (Booking VCC OU Expedia Collect / Expedia Virtual Card) → CCV
 //               couvre l'hébergement, PAS la taxe de séjour → TS à encaisser sur place.
 // hotel_collect = règlement sur place / prise en charge (OTA) → tout encaisser sur place.
+// charge_card = résa directe NANR : l'hôtel doit DÉBITER la carte du client (« Montant à débiter »).
 // on_site     = réservation DIRECTE (moteur de l'hôtel) non prépayée → tout régler sur place.
 // prepaid     = payé en ligne. ota_billed = facturé à l'OTA sans CCV (rare).
-export type OtaPayment = 'vcc' | 'hotel_collect' | 'on_site' | 'prepaid' | 'ota_billed' | 'unknown';
+export type OtaPayment = 'vcc' | 'hotel_collect' | 'charge_card' | 'on_site' | 'prepaid' | 'ota_billed' | 'unknown';
 
 export type OtaResa = {
   ref: string | null;             // Réf. D-EDGE (ex. 7QL1DE)
@@ -39,6 +40,7 @@ export type OtaResa = {
   roomType: string | null;        // "Chambre Double - Confort"
   ratePlan: string | null;        // "OTA BB"
   amount: string | null;          // "112,50 €"
+  chargeAmount: string | null;    // montant à débiter sur la carte (résa directe NANR)
   refundable: boolean | null;     // true=Flex, false=NANR, null=inconnu
   cancelText: string | null;      // phrase brute des conditions d'annulation
   genius: boolean;
@@ -145,8 +147,11 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
     payment = 'prepaid';
   } else if (/devra être facturé à/i.test(hay)) {
     payment = 'ota_billed';
+  } else if (/montant à débiter|devez débiter la carte|débiter la carte bancaire/i.test(hay)) {
+    payment = 'charge_card';   // résa directe NANR : l'hôtel débite la carte du client
   }
-  // Réservation DIRECTE (moteur de l'hôtel, ex. « Hôtels Toulon Bord De Mer ») : pas de CCV.
+  const chargeAmount = payment === 'charge_card' ? fieldAfter(lines, /^Montant à débiter/i) : null;
+  // Réservation DIRECTE (moteur de l'hôtel, ex. « Hôtels Toulon Bord De Mer ») non prépayée :
   // « Montant payé en ligne » > 0 → prépayé ; sinon → tout à régler sur place.
   if (payment === 'unknown' && /Moteur de réservation/i.test(hay)) {
     const paidRaw = fieldAfter(lines, /^Montant payé en ligne/i) || '0';
@@ -187,7 +192,7 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
     cancelDateISO, freeCancelDaysBefore, penalty, firstNightAmount,
     nights: nightsRaw ? (parseInt(nightsRaw, 10) || null) : null,
     guests: guestsRaw ? (parseInt(guestsRaw, 10) || null) : null,
-    roomType, ratePlan,
+    roomType, ratePlan, chargeAmount,
     amount: fieldAfter(lines, /^Montant total du séjour/i),
     refundable, cancelText, genius, payment, vccChargeableFrom, specialRequests,
   };
@@ -224,6 +229,9 @@ export function controlNote(r: OtaResa, dejaVenu: boolean | null, cityTax?: numb
     bits.push(cityTax != null
       ? `TS sur place ${cityTax.toFixed(2).replace('.', ',')} €`
       : 'TS sur place (à vérifier)');
+  } else if (r.payment === 'charge_card') {
+    // NANR direct : débiter la carte du montant total du séjour.
+    bits.push(`DÉBITER LA CARTE CLIENT${r.amount ? ` ${r.amount}` : ''}`);
   } else if (r.payment === 'hotel_collect') {
     bits.push('HÔTEL COLLECT — tout encaisser sur place');
   } else if (r.payment === 'on_site') {
