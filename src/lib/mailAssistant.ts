@@ -114,9 +114,20 @@ export function classifyMail(mail: MailInput): Classification {
     return { category: 'facture', action: 'route_pennylane', reason: 'Facture fournisseur (PJ PDF)', detail: { attachments: names } };
   }
 
-  // 2c) Prise en charge agence (Djocatravel) sur une résa OTA -> note pour l'équipe.
-  if (/djocatravel/i.test(from) || (/prise en charge/i.test(subj) && /paiement/i.test(subj))) {
-    return { category: 'prise_en_charge', action: 'agency_note', reason: 'Prise en charge agence (Djocatravel)', detail: { agency: 'Djocatravel' } };
+  // 2c) Prise en charge agence (VCC OTA : Djocatravel, Goelett…) sur une résa -> note pour l'équipe.
+  //   Goelett = partenaire paiement de Booking (carte virtuelle) : NE PAS encaisser le client,
+  //   facturer au nom de Goelett Sp. z o.o. (Martin 2026-07-06).
+  const isGoelett = /goelett/i.test(from);
+  if (/djocatravel/i.test(from) || isGoelett || (/prise en charge/i.test(subj) && /paiement/i.test(subj))) {
+    const agency = isGoelett ? 'Goelett' : 'Djocatravel';
+    return {
+      category: 'prise_en_charge',
+      action: 'agency_note',
+      reason: `Prise en charge agence (${agency})`,
+      detail: isGoelett
+        ? { agency, note: 'Paiement par carte virtuelle (VCC) — NE PAS encaisser le client, facture au nom de Goelett Sp. z o.o.' }
+        : { agency },
+    };
   }
 
   // 3b) OTA (Hotelbeds…) réclame une copie de facture -> note « facture à envoyer » (compta).
