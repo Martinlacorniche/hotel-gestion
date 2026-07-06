@@ -14,6 +14,7 @@ export type HotelBranding = {
   phone?: string;
   website?: string;
   email?: string;
+  legalEntity: string;
   legalFooter: string;
 };
 
@@ -25,6 +26,7 @@ const CORNICHE_BRANDING: HotelBranding = {
   phone: '+33 (0)4 94 41 35 12',
   website: 'hotel-corniche.com',
   email: 'contact@hotel-corniche.com',
+  legalEntity: 'SARL AU CAPITAL DE 10 000€ — SIRET : 341 797 199 00013 — TVA INTRACOM : FR50341797199 — RCS TOULON 87800562',
   legalFooter: 'HÔTEL LA CORNICHE — 17 LITTORAL FRÉDÉRIC MISTRAL, 83000 TOULON — +33 (0)4 94 41 35 12 — HOTEL-CORNICHE.COM',
 };
 
@@ -33,6 +35,7 @@ const VOILES_BRANDING: HotelBranding = {
   logo: '/voiles.jpg',
   addressLine1: '124 rue Gubler',
   addressLine2: '83000 Toulon, France',
+  legalEntity: 'SAS AU CAPITAL DE 10 000€ — SIRET : 795 063 304 00021 — TVA INTRACOM : FR82795063304 — RCS TOULON 795 063 304',
   legalFooter: 'HÔTEL LES VOILES — 124 RUE GUBLER, 83000 TOULON',
 };
 
@@ -321,7 +324,7 @@ export const QuotePDFPage = ({ data, lines, totals }: any) => {
 
         {/* Mentions légales */}
         <View style={s.legal}>
-          <Text>SARL AU CAPITAL DE 10 000€ — SIRET : 341 797 199 00013 — TVA INTRACOM : FR50341797199 — RCS TOULON 87800562</Text>
+          <Text>{branding.legalEntity}</Text>
           <Text>{branding.legalFooter}</Text>
         </View>
       </View>
