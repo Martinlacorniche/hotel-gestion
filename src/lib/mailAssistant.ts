@@ -122,19 +122,19 @@ export function classifyMail(mail: MailInput): Classification {
     return { category: 'facture', action: 'route_pennylane', reason: 'Facture fournisseur (PJ PDF)', detail: { attachments: names } };
   }
 
-  // 2c) Prise en charge agence (VCC OTA : Djocatravel, Goelett…) sur une résa -> note pour l'équipe.
-  //   Goelett = partenaire paiement de Booking (carte virtuelle) : NE PAS encaisser le client,
-  //   facturer au nom de Goelett Sp. z o.o. (Martin 2026-07-06).
+  // 2c) Prise en charge agence (VCC OTA) sur une résa -> note pour l'équipe. Trois agences
+  //   connues : Djocatravel · Goelett (partenaire paiement Booking, VCC) · CDS Groupe /
+  //   Ailleurs Business (carte MasterCard agence couvrant la TS, facture à Ailleurs Business).
+  //   Règle commune : NE PAS encaisser le client, débiter la carte agence (Martin 2026-07-06/07).
   const isGoelett = /goelett/i.test(from);
-  if (/djocatravel/i.test(from) || isGoelett || (/prise en charge/i.test(subj) && /paiement/i.test(subj))) {
-    const agency = isGoelett ? 'Goelett' : 'Djocatravel';
+  const isCds = /ailleursbusiness|cdsgroupe/i.test(from) || /prestations compl[ée]mentaires/i.test(subj);
+  if (/djocatravel/i.test(from) || isGoelett || isCds || (/prise en charge/i.test(subj) && /paiement/i.test(subj))) {
+    const agency = isGoelett ? 'Goelett' : isCds ? 'CDS Groupe / Ailleurs Business' : 'Djocatravel';
     return {
       category: 'prise_en_charge',
       action: 'agency_note',
       reason: `Prise en charge agence (${agency})`,
-      detail: isGoelett
-        ? { agency, note: 'Paiement par carte virtuelle (VCC) — NE PAS encaisser le client, facture au nom de Goelett Sp. z o.o.' }
-        : { agency },
+      detail: { agency },
     };
   }
 

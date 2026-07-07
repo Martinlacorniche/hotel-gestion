@@ -232,21 +232,32 @@ export function ddmm(d: string | null): string {
 // débiter et précise ce qu'elle couvre (souvent la taxe de séjour). ⚠️ On ne stocke JAMAIS
 // le n° de carte complet — seulement les 4 derniers (la réception lit la carte dans le mail).
 export type AgencyTakeover = {
-  provider: 'djoca' | 'goelett';
+  provider: 'djoca' | 'goelett' | 'cds';
   agency: string;
   ref: string | null;
-  bookingRef: string | null; // réf Booking.com (Goelett)
+  bookingRef: string | null; // réf Booking.com (Goelett / CDS)
   guestName: string | null;
   guestLast: string | null;
   checkInISO: string | null;
   nights: number | null;
   room: string | null;
   tsCovered: boolean;        // l'agence prend en charge la taxe de séjour
-  debitAtArrival: boolean;   // débiter à l'arrivée (pas de pré-autorisation)
+  debitAtArrival: boolean;   // débiter à l'arrivée / au check-in (pas de pré-autorisation)
   cardLast4: string | null;
   tsAmount: string | null;   // montant TS prépayé sur la carte agence (Goelett)
   roomAmount: string | null; // montant chambre couvert par l'OTA (Goelett → Booking)
+  invoiceTo: string | null;  // entité à qui facturer (Goelett Sp. z o.o. / Ailleurs Business…)
 };
+
+// Bloc « taxe de séjour » de la note réception selon l'agence de prise en charge :
+//   Goelett = TS prépayée sur une 2e CCV dédiée → « CCV TS …xxxx » (débiter cette carte) ;
+//   CDS/Ailleurs Business = carte agence (n° derrière un lien) → « CCV TS CDS — déb. check-in » ;
+//   Djoca = TS incluse dans la prise en charge → « TS incl. agence ».
+export function agencyTsBlock(t: AgencyTakeover): string {
+  if (t.provider === 'goelett') return `CCV TS …${t.cardLast4 || '????'}`;
+  if (t.provider === 'cds') return 'CCV TS CDS — déb. check-in';
+  return 'TS incl. agence';
+}
 
 export function parseAgencyTakeover(subject: string, body: string): AgencyTakeover {
   const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -275,6 +286,7 @@ export function parseAgencyTakeover(subject: string, body: string): AgencyTakeov
     cardLast4: cardNum ? cardNum.slice(-4) : null,
     tsAmount: null,
     roomAmount: null,
+    invoiceTo: null,
   };
 }
 
@@ -331,6 +343,51 @@ export function parseGoelett(subject: string, body: string): AgencyTakeover {
     cardLast4: cardNum ? cardNum.slice(-4) : null,
     tsAmount: tsAmount ? `${tsAmount} €` : null,
     roomAmount: roomAmount ? `${roomAmount} €` : null,
+    invoiceTo: 'Goelett Sp. z o.o.',
+  };
+}
+
+// Prise en charge CDS GROUPE / AILLEURS BUSINESS (agence corporate, ex. CCI Paris IdF).
+// Une carte MasterCard virtuelle de l'agence couvre la taxe de séjour (+ petit-déj si non
+// inclus) à débiter DÈS LE CHECK-IN. ⚠️ Le n° de carte est DERRIÈRE UN LIEN (pas dans le
+// mail → pas de last-4). Facture à libeller à AILLEURS BUSINESS, envoyée à FACTURE@CDSGROUPE.COM.
+// Ne rien réclamer au voyageur. Calé sur un vrai mail 2026-07 (noreply@ailleursbusiness.com).
+export function parseCds(subject: string, body: string): AgencyTakeover {
+  const hay = body;
+  const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  // Sujet : « … - <REF> - <Nom voyageur> - jj/mm/aaaa »
+  const parts = subject.split(/\s+-\s+/).map((s) => s.trim());
+  const guestName = hay.match(/Nom du voyageur\s+([A-Za-zÀ-ÿ'’\- ]{3,40}?)\s*(?:Commentaire|Date|$)/i)?.[1]?.trim()
+    || (parts.length >= 3 ? parts[2] : null);
+  let guestLast: string | null = null;
+  if (guestName) {
+    const toks = guestName.replace(/^(Mr|Mme|M\.|Mrs?|Ms)\.?\s+/i, '').trim().split(/\s+/);
+    guestLast = toks[toks.length - 1] || null;
+  }
+
+  const ref = hay.match(/R[ée]f[ée]rence CDS GROUPE\s+([A-Z0-9]{4,})/i)?.[1]
+    || (parts.length >= 2 ? parts[1] : null);
+  const bookingRef = hay.match(/r[ée]servation Booking\.com N[°ºo]\s*(\d{6,})/i)?.[1]
+    || hay.match(/Booking\.com\s+[\d-]*?(\d{7,})/i)?.[1] || null;
+
+  const dm = subject.match(/(\d{2})\/(\d{2})\/(\d{4})\s*$/);
+  const checkInISO = dm ? `${dm[3]}-${dm[2]}-${dm[1]}` : null;
+
+  // « Type de tarif / chambre  ONLINE PAYMENT - genius - Chambre Double » (pas de « : » → regex directe).
+  const rateLine = hay.match(/Type de tarif ?\/ ?chambre\s+([^\n]+)/i)?.[1] || '';
+  const room = rateLine.match(/(Chambre\s+[A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i)?.[1]?.trim() || null;
+
+  return {
+    provider: 'cds',
+    agency: 'CDS Groupe / Ailleurs Business',
+    ref, bookingRef,
+    guestName, guestLast, checkInISO, nights: null, room,
+    tsCovered: true,
+    debitAtArrival: true,     // « à partir du jour du check-in »
+    cardLast4: null,          // n° derrière un lien, absent du mail
+    tsAmount: null, roomAmount: null,
+    invoiceTo: 'Ailleurs Business (FACTURE@CDSGROUPE.COM)',
   };
 }
 
@@ -363,7 +420,7 @@ export function shortRoom(room: string | null): string {
 // TS incl. agence (Djoca). PDJ inclus = défaut maison → non écrit (seul « SANS PDJ » compte).
 export function controlNote(
   r: OtaResa, dejaVenu: boolean | null, cityTax?: number | null,
-  tsByAgency = false, tsCardLast4?: string | null,
+  tsOverride?: string | null,
 ): string {
   const s: string[] = [`#${shortRoom(r.roomType)}`];
   if (r.refundable === true) s.push('FLEX');
@@ -379,11 +436,9 @@ export function controlNote(
     case 'ota_billed':   s.push('OTA'); break;
   }
 
-  // bloc TAXE DE SÉJOUR (préfixé #)
-  let ts: string;
-  if (tsByAgency) ts = 'TS incl. agence';
-  else if (tsCardLast4) ts = `CCV TS …${tsCardLast4}`;   // prépayée (Goelett) → débiter la carte, pas le client
-  else ts = cityTax != null ? `RSP TS ${cityTax.toFixed(2).replace('.', ',')}€` : 'RSP TS';
+  // bloc TAXE DE SÉJOUR (préfixé #). tsOverride = prise en charge agence (agencyTsBlock) qui
+  // PRIME sur le « sur place » ; sinon RSP TS + montant Mews exact quand dispo.
+  const ts = tsOverride || (cityTax != null ? `RSP TS ${cityTax.toFixed(2).replace('.', ',')}€` : 'RSP TS');
   s.push(`# ${ts}`);
 
   // variables

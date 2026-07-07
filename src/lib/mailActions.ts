@@ -11,7 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { moveMessage, createReplyDraft, getMessageText, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
-import { parseOtaResa, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, shortRoom, ddmm, type AgencyTakeover } from '@/lib/otaResa';
+import { parseOtaResa, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import type { HotelMailConfig, MailCategory } from '@/lib/mailAssistant';
 
@@ -133,18 +133,15 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
     }
   }
 
-  // Prise en charge agence sur la TS (prime sur « RSP TS ») :
-  //  - Goelett = TS prépayée sur une 2e CCV dédiée → note « CCV TS …xxxx » (débiter cette carte) ;
-  //  - Djoca   = TS incluse dans la prise en charge → note « TS incl. agence ».
-  let tsByAgency = false;
-  let tsCardLast4: string | null = null;
+  // Prise en charge agence sur la TS (prime sur « RSP TS ») : Djoca / Goelett / CDS-Ailleurs
+  // Business → le bloc TS de la note vient de agencyTsBlock (cf otaResa).
+  let tsOverride: string | null = null;
   if (r.payment === 'vcc' && r.guestLast) {
     const takeover = await findAgencyTakeover(cfg.mailbox, r.guestLast, r.arrivalISO).catch(() => null);
-    if (takeover?.provider === 'goelett') tsCardLast4 = takeover.cardLast4;
-    else if (takeover?.tsCovered) tsByAgency = true;
+    if (takeover?.tsCovered) tsOverride = agencyTsBlock(takeover);
   }
 
-  const note = controlNote(r, dejaVenu, cityTax, tsByAgency, tsCardLast4);
+  const note = controlNote(r, dejaVenu, cityTax, tsOverride);
   return {
     status: 'executed',
     result: {
@@ -301,12 +298,12 @@ async function findAgencyTakeover(
 ): Promise<AgencyTakeover | null> {
   const inbox = await listInbox(mailbox, 40);
   const cands = inbox.filter((m) =>
-    /djocatravel/i.test(m.fromAddr) || /goelett/i.test(m.fromAddr)
-    || /prise en charge/i.test(m.subject) || /paiement pour .+ pour la r[ée]servation/i.test(m.subject));
+    /djocatravel/i.test(m.fromAddr) || /goelett/i.test(m.fromAddr) || /ailleursbusiness|cdsgroupe/i.test(m.fromAddr)
+    || /prise en charge/i.test(m.subject) || /paiement pour .+ pour la r[ée]servation/i.test(m.subject)
+    || /prestations compl[ée]mentaires/i.test(m.subject));
   for (const m of cands) {
     const body = await getMessageText(mailbox, m.id).catch(() => '');
-    const isG = /goelett/i.test(m.fromAddr) || /goelett/i.test(m.subject);
-    const t = isG ? parseGoelett(m.subject, body) : parseAgencyTakeover(m.subject, body);
+    const t = parseTakeover(m.fromAddr, m.subject, body);
     const nameOk = t.guestLast && t.guestLast.toLowerCase() === guestLast.toLowerCase();
     const dateOk = !arrivalISO || !t.checkInISO || t.checkInISO === arrivalISO;
     if (nameOk && dateOk) return t;
@@ -314,24 +311,29 @@ async function findAgencyTakeover(
   return null;
 }
 
+// Choisit le bon parser d'après l'expéditeur/sujet (Djoca / Goelett / CDS-Ailleurs Business).
+function parseTakeover(fromAddr: string, subject: string, body: string): AgencyTakeover {
+  if (/goelett/i.test(fromAddr) || /goelett/i.test(subject)) return parseGoelett(subject, body);
+  if (/ailleursbusiness|cdsgroupe/i.test(fromAddr) || /prestations compl[ée]mentaires/i.test(subject)) return parseCds(subject, body);
+  return parseAgencyTakeover(subject, body);
+}
+
 // agency_note : prise en charge agence (Djoca) → note pour l'équipe (carte à débiter à
 // l'arrivée, ce que l'agence couvre). Aucun n° de carte complet stocké (4 derniers max).
 async function actAgencyNote(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
   const body = await getMessageText(cfg.mailbox, row.message_id);
-  const isGoelett = /goelett/i.test(row.from_addr || '') || /goelett/i.test(row.subject || '');
-  const t = isGoelett ? parseGoelett(row.subject || '', body) : parseAgencyTakeover(row.subject || '', body);
+  const t = parseTakeover(row.from_addr || '', row.subject || '', body);
 
   const parts: string[] = [];
-  if (isGoelett) {
-    // Goelett : note RÉCEPTION en codes courts (Martin 2026-07-07) — chambre sur CCV Booking,
-    // TS sur une 2e CCV dédiée Goelett : `#supérieure [NANR] CCV # CCV TS …6624`.
-    // Le tarif (NANR/FLEX) + GENIUS + 1er séjour vivent dans le mail résa D-Edge (pas Goelett)
-    // → ajoutés au lien résa↔Goelett. « CCV TS » implique : débiter cette carte, pas le client.
-    let note = `#${shortRoom(t.room)} CCV # CCV TS …${t.cardLast4 || '????'}`;
-    note = note.replace(/\s+/g, ' ').trim();
+  if (t.provider === 'goelett' || t.provider === 'cds') {
+    // Note RÉCEPTION en codes courts (Martin 2026-07-07) : la chambre est sur CCV (Booking),
+    // la TS sur la carte agence (Goelett = 2e CCV last-4 ; CDS = carte derrière un lien).
+    // Le tarif FLEX/NANR + GENIUS + 1er séjour vivent dans le mail résa D-Edge (pas ici) →
+    // complétés au lien résa↔agence. Facturation (invoiceTo) gardée en détail, pas dans la note.
+    const note = `#${shortRoom(t.room)} CCV # ${agencyTsBlock(t)}`.replace(/\s+/g, ' ').trim();
     return {
       status: 'executed',
-      result: { kind: 'agency_note', note, agency: t.agency, ref: t.ref, bookingRef: t.bookingRef, guest: t.guestName, cardLast4: t.cardLast4, tsCovered: true, tsAmount: t.tsAmount },
+      result: { kind: 'agency_note', note, agency: t.agency, ref: t.ref, bookingRef: t.bookingRef, guest: t.guestName, cardLast4: t.cardLast4, tsCovered: true, tsAmount: t.tsAmount, invoiceTo: t.invoiceTo },
     };
   }
   {
