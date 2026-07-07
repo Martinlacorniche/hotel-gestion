@@ -116,17 +116,23 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
     if (m && !/petit|déjeuner|breakfast|\btax/i.test(m[1])) { roomType = m[1].trim(); break; }
   }
 
-  // Petit-déjeuner inclus ? (champ « Prestation »). "Room only" = non.
-  const prestation = fieldAfter(lines, /^Prestation\s*:/i);
-  let breakfast: boolean | null = null;
-  if (prestation) {
-    if (/room only|sans petit|logement seul|seule/i.test(prestation)) breakfast = false;
-    else if (/petit[- ]?déjeuner|breakfast|demi[- ]?pension|pension compl/i.test(prestation)) breakfast = true;
-  }
-
   const nightsRaw = fieldAfter(lines, /^Durée\s*:/i);
   const guestsRaw = fieldAfter(lines, /^Nb de personnes\s*:/i);
   const ratePlan = fieldAfter(lines, /^Tarif\s*:/i);
+
+  // Petit-déjeuner. RÈGLE HÔTEL (Martin 2026-07-07) : toutes les résas OTA de l'hôtel sont
+  // en PDJ INCLUS → jamais « SANS PDJ » sur une résa OTA. Sinon signal positif du tarif
+  // (« Petit Déjeuner inclus/compris », code BB, demi-pension) ; « Prestation : Room only /
+  // sans petit-déj » = non. ⚠️ « Chambre seule » = TYPE de chambre (single), PAS un plan
+  // repas (bug vécu 2026-07-07 : « Prestation : Chambre seule » + tarif BB lu « sans PDJ »).
+  const isOta = /booking|expedia|hotelbeds|agoda|hotels?\.com/i.test(source || '');
+  const prestation = fieldAfter(lines, /^Prestation\s*:/i);
+  let breakfast: boolean | null = null;
+  if (isOta || /petit[- ]?déjeuner (?:inclus|compris)|breakfast included|[-( ]BB\b|demi[- ]?pension|pension compl/i.test(`${ratePlan || ''}\n${hay}`)) {
+    breakfast = true;
+  } else if (prestation && /room only|sans petit|logement seul/i.test(prestation)) {
+    breakfast = false;
+  }
 
   // Flex vs NANR : d'ABORD les conditions d'annulation (fiable, présent Booking).
   const cancelMatch = hay.match(/Conditions d['’ ]?annulation\s*:\s*([^\n]+)/i);
@@ -226,8 +232,10 @@ export function ddmm(d: string | null): string {
 // débiter et précise ce qu'elle couvre (souvent la taxe de séjour). ⚠️ On ne stocke JAMAIS
 // le n° de carte complet — seulement les 4 derniers (la réception lit la carte dans le mail).
 export type AgencyTakeover = {
+  provider: 'djoca' | 'goelett';
   agency: string;
   ref: string | null;
+  bookingRef: string | null; // réf Booking.com (Goelett)
   guestName: string | null;
   guestLast: string | null;
   checkInISO: string | null;
@@ -236,6 +244,8 @@ export type AgencyTakeover = {
   tsCovered: boolean;        // l'agence prend en charge la taxe de séjour
   debitAtArrival: boolean;   // débiter à l'arrivée (pas de pré-autorisation)
   cardLast4: string | null;
+  tsAmount: string | null;   // montant TS prépayé sur la carte agence (Goelett)
+  roomAmount: string | null; // montant chambre couvert par l'OTA (Goelett → Booking)
 };
 
 export function parseAgencyTakeover(subject: string, body: string): AgencyTakeover {
@@ -253,51 +263,136 @@ export function parseAgencyTakeover(subject: string, body: string): AgencyTakeov
   const room = lines.find((l) => /chambre|\broom\b/i.test(l) && !/GUEST|NUMBERS|NIGHTS/i.test(l)) || null;
   const cardNum = hay.match(/Num[ée]ro\s*:?\s*(\d[\d ]{10,})/i)?.[1]?.replace(/\s/g, '') || null;
   return {
+    provider: 'djoca',
     agency: 'Djocatravel',
     ref: fieldAfter(lines, /^REF fournisseur/i) || subject.match(/Paiement\s+(\d{6,})/i)?.[1] || null,
+    bookingRef: null,
     guestName, guestLast, checkInISO,
     nights: nightsRaw ? (parseInt(nightsRaw, 10) || null) : null,
     room,
     tsCovered: /prenons en charge[\s\S]{0,50}taxe de séjour|taxe de séjour[\s\S]{0,30}(pris|charge)/i.test(hay),
     debitAtArrival: /débiter.{0,30}(arrivée|à l['’ ]?arriv)/i.test(hay) || /pas.{0,15}pré[- ]?auto/i.test(hay),
     cardLast4: cardNum ? cardNum.slice(-4) : null,
+    tsAmount: null,
+    roomAmount: null,
   };
 }
 
-// Note de contrôle réception — format court langage réception (Martin 2026-07-05) :
-//   Chambre · [SANS PDJ] · OTA FLEX/NANR · VCC à déb. jj/mm · RSP TS <montant> · [GENIUS] · 1ER SÉJOUR
-// - PDJ inclus = défaut maison → on ne l'écrit PAS (seule l'exception « SANS PDJ » compte).
-// - tarif = canal (OTA si Booking/Expedia) + annulable/NANR ; le libellé D-Edge est ignoré.
-// - RSP TS = taxe de séjour réglée sur place (code réception) ; tsByAgency = prise en charge
-//   agence (Djoca précise « TS incluse avec la CCV ») → prime sur le « sur place ».
-export function controlNote(
-  r: OtaResa, dejaVenu: boolean | null, cityTax?: number | null, tsByAgency = false,
-): string {
-  const bits: string[] = [];
-  if (r.roomType) bits.push(r.roomType);
-  if (r.breakfast === false) bits.push('SANS PDJ');
-  const chan = /booking|expedia|hotelbeds|agoda|hotels?\.com/i.test(r.source || '') ? 'OTA ' : '';
-  if (r.refundable === true) bits.push(`${chan}FLEX`);
-  else if (r.refundable === false) bits.push(`${chan}NANR`);
-  if (r.payment === 'vcc') {
-    bits.push(r.vccChargeableFrom ? `VCC à déb. ${ddmm(r.vccChargeableFrom)}` : 'VCC');
-    if (tsByAgency) bits.push('TS incluse selon le mail de prise en charge Djoca (à vérifier — ne PAS facturer client)');
-    else bits.push(cityTax != null ? `RSP TS ${cityTax.toFixed(2).replace('.', ',')} €` : 'RSP TS');
-  } else if (r.payment === 'charge_card') {
-    bits.push(`DÉBITER LA CARTE CLIENT${r.amount ? ` ${r.amount}` : ''}`);
-  } else if (r.payment === 'hotel_collect') {
-    bits.push('HÔTEL COLLECT — tout encaisser sur place');
-  } else if (r.payment === 'on_site') {
-    bits.push('À RÉGLER SUR PLACE (héberg. + TS)');
-  } else if (r.payment === 'prepaid') {
-    bits.push('PRÉPAYÉ en ligne');
-  } else if (r.payment === 'ota_billed') {
-    bits.push('FACTURÉ OTA');
+// Prise en charge GOELETT (partenaire paiement de Booking) — format TOTALEMENT différent
+// de Djoca : le nom client + les réfs sont dans le sujet, la carte virtuelle (VCC dédiée)
+// ne couvre QUE la taxe de séjour, la chambre étant facturée à Booking. Calé sur un vrai
+// mail 2026-07 (noreply-hotel@goelett.email). Règle (Martin 2026-07-06) : la TS est PRÉPAYÉE
+// sur la carte Goelett → à DÉBITER, NE PAS facturer au client ; facture au nom de Goelett.
+export function parseGoelett(subject: string, body: string): AgencyTakeover {
+  const hay = body;
+  const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  const guestName = subject.match(/paiement pour\s+(.+?)\s+pour la r[ée]servation/i)?.[1]?.trim()
+    || hay.match(/Porte-cartes?\s+([A-Za-zÀ-ÿ' -]{3,40}?)\s+[\d.,]+\s*EUR/i)?.[1]?.trim() || null;
+  let guestLast: string | null = null;
+  if (guestName) {
+    const toks = guestName.replace(/^(Mr|Mme|M\.|Mrs?|Ms)\.?\s+/i, '').trim().split(/\s+/);
+    guestLast = toks[toks.length - 1] || null;
   }
-  if (r.genius) bits.push('GENIUS');
-  if (dejaVenu === true) bits.push('DÉJÀ VENU');
-  else if (dejaVenu === false) bits.push('1ER SÉJOUR');
-  return bits.join(' · ');
+
+  const ref = subject.match(/r[ée]servation\s+d['’ ]?h[ôo]tel\s+([A-Z0-9]{5,})/i)?.[1]
+    || hay.match(/r[ée]servation dans Goelett[^:]*:\s*([A-Z0-9]{5,})/i)?.[1] || null;
+  const bookingRef = hay.match(/r[ée]servation dans Booking\.com\s*:\s*(\d{6,})/i)?.[1] || null;
+
+  const toISO = (d?: string) => {
+    const m = d?.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+  };
+  const stay = subject.match(/du\s+(\d{2}\/\d{2}\/\d{4})\s+au\s+(\d{2}\/\d{2}\/\d{4})/i)
+    || hay.match(/Dates du S[ée]jour\s*:?\s*(\d{2}\/\d{2}\/\d{4})\s*[-–]\s*(\d{2}\/\d{2}\/\d{4})/i);
+  const checkInISO = toISO(stay?.[1]);
+  const departISO = toISO(stay?.[2]);
+  const nights = checkInISO && departISO
+    ? Math.round((Date.parse(departISO) - Date.parse(checkInISO)) / 86400e3) || null : null;
+
+  const room = lines.find((l) => /^chambre\s+(double|simple|twin|triple|deluxe|standard|familiale|sup)/i.test(l))
+    ?.match(/^(chambre\s+[a-zà-ÿ]+(?:\s+sup[ée]rieure|\s+[a-zà-ÿ]+)?)/i)?.[1]?.trim() || null;
+
+  // TS = montant ancré sur « … EUR - taxe de séjour » (précis), sinon « montant de X EUR ».
+  const tsAmount = hay.match(/([\d.,]+)\s*EUR[^\n]{0,6}[-–][^\n]{0,6}taxe de s[ée]jour/i)?.[1]
+    || hay.match(/d[ée]biter la carte[^.\n]{0,40}?montant de\s*([\d.,]+)\s*EUR/i)?.[1] || null;
+  const roomAmount = hay.match(/montant restant de la r[ée]servation\s*([\d.,]+)\s*EUR/i)?.[1] || null;
+
+  // n° VCC (16 chiffres) → NE GARDER QUE LES 4 DERNIERS, jamais le numéro complet.
+  const cardNum = hay.match(/\b(\d{15,16})\b/)?.[1] || null;
+
+  return {
+    provider: 'goelett',
+    agency: 'Goelett',
+    ref, bookingRef,
+    guestName, guestLast, checkInISO, nights, room,
+    tsCovered: true,          // Goelett = TS toujours prépayée sur la carte dédiée
+    debitAtArrival: false,    // « activée le jour de la résa, débitable immédiatement »
+    cardLast4: cardNum ? cardNum.slice(-4) : null,
+    tsAmount: tsAmount ? `${tsAmount} €` : null,
+    roomAmount: roomAmount ? `${roomAmount} €` : null,
+  };
+}
+
+// Type de chambre en CODE court réception : on garde le mot distinctif (Confort,
+// Supérieure, Deluxe, Standard, Familiale…), pas « Chambre Double ». Ex :
+//   « Chambre Double - Confort » → « confort » ; « Chambre double supérieure » → « supérieure ».
+export function shortRoom(room: string | null): string {
+  if (!room) return 'chambre';
+  const words = room.split(/[^A-Za-zÀ-ÿ]+/).filter(Boolean);
+  // Mots de liaison + équipements (douche, vue, mer…) = jetés. « Simple » = single, c'est
+  // une CATÉGORIE valable (Martin 2026-07-07) → pas jeté. On préfère un mot de gamme
+  // (confort, supérieure…) s'il y en a un ; sinon le 1er mot restant (souvent le type).
+  const drop = new Set(['chambre', 'room', 'de', 'du', 'des', 'la', 'le', 'les', 'avec', 'the', 'a', 'of', 'et', 'and', 'non', 'smoking', 'fumeur', 'lit', 'bed', 'size', 'king', 'queen']);
+  const amenity = new Set(['douche', 'bain', 'salle', 'vue', 'mer', 'jardin', 'balcon', 'terrasse', 'ville', 'cour', 'patio', 'eau', 'wc', 'shower', 'sea', 'view', 'grand', 'grande', 'extra', 'large']);
+  const category = new Set(['supérieure', 'superieure', 'superior', 'confort', 'comfort', 'deluxe', 'luxe', 'prestige', 'standard', 'familiale', 'family', 'exécutive', 'executive', 'junior', 'suite', 'premium', 'classique', 'classic', 'économique', 'economique', 'economy']);
+  const kept = words.filter((w) => !drop.has(w.toLowerCase()) && !amenity.has(w.toLowerCase()));
+  const cat = kept.find((w) => category.has(w.toLowerCase()));
+  const pick = cat || kept[0] || words[0] || 'chambre';
+  return pick.toLowerCase();
+}
+
+// Note de contrôle réception — FORMAT GLOBAL EN CODES (Martin 2026-07-07). Squelette :
+//   #<chambre> <FLEX|NANR> <paiement chambre> # <bloc taxe de séjour> <variables>
+// Ex :  #confort NANR CCV # RSP TS 1,86€ GENIUS 1ER SÉJOUR
+//       #supérieure NANR CCV # CCV TS …6624        (TS prépayée sur 2e CCV Goelett)
+//       #familiale FLEX RSP # RSP TS               (résa directe, tout sur place)
+// Codes chambre : CCV (carte virtuelle) · RSP (réglé sur place) · DÉBIT CB (débiter la carte
+// client, NANR direct) · PRÉPAYÉ · OTA (facturé OTA). Bloc TS : RSP TS (sur place, +montant
+// Mews si dispo) · CCV TS …xxxx (prépayée sur carte, ex. Goelett → débiter, pas le client) ·
+// TS incl. agence (Djoca). PDJ inclus = défaut maison → non écrit (seul « SANS PDJ » compte).
+export function controlNote(
+  r: OtaResa, dejaVenu: boolean | null, cityTax?: number | null,
+  tsByAgency = false, tsCardLast4?: string | null,
+): string {
+  const s: string[] = [`#${shortRoom(r.roomType)}`];
+  if (r.refundable === true) s.push('FLEX');
+  else if (r.refundable === false) s.push('NANR');
+
+  // paiement de la CHAMBRE
+  switch (r.payment) {
+    case 'vcc':          s.push(r.vccChargeableFrom ? `CCV déb.${ddmm(r.vccChargeableFrom)}` : 'CCV'); break;
+    case 'charge_card':  s.push(`DÉBIT CB${r.chargeAmount ? ` ${r.chargeAmount}` : (r.amount ? ` ${r.amount}` : '')}`); break;
+    case 'hotel_collect':
+    case 'on_site':      s.push('RSP'); break;
+    case 'prepaid':      s.push('PRÉPAYÉ'); break;
+    case 'ota_billed':   s.push('OTA'); break;
+  }
+
+  // bloc TAXE DE SÉJOUR (préfixé #)
+  let ts: string;
+  if (tsByAgency) ts = 'TS incl. agence';
+  else if (tsCardLast4) ts = `CCV TS …${tsCardLast4}`;   // prépayée (Goelett) → débiter la carte, pas le client
+  else ts = cityTax != null ? `RSP TS ${cityTax.toFixed(2).replace('.', ',')}€` : 'RSP TS';
+  s.push(`# ${ts}`);
+
+  // variables
+  if (r.breakfast === false) s.push('SANS PDJ');
+  if (r.genius) s.push('GENIUS');
+  if (dejaVenu === true) s.push('DÉJÀ VENU');
+  else if (dejaVenu === false) s.push('1ER SÉJOUR');
+
+  return s.join(' ');
 }
 
 // Annulation HORS DÉLAI ? (règle Martin 2026-07-05 : facturer si annulé hors délai).

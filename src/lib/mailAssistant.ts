@@ -59,6 +59,9 @@ export type Classification = {
 const rx = {
   stockAlert: /n['’ ]?est plus disponible|plus disponible à la vente/i,
   bookingNoise: /résumé de votre compte|identifiant de l['’ ]?hôtel|account summary/i,
+  // Digest quotidien des arrivées Booking → bruit (Martin 2026-07-07). Le détail actionnable
+  // (facturation agence, TS Goelett) revient aussi par les mails D-Edge/Goelett individuels.
+  bookingDigest: /résumé quotidien des arrivées|reservations with (?:today|tomorrow)|arrival date for/i,
   resaNew: /nouvelle réservation/i,
   resaMod: /modification de réservation/i,
   resaCancel: /annulation de réservation/i,
@@ -95,6 +98,11 @@ export function classifyMail(mail: MailInput): Classification {
   // 1b) Notifs de compte Booking (résumé de compte, identifiants hôtel) -> suppression (bruit).
   if (/booking\.com$/i.test(from) && rx.bookingNoise.test(hay)) {
     return { category: 'spam_alert', action: 'delete', reason: 'Notification de compte Booking (sans action)', detail: {} };
+  }
+
+  // 1c) Digest quotidien des arrivées Booking -> suppression (Martin 2026-07-07).
+  if (/booking\.com$/i.test(from) && rx.bookingDigest.test(hay)) {
+    return { category: 'spam_alert', action: 'delete', reason: 'Digest quotidien des arrivées Booking (bruit)', detail: {} };
   }
 
   // 2) Résa OTA (D-Edge / Booking) -> contrôle résa
