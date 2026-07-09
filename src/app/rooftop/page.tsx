@@ -204,7 +204,7 @@ function ResasTab({ hotelId }: { hotelId: string }) {
   const startBooking = (t: ActiveTable) => {
     setOpenTable(null);
     setBookingTable(t.id);
-    setForm({ ...emptyForm, couverts: String(t.couverts), heure: services[0] || "" });
+    setForm({ ...emptyForm, couverts: String(t.couverts), heure: (services[0] || "").slice(0, 5) });
   };
 
   // Ajoute / modifie la note d'une résa existante (allergie, occasion, demande spéciale…).
@@ -428,15 +428,15 @@ function ResasTab({ hotelId }: { hotelId: string }) {
                       <Input type="number" min="1" placeholder="Couv." value={form.couverts}
                         onChange={e => setForm(f => ({ ...f, couverts: e.target.value }))}
                         className="h-11 text-sm text-center" />
-                      {services.length > 0 ? (
-                        <select value={form.heure} onChange={e => setForm(f => ({ ...f, heure: e.target.value }))}
-                          className="h-11 rounded-md border border-slate-200 bg-white text-sm px-2 focus:outline-none focus:border-[#004e7c]">
-                          {!services.includes(form.heure) && <option value={form.heure}>{form.heure || "Heure…"}</option>}
-                          {services.map(h => <option key={h} value={h}>{h}</option>)}
-                        </select>
-                      ) : (
-                        <Input placeholder="Heure *" value={form.heure}
-                          onChange={e => setForm(f => ({ ...f, heure: e.target.value }))} className="h-11 text-sm text-center" />
+                      {/* Staff = heure LIBRE (walk-in / téléphone à toute heure) ; les services
+                          configurés restent proposés en suggestions via datalist. */}
+                      <input type="time" value={form.heure} list="rooftop-service-slots"
+                        onChange={e => setForm(f => ({ ...f, heure: e.target.value }))}
+                        className="h-11 rounded-md border border-slate-200 bg-white text-sm px-2 text-center focus:outline-none focus:border-[#004e7c]" />
+                      {services.length > 0 && (
+                        <datalist id="rooftop-service-slots">
+                          {services.map(h => <option key={h} value={h} />)}
+                        </datalist>
                       )}
                       <Input placeholder="Téléphone" value={form.tel}
                         onChange={e => setForm(f => ({ ...f, tel: e.target.value }))} className="h-11 text-sm col-span-2" />
