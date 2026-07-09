@@ -29,8 +29,8 @@ type CaisseShift = {
   shift_type: ShiftType;
   user_id: string | null;
   user_name: string | null;
-  pms_tpe: number; pms_especes: number; pms_ancv: number; pms_virement: number;
-  reel_tpe: number; reel_especes: number; reel_ancv: number; reel_virement: number;
+  pms_tpe: number; pms_amex: number; pms_especes: number; pms_ancv: number; pms_virement: number;
+  reel_tpe: number; reel_amex: number; reel_especes: number; reel_ancv: number; reel_virement: number;
   pms_consigne: number; reel_consigne: number | null;
   commentaire: string | null;
   fond_compte_fin: number | null;
@@ -72,8 +72,8 @@ const SHIFT_COLORS: Record<ShiftType, { bg: string; text: string; border: string
 const emptyShift = (hotel_id: string, date_jour: string, shift_type: ShiftType): CaisseShift => ({
   hotel_id, date_jour, shift_type,
   user_id: null, user_name: null,
-  pms_tpe: 0, pms_especes: 0, pms_ancv: 0, pms_virement: 0,
-  reel_tpe: 0, reel_especes: 0, reel_ancv: 0, reel_virement: 0,
+  pms_tpe: 0, pms_amex: 0, pms_especes: 0, pms_ancv: 0, pms_virement: 0,
+  reel_tpe: 0, reel_amex: 0, reel_especes: 0, reel_ancv: 0, reel_virement: 0,
   pms_consigne: 0, reel_consigne: null,
   commentaire: "", fond_compte_fin: null, valide: false,
   signature_data: null, signed_by_user_id: null, signed_by_name: null, signed_at: null,
@@ -276,9 +276,10 @@ function CaissePageInner() {
     // € consigne : figé si shift validé, sinon net Stripe du jour en direct.
     const consigneReel = sh.valide && sh.reel_consigne != null ? sh.reel_consigne : stripeDayNet;
     const consignePms = sh.pms_consigne || 0;
-    const totalPmsBrut = sh.pms_tpe + sh.pms_especes + sh.pms_ancv + sh.pms_virement + consignePms;
-    const totalReelBrut = sh.reel_tpe + sh.reel_especes + sh.reel_ancv + sh.reel_virement + consigneReel;
+    const totalPmsBrut = sh.pms_tpe + sh.pms_amex + sh.pms_especes + sh.pms_ancv + sh.pms_virement + consignePms;
+    const totalReelBrut = sh.reel_tpe + sh.reel_amex + sh.reel_especes + sh.reel_ancv + sh.reel_virement + consigneReel;
     const ecartTpe = round2(sh.reel_tpe - sh.pms_tpe);
+    const ecartAmex = round2(sh.reel_amex - sh.pms_amex);
     const ecartEsp = round2(sh.reel_especes - sh.pms_especes);
     const ecartAncv = round2(sh.reel_ancv - sh.pms_ancv);
     const ecartVir = round2(sh.reel_virement - sh.pms_virement);
@@ -288,7 +289,7 @@ function CaissePageInner() {
       totalPmsBrut: round2(totalPmsBrut),
       totalReelBrut: round2(totalReelBrut),
       consigneReel: round2(consigneReel),
-      ecartTpe, ecartEsp, ecartAncv, ecartVir, ecartConsigne, ecartTotal,
+      ecartTpe, ecartAmex, ecartEsp, ecartAncv, ecartVir, ecartConsigne, ecartTotal,
     };
   };
 
@@ -313,8 +314,8 @@ function CaissePageInner() {
     const sum = (k: keyof CaisseShift) =>
       (shifts.matin[k] as number || 0) + (shifts.soir[k] as number || 0) + (shifts.cloture[k] as number || 0);
     // Stripe = encaissement du jour, compté UNE SEULE FOIS (pas par shift).
-    const totalReel = sum("reel_tpe") + sum("reel_especes") + sum("reel_ancv") + sum("reel_virement") + stripeDayNet;
-    const totalPms = sum("pms_tpe") + sum("pms_especes") + sum("pms_ancv") + sum("pms_virement") + sum("pms_consigne");
+    const totalReel = sum("reel_tpe") + sum("reel_amex") + sum("reel_especes") + sum("reel_ancv") + sum("reel_virement") + stripeDayNet;
+    const totalPms = sum("pms_tpe") + sum("pms_amex") + sum("pms_especes") + sum("pms_ancv") + sum("pms_virement") + sum("pms_consigne");
     return {
       totalReel: round2(totalReel),
       totalPms: round2(totalPms),
@@ -338,8 +339,8 @@ function CaissePageInner() {
       shift_type: s,
       user_id: sh.user_id || meId,
       user_name: sh.user_name || meName,
-      pms_tpe: sh.pms_tpe, pms_especes: sh.pms_especes, pms_ancv: sh.pms_ancv, pms_virement: sh.pms_virement,
-      reel_tpe: sh.reel_tpe, reel_especes: sh.reel_especes, reel_ancv: sh.reel_ancv, reel_virement: sh.reel_virement,
+      pms_tpe: sh.pms_tpe, pms_amex: sh.pms_amex, pms_especes: sh.pms_especes, pms_ancv: sh.pms_ancv, pms_virement: sh.pms_virement,
+      reel_tpe: sh.reel_tpe, reel_amex: sh.reel_amex, reel_especes: sh.reel_especes, reel_ancv: sh.reel_ancv, reel_virement: sh.reel_virement,
       pms_consigne: sh.pms_consigne,
       // € consigne : figé au net Stripe du moment à la validation (sinon vit en direct)
       reel_consigne: valide ? stripeDayNet : sh.reel_consigne,
@@ -836,7 +837,8 @@ function CaissePageInner() {
                       </div>
 
                       {[
-                        { key: "tpe",      label: "TPE",      dot: "bg-sky-500",      pmsK: "pms_tpe",      reelK: "reel_tpe",      e: t.ecartTpe },
+                        { key: "tpe",      label: "TPE CB",   dot: "bg-sky-500",      pmsK: "pms_tpe",      reelK: "reel_tpe",      e: t.ecartTpe },
+                        { key: "amex",     label: "TPE AMEX", dot: "bg-blue-700",     pmsK: "pms_amex",     reelK: "reel_amex",     e: t.ecartAmex },
                         { key: "especes",  label: "Espèces",  dot: "bg-emerald-500",  pmsK: "pms_especes",  reelK: "reel_especes",  e: t.ecartEsp },
                         { key: "ancv",     label: "ANCV",     dot: "bg-violet-500",   pmsK: "pms_ancv",     reelK: "reel_ancv",     e: t.ecartAncv },
                         { key: "virement", label: "Virement", dot: "bg-amber-500",    pmsK: "pms_virement", reelK: "reel_virement", e: t.ecartVir },
