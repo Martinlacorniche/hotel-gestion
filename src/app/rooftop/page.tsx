@@ -647,7 +647,7 @@ function Section({ icon, title, subtitle, defaultOpen, children }: {
 // ─────────────────────────────────────────────────────────────
 const euroG = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
 type DayStats = { ca: number; nb: number; parPaiement: { tpe: number; espece: number; chambre: number }; tva: TvaTotaux };
-type MonthStats = { ca: number; nb: number; byDay: { date: string; ca: number }[] };
+type MonthStats = { ca: number; nb: number; byDay: { date: string; ca: number }[]; ttc10: number; ttc20: number };
 
 function GestionTab({ hotelId }: { hotelId: string }) {
   const today = useMemo(() => {
@@ -713,7 +713,26 @@ function GestionTab({ hotelId }: { hotelId: string }) {
       const byDayMap = new Map<string, number>();
       mOrds.forEach(o => byDayMap.set(o.date_service, (byDayMap.get(o.date_service) ?? 0) + (Number(o.total) || 0)));
       const byDay = [...byDayMap.entries()].map(([date, ca]) => ({ date, ca: round2(ca) })).sort((a, b) => b.date.localeCompare(a.date));
-      setMonth({ ca: round2(mOrds.reduce((s, o) => s + (Number(o.total) || 0), 0)), nb: mOrds.length, byDay });
+
+      // Ventilation TVA du MOIS → TTC encaissé par taux (10% / 20%). Items liés par order_id
+      // uniquement → on récupère par lots de 150 ids (URL courte).
+      const mIds = mOrds.map(o => o.id);
+      const mItems: { prix: number; qty: number; source: string; tva_type: TvaType | null }[] = [];
+      for (let i = 0; i < mIds.length; i += 150) {
+        const { data: chunk } = await supabase.from("rooftop_order_items")
+          .select("prix,qty,source,tva_type").in("order_id", mIds.slice(i, i + 150));
+        if (chunk) mItems.push(...(chunk as typeof mItems));
+      }
+      const mTva = totauxFromBuckets(ventileAll(mItems.map(it => ({
+        ttc: round2((Number(it.prix) || 0) * (it.qty || 1)),
+        type: (it.tva_type ?? (it.source === "plat" ? "food" : "soft")) as TvaType,
+      }))));
+      setMonth({
+        ca: round2(mOrds.reduce((s, o) => s + (Number(o.total) || 0), 0)),
+        nb: mOrds.length, byDay,
+        ttc10: round2(mTva.ht10 + mTva.tva10),
+        ttc20: round2(mTva.ht20 + mTva.tva20),
+      });
       setLoading(false);
     })();
   }, [hotelId, date]);
@@ -773,6 +792,17 @@ function GestionTab({ hotelId }: { hotelId: string }) {
           <div className="flex items-baseline justify-between mb-3">
             <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">CA TTC du mois</span>
             <span className="text-2xl font-bold text-[#013a5c] tabular-nums">{euroG(month.ca)}</span>
+          </div>
+          {/* TTC encaissé ventilé par taux de TVA sur le mois en cours */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="rounded-lg bg-[#004e7c]/[0.06] border border-[#004e7c]/15 p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">TTC encaissé · 20%</div>
+              <div className="mt-0.5 text-lg font-bold text-[#013a5c] tabular-nums">{euroG(month.ttc20)}</div>
+            </div>
+            <div className="rounded-lg bg-[#004e7c]/[0.06] border border-[#004e7c]/15 p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">TTC encaissé · 10%</div>
+              <div className="mt-0.5 text-lg font-bold text-[#013a5c] tabular-nums">{euroG(month.ttc10)}</div>
+            </div>
           </div>
           {month.byDay.length === 0 ? (
             <p className="text-sm text-slate-400">Aucune vente ce mois-ci.</p>
