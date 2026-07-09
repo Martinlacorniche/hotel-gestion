@@ -103,6 +103,10 @@ function ResasTab({ hotelId }: { hotelId: string }) {
   const [closedPeriods, setClosedPeriods] = useState<{ debut: string; fin: string }[]>([]);
   const [services, setServices] = useState<string[]>([]);
 
+  // Édition de la note sur une résa existante (brouillon par résa + id en cours d'enregistrement).
+  const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
+  const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
+
   // Création d'une résa au clic sur une table libre
   const [bookingTable, setBookingTable] = useState<string | null>(null);
   const emptyForm = { nom: "", couverts: "2", heure: "", tel: "", email: "", message: "" };
@@ -201,6 +205,21 @@ function ResasTab({ hotelId }: { hotelId: string }) {
     setOpenTable(null);
     setBookingTable(t.id);
     setForm({ ...emptyForm, couverts: String(t.couverts), heure: services[0] || "" });
+  };
+
+  // Ajoute / modifie la note d'une résa existante (allergie, occasion, demande spéciale…).
+  const saveNote = async (r: Resa) => {
+    const val = (noteEdits[r.id] ?? r.message ?? "").trim();
+    setSavingNoteId(r.id);
+    const { error } = await supabase
+      .from("rooftop_reservations")
+      .update({ message: val || null })
+      .eq("id", r.id);
+    setSavingNoteId(null);
+    if (error) { toast.error(error.message || "Erreur"); return; }
+    setResas(prev => prev.map(x => (x.id === r.id ? { ...x, message: val || null } : x)));
+    setNoteEdits(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+    toast.success("Note enregistrée ✓");
   };
 
   // Crée une réservation sur la table cliquée (walk-in / téléphone).
@@ -328,9 +347,31 @@ function ResasTab({ hotelId }: { hotelId: string }) {
                           <div className="text-[13px] space-y-0.5">
                             {r.telephone && <p>📞 {r.telephone}</p>}
                             {r.email && <p>✉️ {r.email}</p>}
-                            {r.message && <p className="italic text-slate-500">« {r.message} »</p>}
-                            {!r.telephone && !r.email && !r.message && <p className="text-slate-400 italic">Aucun contact renseigné.</p>}
+                            {!r.telephone && !r.email && <p className="text-slate-400 italic">Aucun contact renseigné.</p>}
                           </div>
+                          {(() => {
+                            const draft = noteEdits[r.id] ?? r.message ?? "";
+                            const changed = draft.trim() !== (r.message ?? "").trim();
+                            return (
+                              <div className="mt-2.5">
+                                <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Note</label>
+                                <textarea
+                                  value={draft} rows={2}
+                                  onChange={e => setNoteEdits(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                  placeholder="Ajouter une note (allergie, occasion, demande…)"
+                                  className="mt-1 w-full resize-none rounded-lg border border-slate-200 px-2.5 py-2 text-[13px] text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-[#004e7c]"
+                                />
+                                {changed && (
+                                  <button
+                                    onClick={() => saveNote(r)} disabled={savingNoteId === r.id}
+                                    className="mt-1.5 inline-flex items-center gap-1.5 min-h-[38px] rounded-lg border border-[#004e7c] text-[#004e7c] hover:bg-[#004e7c]/5 px-3 py-1.5 text-[13px] font-semibold transition active:scale-[0.97] disabled:opacity-50"
+                                  >
+                                    {savingNoteId === r.id ? "Enregistrement…" : "Enregistrer la note"}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             {arrived ? (
                               <button onClick={() => markPresence(r, null)}
