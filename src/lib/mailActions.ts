@@ -22,7 +22,7 @@ export type ActionMode = 'off' | 'suggest' | 'auto';
 // Catégories pilotables (on/off/auto) + leur mode par défaut. Tout démarre en
 // 'suggest' (human-in-the-loop) : rien ne part en auto tant que Martin ne l'a pas décidé.
 export const CATEGORY_MODES: MailCategory[] = [
-  'spam_alert', 'resa_ota', 'facture', 'candidature', 'commercial', 'client_msg',
+  'spam_alert', 'resa_ota', 'facture', 'facture_interne', 'candidature', 'commercial', 'client_msg',
 ];
 const DEFAULT_MODE: ActionMode = 'suggest';
 
@@ -69,6 +69,13 @@ export type ExecOutcome = {
 async function actDelete(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
   await moveMessage(cfg.mailbox, row.message_id, 'deleteditems');
   return { status: 'executed', result: { movedTo: 'deleteditems' } };
+}
+
+// archive : à classer sans traitement (nos propres factures client Mews / Rooftop) → dossier
+// Archive (réversible). Surtout PAS Pennylane. Martin 2026-07-09.
+async function actArchive(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
+  await moveMessage(cfg.mailbox, row.message_id, 'archive');
+  return { status: 'executed', result: { movedTo: 'archive' } };
 }
 
 // Réponse type « nos effectifs sont au complet » — signée « La Direction / Hôtel <nom> ».
@@ -370,6 +377,7 @@ export async function executeRow(cfg: HotelMailConfig, row: LogRow): Promise<Exe
   try {
     switch (row.proposed_action) {
       case 'delete':              return await actDelete(cfg, row);
+      case 'archive':             return await actArchive(cfg, row);
       case 'draft_reply':         return await actDraftReply(cfg, row);
       case 'resa_control':        return await actResaControl(cfg, row);
       case 'invoice_note':        return await actInvoiceNote(cfg, row);

@@ -443,7 +443,7 @@ export function controlNote(
 
   // variables
   if (r.breakfast === false) s.push('SANS PDJ');
-  if (r.genius) s.push('GENIUS');
+  // Genius volontairement PAS affiché : sans intérêt pour la réception (Martin 2026-07-09).
   if (dejaVenu === true) s.push('DÉJÀ VENU');
   else if (dejaVenu === false) s.push('1ER SÉJOUR');
 

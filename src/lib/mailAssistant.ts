@@ -42,12 +42,12 @@ export type MailInput = {
 };
 
 export type MailCategory =
-  | 'spam_alert' | 'resa_ota' | 'prise_en_charge' | 'facture' | 'facture_ota' | 'candidature'
-  | 'commercial' | 'client_msg' | 'autre';
+  | 'spam_alert' | 'resa_ota' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
+  | 'candidature' | 'commercial' | 'client_msg' | 'autre';
 
 export type MailAction =
-  | 'delete' | 'resa_control' | 'agency_note' | 'route_pennylane' | 'invoice_note' | 'draft_reply'
-  | 'commercial_followup' | 'none';
+  | 'delete' | 'archive' | 'resa_control' | 'agency_note' | 'route_pennylane' | 'invoice_note'
+  | 'draft_reply' | 'commercial_followup' | 'none';
 
 export type Classification = {
   category: MailCategory;
@@ -57,7 +57,10 @@ export type Classification = {
 };
 
 const rx = {
-  stockAlert: /n['’ ]?est plus disponible|plus disponible à la vente/i,
+  // Alertes/relances de stock D-Edge → suppression auto (Martin 2026-07-09). Couvre « n'est
+  // plus disponible à la vente » ET « il ne reste plus qu'une seule chambre disponible… /
+  // Ajoutez des disponibilités » (relance d'incitation à ouvrir des dispos).
+  stockAlert: /n['’ ]?est plus disponible|plus disponible à la vente|ne reste plus qu.{0,15}chambre|ajoutez des disponibilit/i,
   bookingNoise: /résumé de votre compte|identifiant de l['’ ]?hôtel|account summary/i,
   // Digest quotidien des arrivées Booking → bruit (Martin 2026-07-07). Le détail actionnable
   // (facturation agence, TS Goelett) revient aussi par les mails D-Edge/Goelett individuels.
@@ -71,6 +74,18 @@ const rx = {
   dedge: /d-edge|d_edge|availpro/i,
   bookingGuest: /guest\.booking\.com$/i,
   reply: /^\s*(re|rép|rép\.|tr|fwd)\s*:/i,
+  // NOS propres factures (émises par nous, pas des fournisseurs) → à classer (Archive),
+  // surtout PAS routées vers Pennylane (Martin 2026-07-09).
+  //  · Mews envoie les factures/folios clients depuis noreply@mews.li
+  //  · le Rooftop / l'hôtel envoie ses factures depuis *@send.hotel-corniche.com
+  factureInterneFrom: /noreply@mews\.li|@send\.hotel-corniche\.com/i,
+  // Relance de commission OTA (ex. Travel Counsellors) → corbeille (Martin 2026-07-09).
+  commissionOta: /travelcounsellors\.com/i,
+  // Pub / prospection commerciale entrante → corbeille. Liste d'expéditeurs qui s'enrichit
+  // au fil de l'eau (c'est ça, « apprendre » à l'assistant). Martin 2026-07-09.
+  prospectionSenders: /translaser\.fr|neutraliz\.com/i,
+  // Signal générique de newsletter / démarchage à froid (lien de désinscription + accroche).
+  prospectionHook: /se d[ée]sinscrire|unsubscribe|d[ée]couvrez nos offres|\b[àa] partir de\s?\d/i,
 };
 
 // Réf D-EDGE (ex. 7QHRMG) souvent en tête du sujet.
@@ -103,6 +118,22 @@ export function classifyMail(mail: MailInput): Classification {
   // 1c) Digest quotidien des arrivées Booking -> suppression (Martin 2026-07-07).
   if (/booking\.com$/i.test(from) && rx.bookingDigest.test(hay)) {
     return { category: 'spam_alert', action: 'delete', reason: 'Digest quotidien des arrivées Booking (bruit)', detail: {} };
+  }
+
+  // 1d) NOS propres factures (folio client Mews, facture Rooftop) -> Archive. À classer,
+  //     jamais Pennylane (Pennylane = factures FOURNISSEURS entrantes). Martin 2026-07-09.
+  if (rx.factureInterneFrom.test(from) && rx.facture.test(hay)) {
+    return { category: 'facture_interne', action: 'archive', reason: 'Notre propre facture (client Mews / Rooftop) → à classer', detail: {} };
+  }
+
+  // 1e) Relance de commission OTA (Travel Counsellors…) -> corbeille (Martin 2026-07-09).
+  if (rx.commissionOta.test(from) && /commission/i.test(hay)) {
+    return { category: 'spam_alert', action: 'delete', reason: 'Relance de commission OTA (à supprimer)', detail: {} };
+  }
+
+  // 1f) Pub / prospection connue (expéditeurs déjà repérés) -> corbeille (Martin 2026-07-09).
+  if (rx.prospectionSenders.test(from)) {
+    return { category: 'spam_alert', action: 'delete', reason: 'Pub / prospection (expéditeur connu)', detail: {} };
   }
 
   // 2) Résa OTA (D-Edge / Booking) -> contrôle résa
@@ -157,6 +188,13 @@ export function classifyMail(mail: MailInput): Classification {
   // 6) Message client (via Booking, ou réponse d'un externe) -> brouillon, validation humaine
   if (rx.bookingGuest.test(from) || (rx.reply.test(subj) && !from.includes('htbm.fr'))) {
     return { category: 'client_msg', action: 'draft_reply', reason: 'Message client (à répondre)', detail: {} };
+  }
+
+  // 6c) Démarchage à froid / newsletter (accroche marketing + lien de désinscription) et
+  //     pas un interne htbm -> corbeille. Placé APRÈS le commercial pour ne jamais avaler une
+  //     vraie demande (séminaire/devis). Martin 2026-07-09.
+  if (rx.prospectionHook.test(hay) && !from.includes('htbm.fr')) {
+    return { category: 'spam_alert', action: 'delete', reason: 'Démarchage / newsletter (à supprimer)', detail: {} };
   }
 
   // 7) Reste -> laisser à l'humain
