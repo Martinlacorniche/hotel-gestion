@@ -336,7 +336,7 @@ export async function getMonthlyRevenue(now: Date = new Date(), horizon = 6): Pr
 // Le paiement se rattache à un compte Mews (AccountId), pas à une note précise.
 // Vérifié en prod le 2026-07-04 (scope écriture ouvert). Cf. mémoire
 // project_mews_occupancy / project_rooftop_pos_resa.
-export type MewsExternalPaymentType = 'Cash' | 'CreditCard';
+export type MewsExternalPaymentType = 'Cash' | 'CreditCard' | 'Amex';
 
 export async function addExternalPayment(params: {
   accountId: string;

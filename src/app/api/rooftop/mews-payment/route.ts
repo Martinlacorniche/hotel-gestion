@@ -17,9 +17,16 @@ export const dynamic = "force-dynamic";
 const ROOFTOP_ACCOUNT_ID =
   process.env.MEWS_ROOFTOP_ACCOUNT_ID || "d3451171-ce99-42cc-b412-b47c00f8a967";
 
+// Moyen POS → type de paiement externe Mews. « Amex » est un type natif Mews
+// (range dans sa propre catégorie comptable). 'tpe' = legacy (= CB).
 const MEWS_TYPE: Record<string, MewsExternalPaymentType> = {
   tpe: "CreditCard",
+  cb: "CreditCard",
+  amex: "Amex",
   espece: "Cash",
+};
+const MEWS_LABEL: Record<string, string> = {
+  tpe: "CB", cb: "CB", amex: "Amex", espece: "Espèces",
 };
 
 export async function POST(req: NextRequest) {
@@ -60,7 +67,7 @@ export async function POST(req: NextRequest) {
       grossValue: amount,
       type,
       externalIdentifier: pay.id,
-      notes: `Rooftop POS · ${pay.date_service} · ${pay.method === "tpe" ? "TPE" : "Espèces"}`,
+      notes: `Rooftop POS · ${pay.date_service} · ${MEWS_LABEL[pay.method] ?? pay.method}`,
     });
 
     // Consigner l'Id Mews (best-effort : le paiement est déjà dans Mews même si

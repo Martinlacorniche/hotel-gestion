@@ -646,7 +646,7 @@ function Section({ icon, title, subtitle, defaultOpen, children }: {
 // TAB GESTION — stats du jour + résumé clôture + data du mois
 // ─────────────────────────────────────────────────────────────
 const euroG = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
-type DayStats = { ca: number; nb: number; parPaiement: { tpe: number; espece: number; chambre: number }; tva: TvaTotaux };
+type DayStats = { ca: number; nb: number; parPaiement: { cb: number; amex: number; espece: number; chambre: number }; tva: TvaTotaux };
 type MonthStats = { ca: number; nb: number; byDay: { date: string; ca: number }[]; ttc10: number; ttc20: number };
 
 function GestionTab({ hotelId }: { hotelId: string }) {
@@ -681,7 +681,10 @@ function GestionTab({ hotelId }: { hotelId: string }) {
       // ── Jour ──
       const dayOrds = mOrds.filter(o => o.date_service === date);
       const dayIds = dayOrds.map(o => o.id);
-      const parPaiement = { tpe: 0, espece: 0, chambre: 0 };
+      const parPaiement = { cb: 0, amex: 0, espece: 0, chambre: 0 };
+      // 'tpe' (legacy) compté comme CB.
+      const normMethod = (m: string): keyof typeof parPaiement | null =>
+        m === "tpe" ? "cb" : (m === "cb" || m === "amex" || m === "espece" || m === "chambre") ? m : null;
       let lignes: { ttc: number; type: TvaType }[] = [];
       if (dayIds.length) {
         const [{ data: itemsData }, { data: paysData }] = await Promise.all([
@@ -694,8 +697,8 @@ function GestionTab({ hotelId }: { hotelId: string }) {
         });
         dayOrds.forEach(o => {
           const ps = paysByOrder.get(o.id);
-          if (ps && ps.length) ps.forEach(p => { const m = p.method as keyof typeof parPaiement; if (m in parPaiement) parPaiement[m] += Number(p.amount) || 0; });
-          else { const m = o.payment_method as keyof typeof parPaiement; if (m in parPaiement) parPaiement[m] += Number(o.total) || 0; }
+          if (ps && ps.length) ps.forEach(p => { const m = normMethod(p.method); if (m) parPaiement[m] += Number(p.amount) || 0; });
+          else { const m = normMethod(o.payment_method || ""); if (m) parPaiement[m] += Number(o.total) || 0; }
         });
         lignes = ((itemsData as { prix: number; qty: number; source: string; tva_type: TvaType | null }[]) || []).map(it => ({
           ttc: round2((Number(it.prix) || 0) * (it.qty || 1)),
@@ -705,7 +708,7 @@ function GestionTab({ hotelId }: { hotelId: string }) {
       setDay({
         ca: round2(dayOrds.reduce((s, o) => s + (Number(o.total) || 0), 0)),
         nb: dayOrds.length,
-        parPaiement: { tpe: round2(parPaiement.tpe), espece: round2(parPaiement.espece), chambre: round2(parPaiement.chambre) },
+        parPaiement: { cb: round2(parPaiement.cb), amex: round2(parPaiement.amex), espece: round2(parPaiement.espece), chambre: round2(parPaiement.chambre) },
         tva: totauxFromBuckets(ventileAll(lignes)),
       });
 
@@ -766,7 +769,8 @@ function GestionTab({ hotelId }: { hotelId: string }) {
             </div>
             <p className="mt-1 text-[12px] text-slate-400">{day.nb} addition{day.nb > 1 ? "s" : ""} encaissée{day.nb > 1 ? "s" : ""}</p>
             <ul className="mt-3 space-y-1.5 text-sm border-t border-slate-100 pt-3">
-              <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><CreditCard size={14} /> Carte (TPE)</span><span className="font-medium tabular-nums">{euroG(day.parPaiement.tpe)}</span></li>
+              <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><CreditCard size={14} /> CB</span><span className="font-medium tabular-nums">{euroG(day.parPaiement.cb)}</span></li>
+              <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><CreditCard size={14} /> Amex</span><span className="font-medium tabular-nums">{euroG(day.parPaiement.amex)}</span></li>
               <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><Banknote size={14} /> Espèces</span><span className="font-medium tabular-nums">{euroG(day.parPaiement.espece)}</span></li>
               <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><BedDouble size={14} /> Transfert chambre</span><span className="font-medium tabular-nums">{euroG(day.parPaiement.chambre)}</span></li>
             </ul>

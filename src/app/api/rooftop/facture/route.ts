@@ -26,9 +26,11 @@ function tvaLabel(t: TvaType): string {
 }
 
 function payLabel(method: string | null, roomRef: string | null): string | null {
-  if (method === "tpe") return "Carte bancaire (TPE)";
+  if (method === "cb" || method === "tpe") return "Carte bancaire (CB)";
+  if (method === "amex") return "Carte bancaire (Amex)";
   if (method === "espece") return "Espèces";
   if (method === "chambre") return `Transfert sur chambre ${roomRef ?? ""}`.trim();
+  if (method === "multi") return "Paiement multiple";
   return null;
 }
 

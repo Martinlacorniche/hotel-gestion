@@ -31,7 +31,7 @@ type Payment = { id: string; method: string; amount: number; room_ref: string | 
 type Cloture = {
   nbAdditions: number;
   totalTtc: number;
-  parPaiement: { tpe: number; espece: number; chambre: number };
+  parPaiement: { cb: number; amex: number; espece: number; chambre: number };
   parType: { soft: number; food: number; alcool: number };
   tva: TvaTotaux;
 };
@@ -65,7 +65,7 @@ export function PosTab({ hotelId }: { hotelId: string }) {
   // Commande en cours
   const [active, setActive] = useState<Order | null>(null);
   const [items, setItems] = useState<OrderRow[]>([]);
-  const [payMethod, setPayMethod] = useState<"tpe" | "espece" | "chambre" | null>(null);
+  const [payMethod, setPayMethod] = useState<"cb" | "amex" | "espece" | "chambre" | null>(null);
   const [roomRef, setRoomRef] = useState("");
   const [payAmount, setPayAmount] = useState(""); // vide = solder le reste
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -274,7 +274,7 @@ export function PosTab({ hotelId }: { hotelId: string }) {
     // Consigner le règlement dans Mews (TPE/espèces uniquement ; le transfert
     // chambre serait une charge, non poussée). Best-effort : n'échoue jamais
     // l'encaissement, le règlement local reste la source.
-    if (row.method === "tpe" || row.method === "espece") void syncPaymentToMews(row.id);
+    if (row.method === "cb" || row.method === "amex" || row.method === "espece") void syncPaymentToMews(row.id);
 
     if (newPaid + 0.005 >= total) {
       // Addition soldée → verrouillée.
@@ -423,7 +423,10 @@ export function PosTab({ hotelId }: { hotelId: string }) {
       .eq("hotel_id", hotelId).eq("date_service", date).eq("statut", "encaissee");
     const orderIds = (ords || []).map(o => o.id);
     let its: { prix: number; qty: number; source: string; tva_type: TvaType | null }[] = [];
-    const parPaiement = { tpe: 0, espece: 0, chambre: 0 };
+    const parPaiement = { cb: 0, amex: 0, espece: 0, chambre: 0 };
+    // 'tpe' (legacy) est compté comme CB.
+    const normMethod = (m: string): keyof typeof parPaiement | null =>
+      m === "tpe" ? "cb" : (m === "cb" || m === "amex" || m === "espece" || m === "chambre") ? m : null;
     if (orderIds.length) {
       const [{ data: itemsData }, { data: paysData }] = await Promise.all([
         supabase.from("rooftop_order_items").select("prix,qty,source,tva_type,order_id").in("order_id", orderIds),
@@ -443,12 +446,12 @@ export function PosTab({ hotelId }: { hotelId: string }) {
         const ps = paysByOrder.get(o.id);
         if (ps && ps.length) {
           ps.forEach(p => {
-            const m = p.method as keyof typeof parPaiement;
-            if (m in parPaiement) parPaiement[m] += Number(p.amount) || 0;
+            const m = normMethod(p.method);
+            if (m) parPaiement[m] += Number(p.amount) || 0;
           });
         } else {
-          const m = (o as { payment_method: string | null }).payment_method as keyof typeof parPaiement;
-          if (m in parPaiement) parPaiement[m] += Number(o.total) || 0;
+          const m = normMethod((o as { payment_method: string | null }).payment_method || "");
+          if (m) parPaiement[m] += Number(o.total) || 0;
         }
       });
     }
@@ -491,7 +494,8 @@ export function PosTab({ hotelId }: { hotelId: string }) {
     const tableNom = active.table_id ? tables[active.table_id] : null;
     const locked = active.statut === "encaissee";
     const methodLabel = active.payment_method === "multi" ? "Paiement multiple"
-      : active.payment_method === "tpe" ? "TPE (carte)"
+      : active.payment_method === "cb" || active.payment_method === "tpe" ? "CB"
+      : active.payment_method === "amex" ? "Amex"
       : active.payment_method === "espece" ? "Espèces"
       : active.payment_method === "chambre" ? `Transfert chambre ${active.room_ref ?? ""}`.trim()
       : null;
@@ -619,7 +623,7 @@ export function PosTab({ hotelId }: { hotelId: string }) {
                       {payments.map(p => (
                         <li key={p.id} className="flex items-center justify-between text-[12px]">
                           <span className="text-slate-500">
-                            {p.method === "tpe" ? "Carte" : p.method === "espece" ? "Espèces" : `Chambre${p.room_ref ? ` ${p.room_ref}` : ""}`}
+                            {p.method === "cb" || p.method === "tpe" ? "CB" : p.method === "amex" ? "Amex" : p.method === "espece" ? "Espèces" : `Chambre${p.room_ref ? ` ${p.room_ref}` : ""}`}
                           </span>
                           <span className="flex items-center gap-2">
                             <span className="tabular-nums text-slate-600">{euro(p.amount)}</span>
@@ -644,7 +648,8 @@ export function PosTab({ hotelId }: { hotelId: string }) {
 
                 {/* Mode de paiement (incl. transfert chambre) */}
                 <div className="grid grid-cols-3 gap-2">
-                  <MethodBtn active={payMethod === "tpe"} onClick={() => setPayMethod("tpe")} icon={<CreditCard size={16} />} label="TPE" />
+                  <MethodBtn active={payMethod === "cb"} onClick={() => setPayMethod("cb")} icon={<CreditCard size={16} />} label="CB" />
+                  <MethodBtn active={payMethod === "amex"} onClick={() => setPayMethod("amex")} icon={<CreditCard size={16} />} label="Amex" />
                   <MethodBtn active={payMethod === "espece"} onClick={() => setPayMethod("espece")} icon={<Banknote size={16} />} label="Espèces" />
                   <MethodBtn active={payMethod === "chambre"} onClick={() => setPayMethod("chambre")} icon={<BedDouble size={16} />} label="Chambre" />
                 </div>
@@ -712,7 +717,8 @@ export function PosTab({ hotelId }: { hotelId: string }) {
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Encaissements</span>
               <ul className="mt-2 space-y-1.5 text-sm">
-                <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><CreditCard size={14} /> Carte (TPE)</span><span className="font-medium tabular-nums">{euro(c.parPaiement.tpe)}</span></li>
+                <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><CreditCard size={14} /> CB</span><span className="font-medium tabular-nums">{euro(c.parPaiement.cb)}</span></li>
+                <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><CreditCard size={14} /> Amex</span><span className="font-medium tabular-nums">{euro(c.parPaiement.amex)}</span></li>
                 <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><Banknote size={14} /> Espèces</span><span className="font-medium tabular-nums">{euro(c.parPaiement.espece)}</span></li>
                 <li className="flex justify-between"><span className="text-slate-500 flex items-center gap-1.5"><BedDouble size={14} /> Transfert chambre</span><span className="font-medium tabular-nums">{euro(c.parPaiement.chambre)}</span></li>
               </ul>
