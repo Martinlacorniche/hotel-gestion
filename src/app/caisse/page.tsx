@@ -10,7 +10,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useSelectedHotel } from "@/context/SelectedHotelContext";
 import {
-  Euro, Printer, Lock, Save, Sun, Sunset,
+  Euro, Printer, Lock, Save, Sun, Sunset, Download,
   ChevronLeft, ChevronRight, AlertCircle, Coins,
   Loader2,
 } from "lucide-react";
@@ -118,6 +118,8 @@ function CaissePageInner() {
 
   const [loading, setLoading] = useState(false);
   const [savingShift, setSavingShift] = useState<ShiftType | null>(null);
+  const [prefilling, setPrefilling] = useState(false);
+  const VOILES_CAISSE_ID = "ded6e6fb-ff3c-4fa8-ad07-403ee316be53"; // seul hôtel sous Mews
   const [comptageStatus, setComptageStatus] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const comptageDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextAutosaveRef = useRef<boolean>(false);
@@ -318,6 +320,43 @@ function CaissePageInner() {
       ecart: round2(totalReel - totalPms),
     };
   }, [shifts, stripeDayNet]);
+
+  // Pré-remplit les cases PMS (matin + soir) depuis les encaissements Mews du jour.
+  // LECTURE seule : remplit l'état local, le staff vérifie puis enregistre. Idempotent
+  // (re-cliquable) : chaque clic réécrit les PMS avec l'état Mews courant. N'écrase pas
+  // un shift déjà validé.
+  const prefillFromMews = async () => {
+    if (!hotelId) return;
+    setPrefilling(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) { toast.error("Session expirée"); setPrefilling(false); return; }
+      const res = await fetch("/api/caisse/mews-prefill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ hotelId, date: dateJour }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) { toast.error(json.error || "Échec du pré-remplissage Mews"); setPrefilling(false); return; }
+      const p = json.prefill as { matin: Record<string, number>; soir: Record<string, number> };
+      let filled = 0;
+      (["matin", "soir"] as ShiftType[]).forEach((s) => {
+        if (shifts[s].valide) return; // ne pas écraser un shift validé
+        const a = p[s] || {};
+        updateShift(s, {
+          pms_tpe: a.tpe ?? 0, pms_amex: a.amex ?? 0, pms_especes: a.especes ?? 0,
+          pms_ancv: a.ancv ?? 0, pms_virement: a.virement ?? 0,
+        });
+        filled++;
+      });
+      setPrefilling(false);
+      toast.success(filled ? "PMS pré-remplis depuis Mews ✓ — vérifiez et enregistrez" : "Shifts déjà validés, rien à pré-remplir");
+    } catch {
+      setPrefilling(false);
+      toast.error("Pré-remplissage Mews échoué (réseau)");
+    }
+  };
 
   // --- Save shift ---
   // signature = dataURL PNG fourni par la modale au moment de la validation.
@@ -554,6 +593,12 @@ function CaissePageInner() {
               <ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
           </div>
+          {hotelId === VOILES_CAISSE_ID && (
+            <button onClick={prefillFromMews} disabled={prefilling} title="Récupère les encaissements Mews du jour dans les cases PMS (matin/soir)"
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition disabled:opacity-50">
+              <Download className="w-3.5 h-3.5" /> {prefilling ? "…" : "Pré-remplir (Mews)"}
+            </button>
+          )}
           <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium text-slate-700 bg-white border border-slate-200 rounded-md shadow-[0_1px_0_rgba(0,0,0,0.02)] hover:border-slate-300 hover:bg-slate-50 transition">
             <Printer className="w-3.5 h-3.5" /> Imprimer
           </button>

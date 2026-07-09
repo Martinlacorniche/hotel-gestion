@@ -363,6 +363,70 @@ export async function addExternalPayment(params: {
   return { id: res.ExternalPaymentId ?? null };
 }
 
+// ── Pré-remplissage caisse (Voiles) depuis Mews ──────────────────────────────
+// Récupère les encaissements du jour (heure de Paris) et les range par LIGNE de
+// caisse (TPE CB / Amex / Espèces / ANCV / Virement) et par SHIFT (matin 6h-14h,
+// soir sinon). On ne compte QUE les paiements « externes » = le vrai terminal /
+// caisse (pas les CreditCardPayment VCC/en ligne). On EXCLUT le compte Rooftop
+// (sa propre caisse) pour ne pas compter deux fois. Montants en valeur absolue
+// (encaissé brut à contrôler par la réception).
+export type CaisseLine = 'tpe' | 'amex' | 'especes' | 'ancv' | 'virement';
+export type CaisseShiftAmounts = Record<CaisseLine, number>;
+export type CaissePrefill = { matin: CaisseShiftAmounts; soir: CaisseShiftAmounts };
+
+const ROOFTOP_ACCOUNT_ID_EXCL =
+  process.env.MEWS_ROOFTOP_ACCOUNT_ID || 'd3451171-ce99-42cc-b412-b47c00f8a967';
+
+type MewsPaymentLite = {
+  State?: string; Type?: string; AccountId?: string; ChargedUtc?: string;
+  Amount?: { GrossValue?: number };
+  Data?: { External?: { Type?: string } };
+};
+
+export async function getCaissePrefill(dateParis: string): Promise<CaissePrefill> {
+  const dayStartUtc = new Date(`${dateParis}T00:00:00Z`).getTime();
+  const data = await callMews<{ Payments: MewsPaymentLite[] }>('payments/getAll', {
+    ChargedUtc: {
+      StartUtc: new Date(dayStartUtc - 3 * 3600e3).toISOString(),
+      EndUtc: new Date(dayStartUtc + 27 * 3600e3).toISOString(),
+    },
+    Limitation: { Count: 1000 },
+  });
+  const empty = (): CaisseShiftAmounts => ({ tpe: 0, amex: 0, especes: 0, ancv: 0, virement: 0 });
+  const out: CaissePrefill = { matin: empty(), soir: empty() };
+
+  for (const p of data.Payments || []) {
+    if (p.State !== 'Charged') continue;
+    if (p.AccountId === ROOFTOP_ACCOUNT_ID_EXCL) continue;   // Rooftop = caisse séparée
+    if (!p.ChargedUtc) continue;
+    const charged = new Date(p.ChargedUtc);
+    if (parisDateStr(charged) !== dateParis) continue;
+
+    let line: CaisseLine | null = null;
+    if (p.Type === 'CashPayment') line = 'especes';
+    else if (p.Type === 'ExternalPayment') {
+      switch (p.Data?.External?.Type) {
+        case 'Cash': line = 'especes'; break;
+        case 'CreditCard': line = 'tpe'; break;
+        case 'Amex': line = 'amex'; break;
+        case 'ChequeVacances': line = 'ancv'; break;
+        case 'WireTransfer': line = 'virement'; break;
+      }
+    }
+    // CreditCardPayment (VCC / en ligne) et types inconnus → ignorés.
+    if (!line) continue;
+
+    const val = Math.abs(Number(p.Amount?.GrossValue) || 0);
+    const h = parisHour(charged);
+    const bucket = h >= 6 && h < 14 ? out.matin : out.soir;
+    bucket[line] += val;
+  }
+  const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+  (['matin', 'soir'] as const).forEach((s) =>
+    (Object.keys(out[s]) as CaisseLine[]).forEach((k) => { out[s][k] = r2(out[s][k]); }));
+  return out;
+}
+
 // Annuler un paiement dans Mews (correction d'erreur de saisie). Passe l'état à
 // 'Canceled'. Corps À LA RACINE : { PaymentId, State }. Vérifié prod 2026-07-04
 // (200). Échoue si le paiement est déjà sur une note clôturée côté PMS — dans ce
