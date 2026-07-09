@@ -774,11 +774,11 @@ function GestionTab({ hotelId }: { hotelId: string }) {
           <div className="bg-white rounded-xl border border-[#004e7c]/30 p-4">
             <span className="text-xs font-semibold uppercase tracking-widest text-[#004e7c]">Ventilation TVA du jour</span>
             <table className="mt-2 w-full text-sm">
-              <thead><tr className="text-[11px] uppercase tracking-wider text-slate-400"><th className="text-left font-medium pb-1">Taux</th><th className="text-right font-medium pb-1">Base HT</th><th className="text-right font-medium pb-1">TVA</th></tr></thead>
+              <thead><tr className="text-[11px] uppercase tracking-wider text-slate-400"><th className="text-left font-medium pb-1">Taux</th><th className="text-right font-medium pb-1">Base HT</th><th className="text-right font-medium pb-1">TVA</th><th className="text-right font-medium pb-1">TTC</th></tr></thead>
               <tbody className="tabular-nums">
-                <tr><td className="text-slate-500 py-0.5">10%</td><td className="text-right">{euroG(day.tva.ht10)}</td><td className="text-right">{euroG(day.tva.tva10)}</td></tr>
-                <tr><td className="text-slate-500 py-0.5">20%</td><td className="text-right">{euroG(day.tva.ht20)}</td><td className="text-right">{euroG(day.tva.tva20)}</td></tr>
-                <tr className="border-t border-slate-100 font-semibold text-[#013a5c]"><td className="py-1">Total</td><td className="text-right">{euroG(day.tva.totalHt)}</td><td className="text-right">{euroG(day.tva.totalTva)}</td></tr>
+                <tr><td className="text-slate-500 py-0.5">10%</td><td className="text-right">{euroG(day.tva.ht10)}</td><td className="text-right">{euroG(day.tva.tva10)}</td><td className="text-right">{euroG(round2(day.tva.ht10 + day.tva.tva10))}</td></tr>
+                <tr><td className="text-slate-500 py-0.5">20%</td><td className="text-right">{euroG(day.tva.ht20)}</td><td className="text-right">{euroG(day.tva.tva20)}</td><td className="text-right">{euroG(round2(day.tva.ht20 + day.tva.tva20))}</td></tr>
+                <tr className="border-t border-slate-100 font-semibold text-[#013a5c]"><td className="py-1">Total</td><td className="text-right">{euroG(day.tva.totalHt)}</td><td className="text-right">{euroG(day.tva.totalTva)}</td><td className="text-right">{euroG(day.tva.totalTtc)}</td></tr>
               </tbody>
             </table>
           </div>
