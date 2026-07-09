@@ -10,7 +10,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useSelectedHotel } from "@/context/SelectedHotelContext";
 import {
-  Euro, Printer, Lock, Save, Sun, Moon, Sunset,
+  Euro, Printer, Lock, Save, Sun, Sunset,
   ChevronLeft, ChevronRight, AlertCircle, Coins,
   Loader2,
 } from "lucide-react";
@@ -20,7 +20,7 @@ import { SignaturePadModal } from "@/components/SignaturePadModal";
 
 // --- TYPES ---
 
-type ShiftType = "matin" | "soir" | "cloture";
+type ShiftType = "matin" | "soir";
 
 type CaisseShift = {
   id?: string;
@@ -54,19 +54,16 @@ const PIECE_DENOMS = [2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01];
 const SHIFT_LABELS: Record<ShiftType, string> = {
   matin: "Shift Matin",
   soir: "Shift Soir",
-  cloture: "Clôture",
 };
 
 const SHIFT_ICONS: Record<ShiftType, React.ComponentType<any>> = {
   matin: Sun,
   soir: Sunset,
-  cloture: Moon,
 };
 
 const SHIFT_COLORS: Record<ShiftType, { bg: string; text: string; border: string; btn: string; accent: string }> = {
   matin:   { bg: "bg-amber-50/40",   text: "text-amber-700",   border: "border-amber-200/70",   btn: "bg-amber-600 hover:bg-amber-700",   accent: "bg-amber-500" },
   soir:    { bg: "bg-orange-50/40",  text: "text-orange-700",  border: "border-orange-200/70",  btn: "bg-orange-600 hover:bg-orange-700", accent: "bg-orange-500" },
-  cloture: { bg: "bg-indigo-50/40",  text: "text-indigo-700",  border: "border-indigo-200/70",  btn: "bg-indigo-600 hover:bg-indigo-700", accent: "bg-indigo-500" },
 };
 
 const emptyShift = (hotel_id: string, date_jour: string, shift_type: ShiftType): CaisseShift => ({
@@ -112,7 +109,6 @@ function CaissePageInner() {
   const [shifts, setShifts] = useState<Record<ShiftType, CaisseShift>>({
     matin: emptyShift("", "", "matin"),
     soir: emptyShift("", "", "soir"),
-    cloture: emptyShift("", "", "cloture"),
   });
 
   const [comptage, setComptage] = useState<Comptage>(emptyComptage("", ""));
@@ -187,10 +183,10 @@ function CaissePageInner() {
       const map: Record<ShiftType, CaisseShift> = {
         matin: emptyShift(hotelId, dateJour, "matin"),
         soir: emptyShift(hotelId, dateJour, "soir"),
-        cloture: emptyShift(hotelId, dateJour, "cloture"),
       };
       (shiftRows || []).forEach((r: any) => {
-        if (r.shift_type === "matin" || r.shift_type === "soir" || r.shift_type === "cloture") {
+        // Les anciennes lignes 'cloture' (shift retiré) sont ignorées au chargement.
+        if (r.shift_type === "matin" || r.shift_type === "soir") {
           map[r.shift_type as ShiftType] = {
             ...emptyShift(hotelId, dateJour, r.shift_type),
             ...r,
@@ -312,7 +308,7 @@ function CaissePageInner() {
   // --- Day totals (encaissements) ---
   const dayTotals = useMemo(() => {
     const sum = (k: keyof CaisseShift) =>
-      (shifts.matin[k] as number || 0) + (shifts.soir[k] as number || 0) + (shifts.cloture[k] as number || 0);
+      (shifts.matin[k] as number || 0) + (shifts.soir[k] as number || 0);
     // Stripe = encaissement du jour, compté UNE SEULE FOIS (pas par shift).
     const totalReel = sum("reel_tpe") + sum("reel_amex") + sum("reel_especes") + sum("reel_ancv") + sum("reel_virement") + stripeDayNet;
     const totalPms = sum("pms_tpe") + sum("pms_amex") + sum("pms_especes") + sum("pms_ancv") + sum("pms_virement") + sum("pms_consigne");
@@ -793,7 +789,7 @@ function CaissePageInner() {
 
         {/* 3 SHIFTS — encaissements + commentaire + signature */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 print-grid-3">
-          {(["matin", "soir", "cloture"] as ShiftType[]).map((sType) => {
+          {(["matin", "soir"] as ShiftType[]).map((sType) => {
             const sh = shifts[sType];
             const t = totalsFor(sh);
             const Icon = SHIFT_ICONS[sType];
