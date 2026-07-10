@@ -11,7 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { moveMessage, createReplyDraft, getMessageText, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
-import { parseOtaResa, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover } from '@/lib/otaResa';
+import { parseOtaResa, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import type { HotelMailConfig, MailCategory } from '@/lib/mailAssistant';
 
@@ -172,11 +172,14 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
     if (takeover?.tsCovered) tsOverride = agencyTsBlock(takeover);
   }
 
-  const note = controlNote(r, dejaVenu, cityTax, tsOverride);
+  // Résas prises ensemble (mêmes dates + même canal + même horaire) → « AVEC <NOM> ».
+  const linked = await findLinkedResas(cfg.mailbox, r).catch(() => []);
+
+  const note = controlNote(r, dejaVenu, cityTax, tsOverride, linked);
   return {
     status: 'executed',
     result: {
-      kind: 'resa_control', note, dejaVenu, cityTax,
+      kind: 'resa_control', note, dejaVenu, cityTax, linked,
       resa: {
         ref: r.ref, source: r.source, guest: r.guestName, arrival: r.arrival, departure: r.departure,
         nights: r.nights, guests: r.guests, room: r.roomType, amount: r.amount,
@@ -340,6 +343,38 @@ async function findAgencyTakeover(
     if (nameOk && dateOk) return t;
   }
   return null;
+}
+
+// Deux résas prises ENSEMBLE : « mêmes dates, même canal de réservation et même horaire de
+// réservation = sûrement ensemble » (Martin 2026-07-10). Cas vécu : 2 chambres Expedia posées
+// à 2 min d'intervalle pour un même déplacement pro (Michou / Abitbol, 29→31/07).
+//
+// ⚠️ Les trois signaux sont exigés ENSEMBLE. Les mêmes dates seules ne prouvent rien — dans un
+// hôtel, deux clients sans rapport réservent les mêmes nuits tous les jours. Écrire le nom d'un
+// client sur la note d'un autre par erreur serait pire que de ne rien signaler.
+const LINK_WINDOW_MIN = 30;
+
+async function findLinkedResas(mailbox: string, r: OtaResa): Promise<string[]> {
+  if (!r.arrivalISO || !r.departureISO || !r.bookedAtISO || !r.source) return [];
+
+  const booked = new Date(r.bookedAtISO).getTime();
+  if (Number.isNaN(booked)) return [];
+
+  const inbox = await listInbox(mailbox, 40);
+  const noms: string[] = [];
+  for (const m of inbox) {
+    if (!/nouvelle réservation/i.test(m.subject)) continue;
+    const other = parseOtaResa(m.subject, await getMessageText(mailbox, m.id).catch(() => ''));
+    if (!other.ref || other.ref === r.ref) continue;              // pas soi-même
+    if (other.source !== r.source) continue;                       // même canal
+    if (other.arrivalISO !== r.arrivalISO) continue;               // mêmes dates
+    if (other.departureISO !== r.departureISO) continue;
+    if (!other.bookedAtISO) continue;
+    const t = new Date(other.bookedAtISO).getTime();
+    if (Number.isNaN(t) || Math.abs(t - booked) > LINK_WINDOW_MIN * 60_000) continue;  // même horaire
+    if (other.guestName) noms.push(other.guestName);
+  }
+  return noms;
 }
 
 // Choisit le bon parser d'après l'expéditeur/sujet (Djoca / Goelett / CDS-Ailleurs Business).

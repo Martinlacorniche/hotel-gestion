@@ -31,6 +31,7 @@ export type OtaResa = {
   arrivalISO: string | null;      // "2026-07-31" (pour matcher la résa Mews)
   departure: string | null;
   departureISO: string | null;
+  bookedAtISO: string | null;     // "2026-07-10T10:01" — Date/Heure de réservation (heure de Paris)
   cancelDateISO: string | null;   // date d'annulation (annulations)
   freeCancelDaysBefore: number | null; // annulation gratuite jusqu'à N jour(s) avant l'arrivée
   penalty: string | null;         // pénalité citée (ex. « première nuit »)
@@ -79,6 +80,17 @@ function frDateToISO(s: string | null): string | null {
   const mm = FR_MONTHS[m[2].toLowerCase()];
   if (!mm) return null;
   return `${m[3]}-${mm}-${m[1].padStart(2, '0')}`;
+}
+
+// « Date/Heure de réservation : 10 juil. 2026 - 10:01 (Paris) » → "2026-07-10T10:01".
+// Sert à rapprocher deux résas passées au même moment par le même acheteur (résas liées).
+// Toutes les résas D-Edge portent l'heure de Paris : on compare des chaînes comparables,
+// inutile de gérer les fuseaux.
+function bookedAtToISO(s: string | null): string | null {
+  const day = frDateToISO(s);
+  if (!day) return null;
+  const t = (s || '').match(/(\d{1,2})\s*[:h]\s*(\d{2})/);
+  return t ? `${day}T${t[1].padStart(2, '0')}:${t[2]}` : day;
 }
 
 function splitName(full: string | null): { first: string | null; last: string | null } {
@@ -179,6 +191,9 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
   const comm = fieldAfter(lines, /^Commentaires\s*:/i);
   const specialRequests = comm && !/carte de crédit virtuelle/i.test(comm) ? comm : null;
 
+  // Horodatage de la réservation (⚠️ pas celui de l'annulation, dont le libellé est proche).
+  const bookedAtISO = bookedAtToISO(fieldAfter(lines, /^Date\/Heure de r[ée]servation/i));
+
   // Annulation : date d'annulation + délai gratuit + pénalité (pour flaguer « à facturer »).
   const cancelDateISO = kind === 'annulation'
     ? frDateToISO(fieldAfter(lines, /^Date\/Heure de l['’ ]?annulation/i)) : null;
@@ -206,7 +221,7 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
     phone: fieldAfter(lines, /^Téléphone\s*:/i),
     arrival, arrivalISO: frDateToISO(arrival),
     departure, departureISO: frDateToISO(departure),
-    cancelDateISO, freeCancelDaysBefore, penalty, firstNightAmount,
+    bookedAtISO, cancelDateISO, freeCancelDaysBefore, penalty, firstNightAmount,
     nights: nightsRaw ? (parseInt(nightsRaw, 10) || null) : null,
     guests: guestsRaw ? (parseInt(guestsRaw, 10) || null) : null,
     roomType, breakfast, ratePlan, chargeAmount,
@@ -418,9 +433,12 @@ export function shortRoom(room: string | null): string {
 // client, NANR direct) · PRÉPAYÉ · OTA (facturé OTA). Bloc TS : RSP TS (sur place, +montant
 // Mews si dispo) · CCV TS …xxxx (prépayée sur carte, ex. Goelett → débiter, pas le client) ·
 // TS incl. agence (Djoca). PDJ inclus = défaut maison → non écrit (seul « SANS PDJ » compte).
+// `linkedGuests` : clients d'AUTRES résas manifestement prises ensemble (mêmes dates, même
+// canal, même horaire de réservation → cf `findLinkedResas`). Rendu « AVEC <NOM> » en fin de
+// note, pour que la réception traite les chambres ensemble (Martin 2026-07-10).
 export function controlNote(
   r: OtaResa, dejaVenu: boolean | null, cityTax?: number | null,
-  tsOverride?: string | null,
+  tsOverride?: string | null, linkedGuests?: string[] | null,
 ): string {
   const s: string[] = [`#${shortRoom(r.roomType)}`];
   if (r.refundable === true) s.push('FLEX');
@@ -446,6 +464,13 @@ export function controlNote(
   // Genius volontairement PAS affiché : sans intérêt pour la réception (Martin 2026-07-09).
   if (dejaVenu === true) s.push('DÉJÀ VENU');
   else if (dejaVenu === false) s.push('1ER SÉJOUR');
+
+  // Résa(s) liée(s) : « AVEC CAROL ABITBOL » (ou « AVEC X + 2 AUTRES » si l'acheteur a posé
+  // plus de deux chambres — inutile d'allonger la note avec toute la liste).
+  if (linkedGuests?.length) {
+    const [first, ...rest] = linkedGuests;
+    s.push(`AVEC ${first.toUpperCase()}${rest.length ? ` + ${rest.length} AUTRE${rest.length > 1 ? 'S' : ''}` : ''}`);
+  }
 
   return s.join(' ');
 }

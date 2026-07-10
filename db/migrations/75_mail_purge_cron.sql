@@ -1,14 +1,15 @@
--- Cron « purge des indésirables » : tous les 3 jours, appelle la route
--- /api/mail-assistant/purge-junk qui supprime DÉFINITIVEMENT les mails du dossier
--- Courrier indésirable reçus il y a plus de 3 jours, sur les DEUX boîtes
--- (contact-lesvoiles@ et contact-corniche@).
+-- Cron « purge de stockage » : tous les 3 jours, appelle la route
+-- /api/mail-assistant/purge-junk qui supprime DÉFINITIVEMENT, sur les DEUX boîtes
+-- (contact-lesvoiles@ et contact-corniche@) :
+--   · le Courrier indésirable reçu il y a plus de 3 jours
+--   · les Éléments supprimés (corbeille) reçus il y a plus de 7 jours
 --
--- « On ne lit pas les indésirables, mais on vide la boîte tous les 3 jours,
---   pensons à la planète » (Martin 2026-07-10).
+-- « On ne lit pas les indésirables, mais on vide la boîte tous les 3 jours, pensons
+--   à la planète » + « mails supprimés, faut pas laisser traîner » (Martin 2026-07-10).
 --
 -- La route ne lit aucun contenu (id + date seulement) et ne touche jamais la boîte
--- de réception. Le délai de 3 jours laisse une fenêtre de repêchage si Outlook a
--- classé un vrai client en indésirable.
+-- de réception. Les délais laissent une fenêtre de repêchage si Outlook a classé un
+-- vrai client en indésirable, ou si une suppression humaine était une erreur.
 --
 -- ⚠️ AVANT DE COLLER : remplacer __CRON_SECRET__ par la valeur de CRON_SECRET
 -- (ou MEWS_POLL_SECRET — la route accepte les deux en-têtes), et vérifier l'URL Netlify.

@@ -97,9 +97,41 @@ export async function moveMessage(mailbox: string, id: string, destination: stri
 }
 
 // Suppression DÉFINITIVE (ne passe pas par les Éléments supprimés → libère vraiment le stockage).
-// Réservé à la purge des indésirables : irréversible, ne jamais l'utiliser sur la boîte de réception.
+// Réservé à la purge indésirables/corbeille : irréversible, jamais sur la boîte de réception.
 export async function permanentDeleteMessage(mailbox: string, id: string): Promise<void> {
   await gm(mailbox, `/messages/${id}/permanentDelete`, { method: 'POST' });
+}
+
+// Idem, mais par paquets de 20 via le endpoint $batch de Graph : une purge de plusieurs milliers
+// de mails ferait autant d'allers-retours HTTP et dépasserait le timeout de la route Netlify.
+// Renvoie les ids qui ont ÉCHOUÉ (l'appelant les mémorise pour ne pas boucler dessus).
+export const GRAPH_BATCH_MAX = 20;
+
+export async function permanentDeleteBatch(mailbox: string, ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const failed: string[] = [];
+
+  for (let i = 0; i < ids.length; i += GRAPH_BATCH_MAX) {
+    const chunk = ids.slice(i, i + GRAPH_BATCH_MAX);
+    const res = await fetch(`${GRAPH}/$batch`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: chunk.map((id, n) => ({
+          id: String(n),
+          method: 'POST',
+          url: `/users/${encodeURIComponent(mailbox)}/messages/${id}/permanentDelete`,
+        })),
+      }),
+    });
+    if (!res.ok) { failed.push(...chunk); continue; }   // batch entier KO
+    const j = (await res.json()) as { responses?: { id: string; status: number }[] };
+    // $batch renvoie 200 même si des sous-requêtes échouent : c'est leur `status` qui compte.
+    for (const r of j.responses || []) {
+      if (r.status >= 300) failed.push(chunk[Number(r.id)]);
+    }
+  }
+  return failed;
 }
 
 // Ids + date des messages d'un dossier reçus AVANT `beforeIso`. On ne sélectionne QUE l'id et la
