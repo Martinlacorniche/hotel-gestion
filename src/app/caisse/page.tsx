@@ -10,17 +10,17 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useSelectedHotel } from "@/context/SelectedHotelContext";
 import {
-  Euro, Printer, Lock, Save, Sun, Sunset, Download,
+  Euro, Printer, Lock, Save, Sun, Moon, Sunset, Download,
   ChevronLeft, ChevronRight, AlertCircle, Coins,
   Loader2,
 } from "lucide-react";
-import { format as dfFormat, addDays, parseISO } from "date-fns";
+import { format as dfFormat, addDays } from "date-fns";
 import { fr as frLocale } from "date-fns/locale";
 import { SignaturePadModal } from "@/components/SignaturePadModal";
 
 // --- TYPES ---
 
-type ShiftType = "matin" | "soir";
+type ShiftType = "matin" | "soir" | "cloture";
 
 type CaisseShift = {
   id?: string;
@@ -54,17 +54,25 @@ const PIECE_DENOMS = [2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01];
 const SHIFT_LABELS: Record<ShiftType, string> = {
   matin: "Shift Matin",
   soir: "Shift Soir",
+  cloture: "Clôture",
 };
 
 const SHIFT_ICONS: Record<ShiftType, React.ComponentType<any>> = {
   matin: Sun,
   soir: Sunset,
+  cloture: Moon,
 };
 
 const SHIFT_COLORS: Record<ShiftType, { bg: string; text: string; border: string; btn: string; accent: string }> = {
   matin:   { bg: "bg-amber-50/40",   text: "text-amber-700",   border: "border-amber-200/70",   btn: "bg-amber-600 hover:bg-amber-700",   accent: "bg-amber-500" },
   soir:    { bg: "bg-orange-50/40",  text: "text-orange-700",  border: "border-orange-200/70",  btn: "bg-orange-600 hover:bg-orange-700", accent: "bg-orange-500" },
+  cloture: { bg: "bg-indigo-50/40",  text: "text-indigo-700",  border: "border-indigo-200/70",  btn: "bg-indigo-600 hover:bg-indigo-700", accent: "bg-indigo-500" },
 };
+
+// Les Voiles : seul hôtel sous Mews, sans shift de nuit, avec un TPE Amex séparé.
+// La Corniche (et tout autre hôtel) garde ses 3 shifts et son TPE unique.
+const VOILES_CAISSE_ID = "ded6e6fb-ff3c-4fa8-ad07-403ee316be53";
+const ALL_SHIFTS: ShiftType[] = ["matin", "soir", "cloture"];
 
 const emptyShift = (hotel_id: string, date_jour: string, shift_type: ShiftType): CaisseShift => ({
   hotel_id, date_jour, shift_type,
@@ -109,17 +117,25 @@ function CaissePageInner() {
   const [shifts, setShifts] = useState<Record<ShiftType, CaisseShift>>({
     matin: emptyShift("", "", "matin"),
     soir: emptyShift("", "", "soir"),
+    cloture: emptyShift("", "", "cloture"),
   });
 
   const [comptage, setComptage] = useState<Comptage>(emptyComptage("", ""));
   const [comptageId, setComptageId] = useState<string | null>(null);
-  // Date du comptage J-1 dont on a pré-rempli les billets/pièces (null = saisie vierge)
-  const [prefilledFromDate, setPrefilledFromDate] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [savingShift, setSavingShift] = useState<ShiftType | null>(null);
   const [prefilling, setPrefilling] = useState(false);
-  const VOILES_CAISSE_ID = "ded6e6fb-ff3c-4fa8-ad07-403ee316be53"; // seul hôtel sous Mews
+
+  // Voiles : pas de shift Clôture, mais une ligne TPE AMEX. Ailleurs : l'inverse.
+  // Exception : les journées Voiles antérieures ont une Clôture signée en base — on
+  // continue de l'afficher pour ne pas amputer un historique déjà validé.
+  const isVoiles = hotelId === VOILES_CAISSE_ID;
+  const showAmex = isVoiles;
+  const shiftTypes: ShiftType[] = useMemo(
+    () => (isVoiles && !shifts.cloture.id ? ["matin", "soir"] : ALL_SHIFTS),
+    [isVoiles, shifts.cloture.id],
+  );
   const [comptageStatus, setComptageStatus] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const comptageDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextAutosaveRef = useRef<boolean>(false);
@@ -185,10 +201,10 @@ function CaissePageInner() {
       const map: Record<ShiftType, CaisseShift> = {
         matin: emptyShift(hotelId, dateJour, "matin"),
         soir: emptyShift(hotelId, dateJour, "soir"),
+        cloture: emptyShift(hotelId, dateJour, "cloture"),
       };
       (shiftRows || []).forEach((r: any) => {
-        // Les anciennes lignes 'cloture' (shift retiré) sont ignorées au chargement.
-        if (r.shift_type === "matin" || r.shift_type === "soir") {
+        if (ALL_SHIFTS.includes(r.shift_type)) {
           map[r.shift_type as ShiftType] = {
             ...emptyShift(hotelId, dateJour, r.shift_type),
             ...r,
@@ -208,7 +224,6 @@ function CaissePageInner() {
         });
         setComptageId(cpt.id || null);
         setComptageStatus("saved");
-        setPrefilledFromDate(null);
       } else {
         // Aucun comptage pour ce jour → pré-remplir avec le dernier comptage connu (J-1)
         // pour éviter de tout retaper si rien n'a bougé dans la caisse depuis hier.
@@ -217,9 +232,6 @@ function CaissePageInner() {
         if (prevCpt && prevCpt.date_jour) {
           base.billets = { ...base.billets, ...(prevCpt.billets || {}) };
           base.pieces = { ...base.pieces, ...(prevCpt.pieces || {}) };
-          setPrefilledFromDate(prevCpt.date_jour);
-        } else {
-          setPrefilledFromDate(null);
         }
         setComptage(base);
         setComptageId(null);
@@ -274,10 +286,13 @@ function CaissePageInner() {
     // € consigne : figé si shift validé, sinon net Stripe du jour en direct.
     const consigneReel = sh.valide && sh.reel_consigne != null ? sh.reel_consigne : stripeDayNet;
     const consignePms = sh.pms_consigne || 0;
-    const totalPmsBrut = sh.pms_tpe + sh.pms_amex + sh.pms_especes + sh.pms_ancv + sh.pms_virement + consignePms;
-    const totalReelBrut = sh.reel_tpe + sh.reel_amex + sh.reel_especes + sh.reel_ancv + sh.reel_virement + consigneReel;
+    // Amex : ligne propre aux Voiles — ailleurs elle n'est ni affichée ni comptée.
+    const pmsAmex = showAmex ? sh.pms_amex : 0;
+    const reelAmex = showAmex ? sh.reel_amex : 0;
+    const totalPmsBrut = sh.pms_tpe + pmsAmex + sh.pms_especes + sh.pms_ancv + sh.pms_virement + consignePms;
+    const totalReelBrut = sh.reel_tpe + reelAmex + sh.reel_especes + sh.reel_ancv + sh.reel_virement + consigneReel;
     const ecartTpe = round2(sh.reel_tpe - sh.pms_tpe);
-    const ecartAmex = round2(sh.reel_amex - sh.pms_amex);
+    const ecartAmex = round2(reelAmex - pmsAmex);
     const ecartEsp = round2(sh.reel_especes - sh.pms_especes);
     const ecartAncv = round2(sh.reel_ancv - sh.pms_ancv);
     const ecartVir = round2(sh.reel_virement - sh.pms_virement);
@@ -309,17 +324,20 @@ function CaissePageInner() {
 
   // --- Day totals (encaissements) ---
   const dayTotals = useMemo(() => {
+    // Seuls les shifts de l'hôtel comptent (pas de Clôture aux Voiles), et l'Amex
+    // n'entre dans le total que là où la ligne existe.
     const sum = (k: keyof CaisseShift) =>
-      (shifts.matin[k] as number || 0) + (shifts.soir[k] as number || 0);
+      shiftTypes.reduce((acc, s) => acc + (shifts[s][k] as number || 0), 0);
+    const amex = (k: "pms_amex" | "reel_amex") => (showAmex ? sum(k) : 0);
     // Stripe = encaissement du jour, compté UNE SEULE FOIS (pas par shift).
-    const totalReel = sum("reel_tpe") + sum("reel_amex") + sum("reel_especes") + sum("reel_ancv") + sum("reel_virement") + stripeDayNet;
-    const totalPms = sum("pms_tpe") + sum("pms_amex") + sum("pms_especes") + sum("pms_ancv") + sum("pms_virement") + sum("pms_consigne");
+    const totalReel = sum("reel_tpe") + amex("reel_amex") + sum("reel_especes") + sum("reel_ancv") + sum("reel_virement") + stripeDayNet;
+    const totalPms = sum("pms_tpe") + amex("pms_amex") + sum("pms_especes") + sum("pms_ancv") + sum("pms_virement") + sum("pms_consigne");
     return {
       totalReel: round2(totalReel),
       totalPms: round2(totalPms),
       ecart: round2(totalReel - totalPms),
     };
-  }, [shifts, stripeDayNet]);
+  }, [shifts, stripeDayNet, shiftTypes, showAmex]);
 
   // Pré-remplit les cases PMS (matin + soir) depuis les encaissements Mews du jour.
   // LECTURE seule : remplit l'état local, le staff vérifie puis enregistre. Idempotent
@@ -341,7 +359,7 @@ function CaissePageInner() {
       if (!res.ok || !json.ok) { toast.error(json.error || "Échec du pré-remplissage Mews"); setPrefilling(false); return; }
       const p = json.prefill as { matin: Record<string, number>; soir: Record<string, number> };
       let filled = 0;
-      (["matin", "soir"] as ShiftType[]).forEach((s) => {
+      (["matin", "soir"] as const).forEach((s) => {
         if (shifts[s].valide) return; // ne pas écraser un shift validé
         const a = p[s] || {};
         updateShift(s, {
@@ -374,8 +392,8 @@ function CaissePageInner() {
       shift_type: s,
       user_id: sh.user_id || meId,
       user_name: sh.user_name || meName,
-      pms_tpe: sh.pms_tpe, pms_amex: sh.pms_amex, pms_especes: sh.pms_especes, pms_ancv: sh.pms_ancv, pms_virement: sh.pms_virement,
-      reel_tpe: sh.reel_tpe, reel_amex: sh.reel_amex, reel_especes: sh.reel_especes, reel_ancv: sh.reel_ancv, reel_virement: sh.reel_virement,
+      pms_tpe: sh.pms_tpe, pms_amex: showAmex ? sh.pms_amex : 0, pms_especes: sh.pms_especes, pms_ancv: sh.pms_ancv, pms_virement: sh.pms_virement,
+      reel_tpe: sh.reel_tpe, reel_amex: showAmex ? sh.reel_amex : 0, reel_especes: sh.reel_especes, reel_ancv: sh.reel_ancv, reel_virement: sh.reel_virement,
       pms_consigne: sh.pms_consigne,
       // € consigne : figé au net Stripe du moment à la validation (sinon vit en direct)
       reel_consigne: valide ? stripeDayNet : sh.reel_consigne,
@@ -543,6 +561,7 @@ function CaissePageInner() {
 
           /* Shifts (encaissements) */
           .print-grid-3 { display: grid !important; grid-template-columns: 1fr 1fr 1fr !important; gap: 3mm !important; }
+          .print-grid-2 { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 3mm !important; }
           .enc-grid { grid-template-columns: 50px 1fr 1fr 38px !important; gap: 3px !important; }
           .enc-row { padding: 0 !important; font-size: 9px !important; }
           .enc-row > span:first-child { height: 14px !important; padding: 0 3px !important; font-size: 9px !important; }
@@ -593,7 +612,7 @@ function CaissePageInner() {
               <ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
           </div>
-          {hotelId === VOILES_CAISSE_ID && (
+          {isVoiles && (
             <button onClick={prefillFromMews} disabled={prefilling} title="Récupère les encaissements Mews du jour dans les cases PMS (matin/soir)"
               className="inline-flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition disabled:opacity-50">
               <Download className="w-3.5 h-3.5" /> {prefilling ? "…" : "Pré-remplir (Mews)"}
@@ -693,13 +712,7 @@ function CaissePageInner() {
               <Coins className="w-4 h-4 text-slate-400" strokeWidth={2.25} />
               <div>
                 <div className="text-[14px] font-semibold text-slate-900">Comptage caisse</div>
-                {prefilledFromDate && comptageStatus === "idle" ? (
-                  <div className="text-[11px] text-amber-700 font-medium">
-                    Pré-rempli depuis le {dfFormat(parseISO(prefilledFromDate), "d MMMM", { locale: frLocale })} — modifie si besoin
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-slate-500">Saisie partagée, sauvegarde automatique</div>
-                )}
+                <div className="text-[11px] text-slate-500">Saisie partagée, sauvegarde automatique</div>
               </div>
             </div>
             <div className="no-print flex items-center gap-2">
@@ -832,9 +845,9 @@ function CaissePageInner() {
           </div>
         </div>
 
-        {/* 3 SHIFTS — encaissements + commentaire + signature */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 print-grid-3">
-          {(["matin", "soir"] as ShiftType[]).map((sType) => {
+        {/* SHIFTS — encaissements + commentaire + signature */}
+        <div className={`grid grid-cols-1 gap-5 ${shiftTypes.length === 3 ? "lg:grid-cols-3 print-grid-3" : "lg:grid-cols-2 print-grid-2"}`}>
+          {shiftTypes.map((sType) => {
             const sh = shifts[sType];
             const t = totalsFor(sh);
             const Icon = SHIFT_ICONS[sType];
@@ -878,8 +891,10 @@ function CaissePageInner() {
                       </div>
 
                       {[
-                        { key: "tpe",      label: "TPE CB",   dot: "bg-sky-500",      pmsK: "pms_tpe",      reelK: "reel_tpe",      e: t.ecartTpe },
-                        { key: "amex",     label: "TPE AMEX", dot: "bg-blue-700",     pmsK: "pms_amex",     reelK: "reel_amex",     e: t.ecartAmex },
+                        { key: "tpe",      label: showAmex ? "TPE CB" : "TPE", dot: "bg-sky-500", pmsK: "pms_tpe", reelK: "reel_tpe", e: t.ecartTpe },
+                        ...(showAmex
+                          ? [{ key: "amex", label: "TPE AMEX", dot: "bg-blue-700", pmsK: "pms_amex", reelK: "reel_amex", e: t.ecartAmex }]
+                          : []),
                         { key: "especes",  label: "Espèces",  dot: "bg-emerald-500",  pmsK: "pms_especes",  reelK: "reel_especes",  e: t.ecartEsp },
                         { key: "ancv",     label: "ANCV",     dot: "bg-violet-500",   pmsK: "pms_ancv",     reelK: "reel_ancv",     e: t.ecartAncv },
                         { key: "virement", label: "Virement", dot: "bg-amber-500",    pmsK: "pms_virement", reelK: "reel_virement", e: t.ecartVir },
