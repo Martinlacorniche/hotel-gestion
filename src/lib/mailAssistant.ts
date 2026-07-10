@@ -43,7 +43,7 @@ export type MailInput = {
 
 export type MailCategory =
   | 'spam_alert' | 'resa_ota' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
-  | 'candidature' | 'commercial' | 'client_msg' | 'autre';
+  | 'commission_ota' | 'candidature' | 'commercial' | 'client_msg' | 'autre';
 
 export type MailAction =
   | 'delete' | 'archive' | 'resa_control' | 'agency_note' | 'route_pennylane' | 'invoice_note'
@@ -81,9 +81,21 @@ const rx = {
   factureInterneFrom: /noreply@mews\.li|@send\.hotel-corniche\.com/i,
   // Relance de commission OTA (ex. Travel Counsellors) → corbeille (Martin 2026-07-09).
   commissionOta: /travelcounsellors\.com/i,
+  // Onyx CenterSource = chambre de compensation des commissions d'agences. Envoie un « relevé
+  // à valider et payer » (.xls). Nos réservations ne sont PAS commissionnables → on répond ça
+  // à chaque fois, puis on supprime (Martin 2026-07-10).
+  onyxCommission: /onyxcentersource\.com/i,
+  // Pub / marketing envoyée par les OTA elles-mêmes (Expedia « Maximisez vos revenus »…).
+  // ⚠️ Ces expéditeurs peuvent AUSSI porter de vraies notifications de réservation → la règle
+  // ne s'applique qu'aux mails qui ne ressemblent pas à une résa (Martin 2026-07-10).
+  marketingSenders: /donotreply@expediagroup\.com|@expediapartnercentral\.com/i,
   // Pub / prospection commerciale entrante → corbeille. Liste d'expéditeurs qui s'enrichit
   // au fil de l'eau (c'est ça, « apprendre » à l'assistant). Martin 2026-07-09.
-  prospectionSenders: /translaser\.fr|neutraliz\.com/i,
+  // Newsletters institutionnelles / tourisme : corbeille comme les autres (Martin 2026-07-10).
+  // ⚠️ transgourmet est scopé à son SOUS-DOMAINE marketing `email.transgourmet.fr` : le domaine
+  // principal porte les vrais bons de livraison / factures fournisseur, à ne pas supprimer.
+  prospectionSenders:
+    /translaser\.fr|neutraliz\.com|@provencemed\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr/i,
   // Signal générique de newsletter / démarchage à froid (lien de désinscription + accroche).
   prospectionHook: /se d[ée]sinscrire|unsubscribe|d[ée]couvrez nos offres|\b[àa] partir de\s?\d/i,
 };
@@ -131,6 +143,17 @@ export function classifyMail(mail: MailInput): Classification {
     return { category: 'spam_alert', action: 'delete', reason: 'Relance de commission OTA (à supprimer)', detail: {} };
   }
 
+  // 1g) Relevé de commissions Onyx CenterSource -> répondre « réservations non commissionnables »
+  //     puis supprimer le mail (Martin 2026-07-10). Réponse = brouillon, l'humain envoie.
+  if (rx.onyxCommission.test(from)) {
+    return {
+      category: 'commission_ota',
+      action: 'draft_reply',
+      reason: 'Relevé de commissions Onyx → répondre « non commissionnables » puis supprimer',
+      detail: { template: 'non_commissionable' },
+    };
+  }
+
   // 1f) Pub / prospection connue (expéditeurs déjà repérés) -> corbeille (Martin 2026-07-09).
   if (rx.prospectionSenders.test(from)) {
     return { category: 'spam_alert', action: 'delete', reason: 'Pub / prospection (expéditeur connu)', detail: {} };
@@ -146,6 +169,16 @@ export function classifyMail(mail: MailInput): Classification {
       reason: `Réservation OTA (${kind})`,
       detail: { kind, ref: dedgeRef(subj) },
     };
+  }
+
+  // 2b) Pub / marketing d'un OTA (Expedia « Maximisez vos revenus : ajoutez des types de
+  //     chambres »…) -> corbeille. Placé APRÈS le contrôle résa, et gardé par `looksLikeResa` :
+  //     ces expéditeurs peuvent aussi porter une vraie notification de réservation, qui ne doit
+  //     jamais partir à la corbeille (Martin 2026-07-10).
+  const looksLikeResa =
+    rx.resaNew.test(subj) || rx.resaMod.test(subj) || rx.resaCancel.test(subj) || rx.dedge.test(hay);
+  if (rx.marketingSenders.test(from) && !looksLikeResa) {
+    return { category: 'spam_alert', action: 'delete', reason: 'Pub / marketing OTA (à supprimer)', detail: {} };
   }
 
   // 3) Facture fournisseur en PJ -> routage Pennylane (l'entité se lira dans le PDF)

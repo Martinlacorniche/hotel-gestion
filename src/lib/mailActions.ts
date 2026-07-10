@@ -91,12 +91,36 @@ function candidatureHtml(nom: string): string {
   );
 }
 
+// Réponse type aux relevés de commissions (Onyx CenterSource) : nos réservations ne sont pas
+// commissionnables. Même réponse à chaque relevé (Martin 2026-07-10).
+function nonCommissionableHtml(nom: string): string {
+  return (
+    `<p>Bonjour,</p>` +
+    `<p>Nous accusons réception de votre relevé de commissions.</p>` +
+    `<p>Après vérification, les réservations qui y figurent <strong>ne sont pas commissionnables</strong> : ` +
+    `aucune commission n’est due à ce titre.</p>` +
+    `<p>Nous vous remercions de bien vouloir clôturer ce relevé.</p>` +
+    `<p>Bien cordialement,<br/>La Direction — Hôtel ${nom}</p><br/>`
+  );
+}
+
 // draft_reply : crée un BROUILLON de réponse (rien n'est envoyé — l'humain relit/envoie).
-// Câblé : candidature (template fixe). Message client (LLM) = pas encore câblé.
+// Câblé : candidature (template fixe) · relevé de commissions Onyx (template fixe, + le mail
+// d'origine part à la corbeille : « répondre puis supprimer », Martin 2026-07-10 — le brouillon
+// survit à la suppression de l'original, et la corbeille reste réversible).
+// Message client (LLM) = pas encore câblé.
 async function actDraftReply(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
   if (row.category === 'candidature' || row.detail?.template === 'effectifs_complets') {
     const d = await createReplyDraft(cfg.mailbox, row.message_id, candidatureHtml(cfg.nom));
     return { status: 'executed', result: { kind: 'candidature', draftId: d.draftId, webLink: d.webLink } };
+  }
+  if (row.category === 'commission_ota' || row.detail?.template === 'non_commissionable') {
+    const d = await createReplyDraft(cfg.mailbox, row.message_id, nonCommissionableHtml(cfg.nom));
+    await moveMessage(cfg.mailbox, row.message_id, 'deleteditems');
+    return {
+      status: 'executed',
+      result: { kind: 'non_commissionable', draftId: d.draftId, webLink: d.webLink, movedTo: 'deleteditems' },
+    };
   }
   return { status: 'blocked', error: 'Brouillon de réponse client non encore câblé (rédaction LLM à venir).' };
 }
