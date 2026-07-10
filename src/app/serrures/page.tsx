@@ -48,6 +48,8 @@ type Sejour = {
   carte_uid: string | null;
   statut: 'pending' | 'actif' | 'revoque' | 'expire';
   parent_sejour_id: string | null;
+  // Dernier job d'encodage, renseigné par l'API uniquement sur les séjours 'pending'.
+  job?: { statut: string; error: string | null; created_at: string } | null;
 };
 type Chambre = {
   id: string;
@@ -450,6 +452,46 @@ export default function SerruresPage() {
     }
   }
 
+  // Encodage bloqué (job en échec, ou agent muet) : relancer un job d'encodage sur
+  // le séjour existant. `carte-supplementaire` accepte un séjour 'pending'.
+  async function retryEncode(sejourId: string) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/serrures/sejours/${sejourId}/carte-supplementaire`, {
+        method: 'POST',
+        headers: await authHeaders(),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast.success('Encodage relancé — pose la carte sur l’encodeur');
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Sortie de secours : abandonne l'encodage et libère la chambre.
+  async function cancelSejour(sejourId: string) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/serrures/sejours/${sejourId}`, {
+        method: 'DELETE',
+        headers: await authHeaders(),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast.success('Encodage annulé, chambre libérée');
+      await load();
+      await loadCartes();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function revokeCode(sejourId: string) {
     setBusy(true);
     try {
@@ -821,6 +863,8 @@ export default function SerruresPage() {
                 onRevoke={revokeCarte}
                 onAddCode={addCode}
                 onRevokeCode={revokeCode}
+                onRetryEncode={retryEncode}
+                onCancelSejour={cancelSejour}
               />
             ) : (
               <EmptyInfo />
@@ -1608,6 +1652,82 @@ function DebugPanel({
 
 // ─── Détail chambre (col droite) ────────────────────────────────────────────
 
+// Un séjour reste 'pending' tant qu'aucun encodage n'a réussi. Trois situations très
+// différentes se cachaient derrière le même spinner : ça encode, ça a échoué, ou
+// personne ne dépile le job. Sans issue affichée, une réception de nuit restait
+// bloquée devant une roue qui tourne (incident 2026-07-10).
+const ENCODAGE_LENT_SEC = 45;
+
+function EncodageEnAttente({
+  sejour,
+  busy,
+  onRetry,
+  onCancel,
+}: {
+  sejour: Sejour;
+  busy: boolean;
+  onRetry: () => void;
+  onCancel: () => void;
+}) {
+  const job = sejour.job ?? null;
+  const failed = job?.statut === 'error';
+  const ageSec = (Date.now() - new Date(job?.created_at ?? sejour.debut).getTime()) / 1000;
+  const stalled = !failed && ageSec > ENCODAGE_LENT_SEC;
+
+  if (!failed && !stalled) {
+    return (
+      <div className="text-center py-6 rounded-2xl bg-white border border-stone-200/60">
+        <Loader2 className="w-6 h-6 mx-auto mb-2 text-stone-400 animate-spin" />
+        <div className="text-sm text-stone-500">Carte en cours d’encodage…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`rounded-2xl border p-5 ${
+        failed ? 'bg-red-50/60 border-red-200' : 'bg-amber-50/60 border-amber-200'
+      }`}
+    >
+      <div className="flex items-start gap-3 mb-4">
+        {failed ? (
+          <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+        ) : (
+          <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+        )}
+        <div className="min-w-0">
+          <div className={`text-sm font-medium ${failed ? 'text-red-800' : 'text-amber-800'}`}>
+            {failed ? 'Échec de l’encodage' : 'Toujours en attente'}
+          </div>
+          <p className={`text-xs mt-1 break-words ${failed ? 'text-red-700/80' : 'text-amber-700/80'}`}>
+            {failed
+              ? job?.error ?? 'Erreur inconnue de l’encodeur.'
+              : 'Personne n’a pris ce job. Vérifie que l’encodeur est en ligne (voyant en haut).'}
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={onRetry}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-3 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Réessayer
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-xl bg-white border border-stone-300 px-4 py-3 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+        >
+          <Ban className="w-4 h-4" />
+          Annuler et libérer
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ChambreDetail(props: {
   chambre: Chambre;
   cartes: Carte[];
@@ -1617,8 +1737,13 @@ function ChambreDetail(props: {
   onRevoke: (c: Carte) => void;
   onAddCode: (sejourId: string) => void;
   onRevokeCode: (sejourId: string) => void;
+  onRetryEncode: (sejourId: string) => void;
+  onCancelSejour: (sejourId: string) => void;
 }) {
-  const { chambre, cartes, revoking, results, busy, onRevoke, onAddCode, onRevokeCode } = props;
+  const {
+    chambre, cartes, revoking, results, busy,
+    onRevoke, onAddCode, onRevokeCode, onRetryEncode, onCancelSejour,
+  } = props;
   const sejour = chambre.sejour!;
   const fin = new Date(sejour.fin);
   const debut = new Date(sejour.debut);
@@ -1699,10 +1824,12 @@ function ChambreDetail(props: {
             ))}
           </ul>
         ) : sejour.statut === 'pending' ? (
-          <div className="text-center py-6 rounded-2xl bg-white border border-stone-200/60">
-            <Loader2 className="w-6 h-6 mx-auto mb-2 text-stone-400 animate-spin" />
-            <div className="text-sm text-stone-500">Carte en cours d’encodage…</div>
-          </div>
+          <EncodageEnAttente
+            sejour={sejour}
+            busy={busy}
+            onRetry={() => onRetryEncode(sejour.id)}
+            onCancel={() => onCancelSejour(sejour.id)}
+          />
         ) : (
           <p className="text-xs text-stone-400">
             Aucune carte. Ajoute-en une via « Ajouter une carte » à gauche.
