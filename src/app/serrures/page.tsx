@@ -1658,6 +1658,61 @@ function DebugPanel({
 // bloquée devant une roue qui tourne (incident 2026-07-10).
 const ENCODAGE_LENT_SEC = 45;
 
+// L'agent encodeur remonte des erreurs en langage machine (« CE_WriteCard(...): Code 102 »,
+// « CE_InitCard a échoué après code 106 »). Illisible pour une réceptionniste : elle voit un
+// code, ne sait pas quoi faire, et re-tente la même chose des heures (incident 2026-07-10).
+// On traduit chaque code en une CONSIGNE actionnable, texte brut gardé en tout petit pour le
+// debug. Les codes 101/102/106 sont des erreurs de LECTURE/contact de la carte (constaté :
+// une carte du même lot repasse une fois bien posée) → la parade est le placement + réessai,
+// pas « changer de lot ». Table des codes : agent_encodeur/encoder_dll.py. Voir mémoire
+// project_encodeur_usb_gel.
+function messageErreurEncodage(raw: string | null): { consigne: string; brut: string | null } {
+  if (!raw) {
+    return { consigne: 'Erreur inconnue de l’encodeur. Repose la carte bien à plat et clique Réessayer.', brut: null };
+  }
+  const e = raw.toLowerCase();
+  // Le code numérique du fabricant, quand il est présent (« Code 102 », « après code 106 »).
+  const m = e.match(/\bcode\s+(\d+)/);
+  const code = m ? parseInt(m[1], 10) : null;
+
+  const carteMalLue =
+    'Le lecteur n’a pas lu la carte correctement. Repose-la bien à plat, centrée sur le lecteur, ' +
+    'sans la bouger, puis clique Réessayer. Si elle refuse 3 ou 4 fois de suite, prends une autre carte.';
+
+  // Erreurs de carte / lecture (le gros des cas) → même consigne : bien poser + réessayer.
+  if (
+    code === 101 || code === 102 || code === 106 ||
+    e.includes('pas de carte') || e.includes('mal position') || e.includes('autre h') || e.includes('initcard')
+  ) {
+    return { consigne: carteMalLue, brut: raw };
+  }
+  // Carte non compatible (pas une carte-clé de l'hôtel).
+  if (code === 21 || code === 33 || e.includes('non support') || e.includes('pas une carte')) {
+    return { consigne: 'Cette carte n’est pas compatible. Utilise une carte-clé de l’hôtel, bien posée à plat, puis Réessaie.', brut: raw };
+  }
+  // Gel USB : l'agent se répare seul, il suffit d'attendre et réessayer.
+  if (code === 1005 || code === 16 || e.includes('gel') || e.includes('frozen')) {
+    return { consigne: 'L’encodeur s’est figé, il se répare tout seul. Attends 10 secondes, puis clique Réessayer.', brut: raw };
+  }
+  // Device désactivé / déconnecté : réactivation auto au boot / sur 1003.
+  if (code === 1003 || e.includes('indisponible') || e.includes('unavailable') || e.includes('déconnect')) {
+    return { consigne: 'L’encodeur s’est déconnecté, il se reconnecte tout seul. Attends quelques secondes, puis Réessaie.', brut: raw };
+  }
+  // Encodeur occupé par une autre appli.
+  if (code === 1004) {
+    return { consigne: 'L’encodeur est occupé par un autre logiciel. Ferme les autres applis de badges, puis Réessaie.', brut: raw };
+  }
+  // Session encodeur expirée : refresh automatique.
+  if (code === 13) {
+    return { consigne: 'Session de l’encodeur expirée, elle se renouvelle. Attends quelques secondes, puis Réessaie.', brut: raw };
+  }
+  // Inconnu : consigne générique + le code brut pour qu'on puisse enquêter.
+  return {
+    consigne: `L’encodeur a renvoyé une erreur${code ? ` (code ${code})` : ''}. Repose la carte bien à plat et clique Réessayer. Si ça persiste, préviens un responsable.`,
+    brut: raw,
+  };
+}
+
 function EncodageEnAttente({
   sejour,
   busy,
@@ -1699,11 +1754,22 @@ function EncodageEnAttente({
           <div className={`text-sm font-medium ${failed ? 'text-red-800' : 'text-amber-800'}`}>
             {failed ? 'Échec de l’encodage' : 'Toujours en attente'}
           </div>
-          <p className={`text-xs mt-1 break-words ${failed ? 'text-red-700/80' : 'text-amber-700/80'}`}>
-            {failed
-              ? job?.error ?? 'Erreur inconnue de l’encodeur.'
-              : 'Personne n’a pris ce job. Vérifie que l’encodeur est en ligne (voyant en haut).'}
-          </p>
+          {failed ? (
+            <>
+              <p className="text-sm mt-1 break-words text-red-700">
+                {messageErreurEncodage(job?.error ?? null).consigne}
+              </p>
+              {messageErreurEncodage(job?.error ?? null).brut && (
+                <p className="text-[10px] mt-1 break-words text-red-400/70 font-mono">
+                  {messageErreurEncodage(job?.error ?? null).brut}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-xs mt-1 break-words text-amber-700/80">
+              Personne n’a pris ce job. Vérifie que l’encodeur est en ligne (voyant en haut).
+            </p>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
