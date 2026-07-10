@@ -172,6 +172,55 @@ def ensure_device_enabled() -> tuple[bool, str]:
     return False, f"PnP exit {code}: {err}"
 
 
+# Redémarrage du périphérique (arrêt/relance de la pile de pilotes) via pnputil.
+# C'est le SEUL remède automatique au gel USB 1005 sur cet encodeur : contrairement
+# à Disable-PnpDevice, `pnputil /restart-device` n'est PAS bloqué par le statut
+# « périphérique système critique » (vérifié 2026-07-10 sur le PC réception).
+# Sortie : 0 = OK, 2 = introuvable, 3 = pnputil a échoué, 4 = device KO après coup.
+_PS_RESTART = """
+$ErrorActionPreference = 'Stop'
+$ids = __LOOKUP__
+if (-not $ids) { exit 2 }
+$fail = 0
+foreach ($id in $ids) {
+  & pnputil /restart-device "$id" | Out-Null
+  if ($LASTEXITCODE -ne 0) { [Console]::Error.WriteLine($id + ' : pnputil exit ' + $LASTEXITCODE); $fail++ }
+}
+if ($fail -gt 0) { exit 3 }
+Start-Sleep -Milliseconds 2500
+foreach ($id in $ids) {
+  $pb = (Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_ProblemCode' -ErrorAction SilentlyContinue).Data
+  if ($null -ne $pb -and $pb -ne 0) { [Console]::Error.WriteLine($id + ' ProblemCode=' + $pb); exit 4 }
+}
+exit 0
+"""
+
+
+def restart_device() -> tuple[bool, str]:
+    """Redémarre le périphérique encodeur (`pnputil /restart-device`) = équivalent
+    logiciel d'un rebranchement, sans désactivation. Premier remède tenté sur un
+    gel USB (1005/16).
+
+    Renvoie (succès, raison).
+    """
+    if platform.system() != "Windows":
+        return False, "non-Windows"
+    if not is_admin():
+        return False, "agent NON administrateur → pnputil /restart-device impossible"
+    vid_pid = _encoder_vid_pid()
+    code, err = _run_ps(_PS_RESTART.replace("__LOOKUP__", _pnp_lookup(vid_pid)))
+    if code == 0:
+        return True, f"redémarrage PnP du device OK ({vid_pid})"
+    if code == 2:
+        return False, f"device {vid_pid} introuvable (mauvais VID/PID ou encodeur débranché ?)"
+    if code == 3:
+        return False, f"pnputil /restart-device a échoué : {err}"
+    if code == 4:
+        healed, reason = ensure_device_enabled()
+        return False, f"device KO après redémarrage ({err}) — réactivation : {reason}"
+    return False, f"restart exit {code}: {err}"
+
+
 # Cycle disable/enable. Sur l'encodeur Sciener des Voiles, le Disable est TOUJOURS
 # refusé (« périphérique système critique » : le composite expose une interface HID
 # clavier MI_02) — vérifié 2026-07-10 via Disable-PnpDevice et pnputil. Le cycle PnP
@@ -495,10 +544,15 @@ class CardEncoder:
                         time.sleep(1.0)
                         continue
                     log.warning(f"Device inaccessible (code {e.code}) → réactivation impossible : {reason}")
-                # Gel USB → tenter un cycle PnP (rebranchement logiciel).
+                # Gel USB → redémarrer le device (pnputil), puis, en dernier
+                # recours, tenter le cycle disable/enable (refusé sur l'encodeur
+                # Sciener, mais peut marcher sur un autre matériel).
                 elif e.code in USB_FROZEN_CODES and reenum_done < reenum_attempts:
                     reenum_done += 1
-                    ok, reason = reenumerate_usb()
+                    ok, reason = restart_device()
+                    if not ok:
+                        log.warning(f"USB gelé (code {e.code}) → redémarrage PnP KO : {reason}")
+                        ok, reason = reenumerate_usb()
                     last_reenum_reason = reason
                     if ok:
                         log.warning(f"USB gelé (code {e.code}) → {reason}, retry connexion")
