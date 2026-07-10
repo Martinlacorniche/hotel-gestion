@@ -436,6 +436,18 @@ class CardEncoder:
         if rc != 0:
             raise EncoderError(f"CE_InitCard: {err_str(rc)}", rc)
 
+    def clear_card(self, hotel_info: str) -> None:
+        """Efface TOUT le contenu de la carte posée, y compris les droits d'un
+        autre hôtel (vérifié 2026-07-10 : rc=0 sur une carte étrangère, puis
+        init_card OK). Rend n'importe quelle carte réutilisable sans passer par
+        une carte neuve.
+
+        DESTRUCTIF : la carte perd ses droits d'accès. Ne l'appeler qu'une fois,
+        AVANT la première écriture d'un job (write_card cumule les droits)."""
+        rc = self.dll.CE_ClearCard(hotel_info.encode("ascii"))
+        if rc != 0:
+            raise EncoderError(f"CE_ClearCard: {err_str(rc)}", rc)
+
     def write_card(
         self,
         hotel_info: str,

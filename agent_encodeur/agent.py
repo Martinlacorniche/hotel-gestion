@@ -68,6 +68,12 @@ TTHOTEL_CLIENT_SECRET = os.environ.get("TTHOTEL_CLIENT_SECRET")
 ENCODER_PORT = os.environ.get("AGENT_ENCODER_PORT", "").strip()
 ENCODER_SECTORS = os.environ.get("AGENT_ENCODER_SECTORS", "0000000000011111")
 
+# Recyclage des cartes : efface la carte posée avant la 1re écriture d'un job, ce
+# qui permet de réutiliser n'importe quelle carte (y compris celle d'un autre
+# hôtel) sans repartir d'une carte neuve. Mettre à "0" pour revenir au comportement
+# historique (init seulement sur carte vierge).
+CLEAR_CARD_BEFORE_ENCODE = os.environ.get("AGENT_CLEAR_CARD", "1") != "0"
+
 if not SUPABASE_KEY or not HOTEL_ID:
     sys.stderr.write("ERREUR: SUPABASE_SERVICE_ROLE_KEY et AGENT_HOTEL_ID requis.\n")
     sys.exit(1)
@@ -394,6 +400,27 @@ def encode_card(job: dict[str, Any]) -> dict[str, Any]:
     with _encoder.session(hotel_info, port=ENCODER_PORT, sectors=ENCODER_SECTORS) as enc:
         try:
             card_initialized = False  # init_card appelé au plus une fois par carte
+
+            # Recyclage : la carte est effacée puis ré-initialisée AVANT la boucle.
+            # Une seule fois, car write_card cumule les droits — effacer entre deux
+            # écritures perdrait les chambres déjà écrites de ce job. Le job porte
+            # toujours la liste complète des serrures de la carte, donc rien n'est
+            # perdu. Un échec du clear (carte déjà vierge) est bénin : le 106 sur la
+            # 1re écriture déclenchera l'init comme avant.
+            if CLEAR_CARD_BEFORE_ENCODE:
+                try:
+                    ancien = enc.get_card_no()
+                except Exception:
+                    ancien = None
+                try:
+                    enc.clear_card(hotel_info)
+                except EncoderError as e:
+                    log.info(f"clear_card sans effet (code {e.code}) — carte probablement vierge")
+                else:
+                    log.info(f"Carte effacée (n° {ancien or '?'}) → recyclage")
+                    enc.init_card(hotel_info)
+                    card_initialized = True
+
             for i, lock in enumerate(locks):
                 try:
                     enc.write_card(
