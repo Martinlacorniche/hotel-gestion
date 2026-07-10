@@ -13,6 +13,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { moveMessage, createReplyDraft, getMessageText, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
 import { parseOtaResa, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
+import { receptionOnDuty } from '@/lib/onDuty';
 import type { HotelMailConfig, MailCategory } from '@/lib/mailAssistant';
 
 const LLM_MODEL = 'claude-sonnet-4-6';   // même modèle que /api/brief, /api/fiche-audit
@@ -197,13 +198,21 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
 //  3) pose date_relance = aujourd'hui + RELANCE_DAYS pour ressortir le lead sans réponse.
 const RELANCE_DAYS = 3;
 
+type LeadIssue = 'nouvelle_demande' | 'refus' | 'confirmation' | 'autre';
+
 type Lead = {
+  issue?: LeadIssue; motif_perte?: string;
   nom_client?: string; societe?: string; telephone?: string; titre_demande?: string;
   date_evenement?: string; nb_personnes?: string; budget_estime?: number;
   resume?: string; missing?: string[]; draft_html?: string;
 };
 
-// Un seul appel LLM : champs extraits + infos manquantes + brouillon de pré-qualif.
+// Un seul appel LLM : ISSUE du mail + champs extraits + infos manquantes + brouillon adapté.
+//
+// Pourquoi le LLM et pas une regex pour l'issue (Martin 2026-07-10) : un mot-clé se trompe.
+// « devis » suffisait à déclencher la pré-qualif + une relance à J+3 — y compris sur le mail où
+// Céline Grosso (Biogroup) nous annonçait qu'elle retenait une AUTRE proposition. On relançait
+// une cliente qui venait de dire non. L'issue se lit dans le sens du mail, pas dans ses mots.
 async function qualifyLead(subject: string, body: string, hotelName: string): Promise<Lead> {
   const client = new Anthropic();
   const msg = await client.messages.create({
@@ -211,24 +220,70 @@ async function qualifyLead(subject: string, body: string, hotelName: string): Pr
     messages: [{
       role: 'user',
       content:
-        `Tu es l'assistant commercial de l'Hôtel ${hotelName}. Analyse ce mail de demande ` +
+        `Tu es l'assistant commercial de l'Hôtel ${hotelName}. Analyse ce mail ` +
         `(séminaire / groupe / devis / privatisation) et réponds en JSON STRICT (rien autour), clés :\n` +
+        `- issue : "nouvelle_demande" (le client demande ou relance), "refus" (il décline notre ` +
+        `offre / retient un concurrent / annule), "confirmation" (il accepte), ou "autre"\n` +
+        `- motif_perte : SI issue="refus", la raison en une phrase courte (ex. "salle de réunion ` +
+        `trop petite pour le nombre d'invités"), sinon omets\n` +
         `- nom_client, societe, telephone (si présents)\n` +
         `- titre_demande : résumé court de la demande\n` +
         `- date_evenement : "yyyy-mm-dd" si une date précise est donnée, sinon omets\n` +
         `- nb_personnes : le nombre de participants si donné (texte), sinon omets\n` +
         `- budget_estime : nombre en € si donné, sinon omets\n` +
         `- resume : 2 phrases max pour la fiche CRM\n` +
-        `- missing : liste des infos MANQUANTES à demander pour qualifier (parmi : dates exactes, ` +
-        `nombre de participants, budget indicatif, type de prestation, restauration, hébergement)\n` +
-        `- draft_html : un brouillon de réponse en français, poli et chaleureux, qui remercie et ` +
-        `pose UNIQUEMENT les questions de "missing" (une liste courte). PAS de signature (ajoutée après). ` +
-        `Balises <p>/<ul><li> autorisées.\n\nSujet: ${subject}\n\n${body.slice(0, 6000)}`,
+        `- missing : SI issue="nouvelle_demande", les infos MANQUANTES à demander (parmi : dates ` +
+        `exactes, nombre de participants, budget indicatif, type de prestation, restauration, ` +
+        `hébergement) ; sinon liste vide\n` +
+        `- draft_html : un brouillon de réponse en français. Si issue="refus" : remercier, ` +
+        `accuser réception sans insister ni renégocier, et laisser la porte ouverte pour une ` +
+        `prochaine fois. Sinon : remercier et poser UNIQUEMENT les questions de "missing". ` +
+        `PAS de signature (ajoutée après). Balises <p>/<ul><li> autorisées.\n\n` +
+        `Sujet: ${subject}\n\n${body.slice(0, 6000)}`,
     }],
   });
   const text = msg.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
   try { return JSON.parse(text.replace(/```json|```/g, '').trim()) as Lead; }
   catch { return { resume: text.slice(0, 400) }; }
+}
+
+// Le prospect décline : on CLÔT la fiche (statut Refus + motif) et on ANNULE la relance —
+// sinon le lead perdu ressort dans /commercial trois jours plus tard. Brouillon de réponse
+// courtoise à relire (Martin 2026-07-10). Aucune fiche existante → on ne crée rien : un refus
+// sans dossier n'a rien à tracer, on rend la main à l'humain.
+async function handleRefus(
+  cfg: HotelMailConfig, row: LogRow, lead: Lead, email: string | null, today: string,
+): Promise<ExecOutcome> {
+  if (!email) return { status: 'blocked', error: 'Refus détecté mais expéditeur inconnu.' };
+
+  const { data } = await supabaseAdmin
+    .from('suivi_commercial').select('id, commentaires')
+    .eq('hotel_id', cfg.hotelId).ilike('email', email).limit(1);
+  if (!data?.length) {
+    return { status: 'blocked', error: `Refus détecté (${lead.motif_perte || 'motif non lu'}) mais aucune fiche pour ${email}.` };
+  }
+
+  const motif = (lead.motif_perte || '').slice(0, 300) || null;
+  // Note EN TÊTE : l'équipe écrit ses commentaires du plus récent au plus ancien.
+  const note = `${today.slice(8, 10)}/${today.slice(5, 7)} refus : ${motif || 'autre proposition retenue'} - Junior`;
+  const merged = [note, data[0].commentaires].filter(Boolean).join('\n');
+
+  const { error } = await supabaseAdmin.from('suivi_commercial').update({
+    statut: 'Refus', motif_perte: motif, date_relance: null, commentaires: merged.slice(0, 4000),
+  }).eq('id', data[0].id);
+  if (error) return { status: 'blocked', error: `MAJ suivi_commercial: ${error.message}` };
+
+  // Réponse CLIENT → signée par la personne en shift (cf reference_signature_htbm).
+  let draft: { draftId: string; webLink: string } | null = null;
+  if (lead.draft_html) {
+    const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
+    const sig = `<br/><p>Bien à vous,<br/>${duty?.name || 'La Réception'}<br/>Hôtel ${cfg.nom}</p>`;
+    draft = await createReplyDraft(cfg.mailbox, row.message_id, `${lead.draft_html}${sig}`).catch(() => null);
+  }
+  return {
+    status: 'executed',
+    result: { kind: 'commercial', mode: 'refus', id: data[0].id, motif_perte: motif, ...(draft || {}) },
+  };
 }
 
 async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
@@ -237,6 +292,10 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
   const lead = await qualifyLead(row.subject || '', body, cfg.nom);
   const email = row.from_addr || null;
   const today = new Date().toISOString().slice(0, 10);
+
+  // Le client décline → surtout PAS la pré-qualif ni la relance à J+3.
+  if (lead.issue === 'refus') return await handleRefus(cfg, row, lead, email, today);
+
   const relance = new Date(Date.now() + RELANCE_DAYS * 24 * 3600e3).toISOString().slice(0, 10);
   const missing = Array.isArray(lead.missing) ? lead.missing : [];
   const stampedNote = [

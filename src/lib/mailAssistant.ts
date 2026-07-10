@@ -95,7 +95,7 @@ const rx = {
   // ⚠️ transgourmet est scopé à son SOUS-DOMAINE marketing `email.transgourmet.fr` : le domaine
   // principal porte les vrais bons de livraison / factures fournisseur, à ne pas supprimer.
   prospectionSenders:
-    /translaser\.fr|neutraliz\.com|@provencemed\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr/i,
+    /translaser\.fr|neutraliz\.com|@provencemed\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris/i,
   // Signal générique de newsletter / démarchage à froid (lien de désinscription + accroche).
   prospectionHook: /se d[ée]sinscrire|unsubscribe|d[ée]couvrez nos offres|\b[àa] partir de\s?\d/i,
 };
