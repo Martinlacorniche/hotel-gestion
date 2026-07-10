@@ -31,6 +31,14 @@ DLL_PATH = DLL_DIR / "CardEncoder.dll"
 # autre app : il faut juste attendre qu'elle relâche, pas l'arracher via PnP).
 USB_FROZEN_CODES = {16, 1005}
 
+# Device désactivé dans Windows : un cycle PnP l'aggraverait (c'est un cycle PnP
+# interrompu qui l'a mis dans cet état). Le seul remède est un Enable-PnpDevice.
+USB_DISABLED_CODES = {1003}
+
+# CM_PROB_DISABLED — un device dans cet état le reste au reboot ET au
+# rebranchement physique (le flag est persisté dans le registre par instance).
+PNP_PROBLEM_DISABLED = 22
+
 # Codes d'erreur du DLL (extrait du manuel V1.6.1)
 ERROR_CODES = {
     0: "Succès",
@@ -63,6 +71,7 @@ ERROR_CODES = {
     201: "Échec config clé",
     202: "Échec config clé carte",
     203: "Échec config hotelInfo",
+    1003: "Périphérique désactivé ou inaccessible (Windows ProblemCode 22 → Enable-PnpDevice)",
     1004: "Encodeur tenu par une autre application (TTHotel desktop ?)",
     1005: "Ouverture USB échouée (souvent USB gelé après reboot → ré-énumération PnP)",
 }
@@ -87,6 +96,119 @@ def is_admin() -> bool:
         return False
 
 
+def _encoder_vid_pid() -> str:
+    return os.environ.get("AGENT_ENCODER_USB_VIDPID", "VID_1A86&PID_FE07")
+
+
+def _pnp_lookup(vid_pid: str) -> str:
+    """Fragment PS listant les InstanceId du composite encodeur (pas ses interfaces
+    enfants : le `\\` final impose une correspondance sur le parent)."""
+    return (
+        "@(Get-PnpDevice -PresentOnly | "
+        f"Where-Object {{ $_.InstanceId -like 'USB\\{vid_pid}\\*' }} | "
+        "Select-Object -ExpandProperty InstanceId)"
+    )
+
+
+def _run_ps(script: str, timeout: int = 40) -> tuple[int, str]:
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except Exception as e:  # noqa: BLE001 — remonté tel quel à l'appelant
+        return -1, f"exception PnP: {e}"
+    return r.returncode, (r.stderr or "").strip()[:300]
+
+
+# Réactivation seule, sans disable préalable. Le seul remède quand le device est
+# resté sur ProblemCode=22. Sortie : 0 = rien à faire, 10 = réparé, 2 = introuvable,
+# 4 = Enable refusé.
+_PS_ENSURE_ENABLED = """
+$ErrorActionPreference = 'Stop'
+$ids = __LOOKUP__
+if (-not $ids) { exit 2 }
+$healed = 0
+foreach ($id in $ids) {
+  $pb = (Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_ProblemCode' -ErrorAction SilentlyContinue).Data
+  if ($null -ne $pb -and $pb -eq __PROB__) {
+    try { Enable-PnpDevice -InstanceId $id -Confirm:$false -ErrorAction Stop; $healed++ }
+    catch { [Console]::Error.WriteLine($id + ' : ' + $_.Exception.Message); exit 4 }
+  }
+}
+if ($healed -gt 0) { Start-Sleep -Milliseconds 2500; exit 10 }
+exit 0
+"""
+
+
+def ensure_device_enabled() -> tuple[bool, str]:
+    """Réactive l'encodeur s'il est resté DÉSACTIVÉ (ProblemCode 22), typiquement
+    après un cycle PnP interrompu (agent tué entre le Disable et le Enable).
+
+    Appelé au boot et sur code 1003. Ne fait JAMAIS de disable : c'est un
+    disable non suivi de son enable qui crée le problème qu'on répare ici.
+
+    Renvoie (device utilisable, raison).
+    """
+    if platform.system() != "Windows":
+        return False, "non-Windows"
+    if not is_admin():
+        return False, "agent NON administrateur → Enable-PnpDevice impossible"
+    vid_pid = _encoder_vid_pid()
+    script = _PS_ENSURE_ENABLED.replace("__LOOKUP__", _pnp_lookup(vid_pid)).replace(
+        "__PROB__", str(PNP_PROBLEM_DISABLED)
+    )
+    code, err = _run_ps(script)
+    if code == 0:
+        return True, "device déjà actif"
+    if code == 10:
+        return True, f"device était DÉSACTIVÉ (ProblemCode {PNP_PROBLEM_DISABLED}) → réactivé"
+    if code == 2:
+        return False, f"device {vid_pid} introuvable (mauvais VID/PID ou encodeur débranché ?)"
+    if code == 4:
+        return False, f"Enable-PnpDevice refusé : {err}"
+    return False, f"PnP exit {code}: {err}"
+
+
+# Cycle disable/enable. Sur l'encodeur Sciener des Voiles, le Disable est TOUJOURS
+# refusé (« périphérique système critique » : le composite expose une interface HID
+# clavier MI_02) — vérifié 2026-07-10 via Disable-PnpDevice et pnputil. Le cycle PnP
+# y est donc inopérant et seul un rebranchement physique lève un gel 1005. On garde
+# la fonction pour les autres matériels, mais elle doit le dire au lieu de mentir.
+# Le Enable est retenté et l'état final vérifié via ProblemCode : on ne sort JAMAIS
+# de cette fonction en laissant le device désactivé.
+# Sortie : 0 = OK, 2 = introuvable, 3 = Disable refusé, 4 = DEVICE LAISSÉ DÉSACTIVÉ.
+_PS_REENUM = """
+$ErrorActionPreference = 'Stop'
+$ids = __LOOKUP__
+if (-not $ids) { exit 2 }
+$disabled = @()
+try {
+  foreach ($id in $ids) { Disable-PnpDevice -InstanceId $id -Confirm:$false; $disabled += $id }
+  Start-Sleep -Milliseconds 1500
+} catch { [Console]::Error.WriteLine('disable : ' + $_.Exception.Message) }
+$failed = @()
+foreach ($id in $disabled) {
+  $ok = $false
+  for ($i = 0; $i -lt 3; $i++) {
+    try { Enable-PnpDevice -InstanceId $id -Confirm:$false -ErrorAction Stop; $ok = $true; break }
+    catch { [Console]::Error.WriteLine('enable#' + $i + ' : ' + $_.Exception.Message); Start-Sleep -Milliseconds 1200 }
+  }
+  if (-not $ok) { $failed += $id }
+}
+Start-Sleep -Milliseconds 2500
+foreach ($id in $ids) {
+  $pb = (Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_ProblemCode' -ErrorAction SilentlyContinue).Data
+  if ($null -ne $pb -and $pb -ne 0) { [Console]::Error.WriteLine($id + ' ProblemCode=' + $pb); exit 4 }
+}
+if ($failed.Count -gt 0) { exit 4 }
+if ($disabled.Count -eq 0) { exit 3 }
+exit 0
+"""
+
+
 def reenumerate_usb() -> tuple[bool, str]:
     """Cycle disable/enable du périphérique encodeur Sciener via PnP (Windows) =
     équivalent logiciel d'un débranchement/rebranchement.
@@ -99,44 +221,46 @@ def reenumerate_usb() -> tuple[bool, str]:
     Le VID&PID ciblé est configurable via AGENT_ENCODER_USB_VIDPID
     (défaut "VID_1A86&PID_FE07" = encodeur Sciener).
 
-    Renvoie (succès, raison). IMPORTANT : on ne masque PLUS les erreurs PnP — sans
-    droits admin, Disable-PnpDevice échoue (accès refusé) et on renvoie (False, …)
-    au lieu de prétendre faussement avoir ré-énuméré. Codes de sortie PS :
-    2 = device introuvable, 3 = Disable/Enable refusé (droits ?), 0 = OK.
+    ATTENTION : sur l'encodeur Sciener, Windows REFUSE le Disable (« périphérique
+    système critique », à cause de l'interface HID clavier du composite). Cette
+    fonction y renvoie donc toujours (False, …) et le gel 1005 ne se lève qu'au
+    rebranchement physique. Ne pas la croire capable de réparer quoi que ce soit.
+
+    Renvoie (succès, raison). En cas d'échec du Enable, on tente une dernière
+    réactivation : un device laissé désactivé survit au reboot ET au
+    rebranchement physique — c'est une panne de plusieurs jours (incident
+    2026-07-10), bien pire que le gel qu'on cherchait à corriger.
     """
     if platform.system() != "Windows":
         return False, "non-Windows"
     if not is_admin():
         return False, "agent NON administrateur → Disable/Enable-PnpDevice impossible"
-    vid_pid = os.environ.get("AGENT_ENCODER_USB_VIDPID", "VID_1A86&PID_FE07")
-    ps = (
-        "$ErrorActionPreference='Stop';"
-        f"$d = Get-PnpDevice -PresentOnly | Where-Object {{ $_.InstanceId -like 'USB\\{vid_pid}\\*' }};"
-        "if (-not $d) { exit 2 };"
-        "try {"
-        "  $d | Disable-PnpDevice -Confirm:$false;"
-        "  Start-Sleep -Milliseconds 1500;"
-        "  $d | Enable-PnpDevice -Confirm:$false;"
-        "  Start-Sleep -Milliseconds 2500;"
-        "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 3 }"
-        "exit 0"
-    )
-    try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except Exception as e:
-        return False, f"exception PnP: {e}"
-    if r.returncode == 0:
+    vid_pid = _encoder_vid_pid()
+    code, err = _run_ps(_PS_REENUM.replace("__LOOKUP__", _pnp_lookup(vid_pid)))
+    if code == 0:
         return True, f"ré-énumération PnP OK ({vid_pid})"
-    if r.returncode == 2:
+    if code == 2:
         return False, f"device {vid_pid} introuvable (mauvais VID/PID ou encodeur débranché ?)"
-    if r.returncode == 3:
-        return False, f"Disable/Enable-PnpDevice refusé : {(r.stderr or '').strip()[:200]}"
-    return False, f"PnP exit {r.returncode}: {(r.stderr or '').strip()[:200]}"
+    if code == 3:
+        if "critique" in err.lower() or "non pris en charge" in err.lower():
+            return False, (
+                "Windows refuse de désactiver l'encodeur (périphérique système critique : "
+                "interface HID du composite) → cycle PnP impossible sur ce matériel, "
+                "SEUL un débranchement/rebranchement physique lèvera le gel USB"
+            )
+        return False, f"Disable-PnpDevice refusé : {err}"
+    if code == 4:
+        # Filet de sécurité : le device est peut-être resté désactivé.
+        log.error(f"Cycle PnP incomplet ({err}) → tentative de réactivation d'urgence")
+        healed, reason = ensure_device_enabled()
+        if healed:
+            return False, f"cycle PnP échoué ({err}) mais device réactivé : {reason}"
+        return False, (
+            f"DEVICE LAISSÉ DÉSACTIVÉ ({err}) — réactivation d'urgence échouée : {reason}. "
+            f"Réparer à la main : Enable-PnpDevice -InstanceId 'USB\\{vid_pid}\\...' -Confirm:$false "
+            "(un rebranchement physique NE suffira PAS)"
+        )
+    return False, f"PnP exit {code}: {err}"
 
 
 class CardEncoder:
@@ -341,6 +465,7 @@ class CardEncoder:
         """
         reenum_attempts = 2
         reenum_done = 0
+        heal_done = False
         last_reenum_reason = ""
         for attempt in range(1, connect_retries + 1):
             try:
@@ -349,16 +474,29 @@ class CardEncoder:
             except EncoderError as e:
                 if attempt >= connect_retries:
                     # Enrichit l'erreur finale d'un indice actionnable.
-                    if e.code in USB_FROZEN_CODES:
+                    if e.code in USB_FROZEN_CODES | USB_DISABLED_CODES:
                         hint = last_reenum_reason or (
                             "auto-réparation non tentée"
                             if is_admin()
                             else "agent non administrateur (auto-réparation USB désactivée)"
                         )
-                        raise EncoderError(f"{e} [auto-réparation USB : {hint}]", e.code) from e
-                    raise
+                        raise EncoderUnavailable(
+                            f"{e} [auto-réparation USB : {hint}]", e.code
+                        ) from e
+                    raise EncoderUnavailable(str(e), e.code) from e
+                # Device désactivé → le réactiver. Surtout PAS un cycle PnP : c'est
+                # un disable/enable interrompu qui l'a mis dans cet état.
+                if e.code in USB_DISABLED_CODES and not heal_done:
+                    heal_done = True
+                    ok, reason = ensure_device_enabled()
+                    last_reenum_reason = reason
+                    if ok:
+                        log.warning(f"Device inaccessible (code {e.code}) → {reason}, retry connexion")
+                        time.sleep(1.0)
+                        continue
+                    log.warning(f"Device inaccessible (code {e.code}) → réactivation impossible : {reason}")
                 # Gel USB → tenter un cycle PnP (rebranchement logiciel).
-                if e.code in USB_FROZEN_CODES and reenum_done < reenum_attempts:
+                elif e.code in USB_FROZEN_CODES and reenum_done < reenum_attempts:
                     reenum_done += 1
                     ok, reason = reenumerate_usb()
                     last_reenum_reason = reason
@@ -383,3 +521,10 @@ class EncoderError(Exception):
     def __init__(self, message: str, code: int):
         super().__init__(message)
         self.code = code
+
+
+class EncoderUnavailable(EncoderError):
+    """L'encodeur est injoignable (connexion impossible après tous les retries),
+    par opposition à une erreur de carte (106 = carte d'un autre hôtel, 101 = mal
+    positionnée…) qui n'incrimine pas le matériel. Seul ce cas doit faire passer
+    le voyant `/serrures` au rouge."""

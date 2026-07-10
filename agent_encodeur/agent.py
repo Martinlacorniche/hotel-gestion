@@ -145,11 +145,25 @@ def get_hotel_info() -> str:
 # ── Encodeur (DLL ou stub) ────────────────────────────────────────────────────
 
 try:
-    from encoder_dll import CardEncoder, EncoderError, is_admin, is_available
+    from encoder_dll import (
+        CardEncoder,
+        EncoderError,
+        EncoderUnavailable,
+        ensure_device_enabled,
+        is_admin,
+        is_available,
+    )
 except Exception as e:
     log.warning(f"encoder_dll non chargé : {e}")
+
+    class EncoderUnavailable(Exception):  # type: ignore[no-redef]
+        """Sentinelle : jamais levée en mode stub. Surtout PAS `Exception`, sinon
+        le `except EncoderUnavailable` de la boucle attraperait toutes les erreurs
+        de carte et ferait passer le voyant au rouge à tort."""
+
     CardEncoder = None  # type: ignore
     EncoderError = Exception  # type: ignore
+    ensure_device_enabled = lambda: (False, "encoder_dll non chargé")  # type: ignore
     is_available = lambda: False  # type: ignore
     is_admin = lambda: False  # type: ignore
 
@@ -171,16 +185,27 @@ def setup_encoder() -> None:
         return
     mode = f"port={ENCODER_PORT}" if ENCODER_PORT else "auto-détection USB"
     log.info(f"Validation encodeur ({mode})…")
-    # L'auto-réparation USB (cycle PnP sur gel code 1005) exige les droits admin.
-    # Sans eux, un USB gelé après reboot ne se débloque QUE par rebranchement manuel.
+    # Les opérations PnP (Enable/Disable-PnpDevice) exigent les droits admin.
+    # Sans eux, un USB gelé après reboot ne se débloque QUE par rebranchement manuel
+    # — et un device laissé désactivé ne peut plus être réparé automatiquement.
     if is_admin():
-        log.info("Droits administrateur OK → auto-réparation USB (PnP) active")
+        log.info("Droits administrateur OK → réactivation PnP possible")
+        # Réactive l'encodeur s'il a été laissé DÉSACTIVÉ par un cycle PnP
+        # interrompu (agent tué entre le Disable et le Enable). Cet état survit au
+        # reboot et au rebranchement physique : sans ce rattrapage, l'encodeur reste
+        # mort jusqu'à une intervention manuelle (incident 2026-07-10).
+        healed, reason = ensure_device_enabled()
+        if healed:
+            log.info(f"Vérification PnP : {reason}")
+        else:
+            log.warning(f"Vérification PnP : {reason}")
     else:
         log.warning(
             "Agent NON administrateur → auto-réparation USB DÉSACTIVÉE. "
             "En cas de gel USB (code 1005) après reboot, relancer l'agent "
             "« en tant qu'administrateur » sinon il faudra rebrancher l'encodeur à la main."
         )
+
     _encoder = CardEncoder()
     # Test de connexion bref pour identifier le modèle + valider la DLL,
     # puis on relâche l'encodeur immédiatement. Si l'encodeur est déjà tenu
@@ -472,7 +497,18 @@ def main_loop() -> None:
                 activate_sejours((job.get("payload") or {}).get("sejourIds", []))
                 _encoder_status["ok"] = True
                 log.info(f"Job {job['id']} done")
+            except EncoderUnavailable as e:
+                # L'encodeur lui-même est injoignable : le voyant /serrures doit
+                # passer au rouge tout de suite. Sans ça il reste vert (dernier job
+                # réussi) et personne ne voit que l'encodage est mort — c'est ce qui
+                # a fait passer la panne du 2026-07-09 inaperçue jusqu'au lendemain.
+                _encoder_status["ok"] = False
+                log.exception(f"Encodeur injoignable · job {job['id']}")
+                finish_job(job["id"], "error", {"error": str(e)})
+                send_heartbeat(force=True)
             except Exception as e:
+                # Erreur de carte (mauvais hôtel, mal positionnée…) : le matériel va
+                # bien, on ne touche pas au voyant.
                 log.exception(f"Échec encodage job {job['id']}")
                 finish_job(job["id"], "error", {"error": str(e)})
         except KeyboardInterrupt:
