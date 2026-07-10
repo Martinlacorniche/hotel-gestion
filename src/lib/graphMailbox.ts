@@ -96,6 +96,25 @@ export async function moveMessage(mailbox: string, id: string, destination: stri
   await gm(mailbox, `/messages/${id}/move`, { method: 'POST', body: JSON.stringify({ destinationId: destination }) });
 }
 
+// Suppression DÉFINITIVE (ne passe pas par les Éléments supprimés → libère vraiment le stockage).
+// Réservé à la purge des indésirables : irréversible, ne jamais l'utiliser sur la boîte de réception.
+export async function permanentDeleteMessage(mailbox: string, id: string): Promise<void> {
+  await gm(mailbox, `/messages/${id}/permanentDelete`, { method: 'POST' });
+}
+
+// Ids + date des messages d'un dossier reçus AVANT `beforeIso`. On ne sélectionne QUE l'id et la
+// date : ni sujet, ni expéditeur, ni corps — la purge des indésirables ne doit rien lire.
+export async function listFolderIdsBefore(
+  mailbox: string, folder: string, beforeIso: string, top = 50,
+): Promise<{ id: string; received: string }[]> {
+  const j = await gm<{ value: Record<string, unknown>[] }>(
+    mailbox,
+    `/mailFolders/${folder}/messages?$top=${top}&$select=id,receivedDateTime` +
+    `&$filter=receivedDateTime lt ${beforeIso}&$orderby=receivedDateTime asc`,
+  );
+  return (j.value || []).map((m) => ({ id: String(m.id), received: String(m.receivedDateTime || '') }));
+}
+
 export type FileAttachment = { id: string; name: string; contentType: string; size: number; contentBytes: string };
 
 // Pièces jointes FICHIER (avec contenu base64), pour lecture PDF / routage compta.
