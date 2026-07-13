@@ -97,8 +97,18 @@ const rx = {
   // Newsletters institutionnelles / tourisme : corbeille comme les autres (Martin 2026-07-10).
   // ⚠️ transgourmet est scopé à son SOUS-DOMAINE marketing `email.transgourmet.fr` : le domaine
   // principal porte les vrais bons de livraison / factures fournisseur, à ne pas supprimer.
+  // ⚠️ `@provencemed.com` RETIRÉ le 2026-07-13 : Provence Méditerranée n'est pas un newsletteur,
+  // c'est l'agence de destination = un PARTENAIRE. Backtest sur l'historique Corniche : l'équipe
+  // range ses mails dans « Partenaires » et « Infos Tourisme » — elle les GARDE (ex. « RE: Brochure
+  // Vacances Accessibles — demande de mise à jour 2026 » = notre fiche dans leur brochure).
   prospectionSenders:
-    /translaser\.fr|neutraliz\.com|@provencemed\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris/i,
+    /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris/i,
+  // Un mail qui porte la parole d'un HUMAIN d'en face (réponse dans un fil, message d'un voyageur
+  // relayé par l'OTA) ne part jamais à la corbeille sur le seul critère de l'expéditeur.
+  guestMessage:
+    /nous a envoy[ée] ce message|message re[çc]u de la part d|message d[’' ]?un voyageur|attend d[’' ]?[êe]tre lu/i,
+  // Idem pour tout ce qui parle d'argent (facture, impayé) : jamais de suppression à l'aveugle.
+  moneyHook: /\binvoice\b|impay[ée]|outstanding|relance de paiement/i,
   // Signal générique de newsletter / démarchage à froid (lien de désinscription + accroche).
   prospectionHook: /se d[ée]sinscrire|unsubscribe|d[ée]couvrez nos offres|\b[àa] partir de\s?\d/i,
 };
@@ -156,8 +166,18 @@ export function classifyMail(mail: MailInput): Classification {
     };
   }
 
+  // GARDE-FOU DES SUPPRESSIONS PAR EXPÉDITEUR (2026-07-13). Trier la pub « par expéditeur » (seule
+  // méthode qui marche depuis que `prospectionHook` est mort) casse dès qu'un expéditeur envoie À LA
+  // FOIS de la pub ET du vrai courrier. Backtest sur l'historique Corniche : la règle Expedia aurait
+  // supprimé « Message reçu de la part d'un voyageur Expedia », et la règle PACA une facture.
+  // → Une règle de suppression fondée sur l'EXPÉDITEUR ne s'applique jamais à un mail qui porte la
+  //   parole d'un humain (réponse dans un fil, message de voyageur) ou qui parle d'argent.
+  const humanThread = rx.reply.test(subj) || rx.guestMessage.test(hay);
+  const aboutMoney = rx.facture.test(hay) || rx.moneyHook.test(hay);
+  const senderDeleteOk = !humanThread && !aboutMoney;
+
   // 1f) Pub / prospection connue (expéditeurs déjà repérés) -> corbeille (Martin 2026-07-09).
-  if (rx.prospectionSenders.test(from)) {
+  if (rx.prospectionSenders.test(from) && senderDeleteOk) {
     return { category: 'spam_alert', action: 'delete', reason: 'Pub / prospection (expéditeur connu)', detail: {} };
   }
 
@@ -177,9 +197,12 @@ export function classifyMail(mail: MailInput): Classification {
   //     chambres »…) -> corbeille. Placé APRÈS le contrôle résa, et gardé par `looksLikeResa` :
   //     ces expéditeurs peuvent aussi porter une vraie notification de réservation, qui ne doit
   //     jamais partir à la corbeille (Martin 2026-07-10).
+  //     ⚠️ `looksLikeResa` NE SUFFIT PAS (backtest 2026-07-13) : `donotreply@expediapartnercentral.com`
+  //     envoie aussi les MESSAGES DES VOYAGEURS, qui ne ressemblent pas à une notif de résa et
+  //     partaient donc à la corbeille. D'où le `senderDeleteOk` (humain qui parle / argent).
   const looksLikeResa =
     rx.resaNew.test(subj) || rx.resaMod.test(subj) || rx.resaCancel.test(subj) || rx.dedge.test(hay);
-  if (rx.marketingSenders.test(from) && !looksLikeResa) {
+  if (rx.marketingSenders.test(from) && !looksLikeResa && senderDeleteOk) {
     return { category: 'spam_alert', action: 'delete', reason: 'Pub / marketing OTA (à supprimer)', detail: {} };
   }
 
