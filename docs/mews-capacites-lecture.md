@@ -28,8 +28,9 @@ node --env-file=.env.mews-demo scripts/mews-certif/sweep-read.mjs
 | Opération | Verdict | Objets | Champs renvoyés |
 |---|---|---|---|
 | `reservations/getAll` | OK | 100 | Id, ServiceId, GroupId, Number, ChannelNumber, ChannelManagerNumber, ChannelManagerGroupNumber, ChannelManager |
+| `reservationGroups/getAll` | OK | 20 | Id, Name, ChannelManager, ChannelManagerGroupNumber, EnterpriseId |
 | `customers/getAll` | OK | 50 | Id, ChainId, Number, Title, Sex, Gender, FirstName, LastName |
-| `customers/search` | OK | 2082 | Customer, Reservation, Id, FirstName, LastName, RoomNumber, ResourceName |
+| `customers/search` | OK | 2080 | Customer, Reservation, Id, FirstName, LastName, RoomNumber, ResourceName |
 | `cancellationPolicies/getAll` | KO (400) | — | Invalid ServiceIds. |
 | `ageCategories/getAll` | OK | 6 | Id, ServiceId, MinimalAge, MaximalAge, Names, ShortNames, CreatedUtc, UpdatedUtc |
 
@@ -69,4 +70,4 @@ node --env-file=.env.mews-demo scripts/mews-certif/sweep-read.mjs
 | `cashierTransactions/getAll` | OK | 0 | CashierTransactions, Cursor |
 | `exchangeRates/getAll` | OK | 50 | Id, EnterpriseId, SourceCurrency, TargetCurrency, Value |
 
-_33/34 opérations en succès._
+_34/35 opérations en succès._

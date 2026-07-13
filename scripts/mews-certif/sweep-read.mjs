@@ -122,9 +122,11 @@ await probe('counters/getAll', { Limitation: { Count: 50 } }, 'socle');
 await probe('outlets/getAll', { Limitation: { Count: 50 } }, 'socle');
 
 // Borne de self check-in
-const groupIds = [...new Set(resList.map((r) => r.ReservationGroupId).filter(Boolean))].slice(0, 20);
+// Le champ s'appelle `GroupId` sur une réservation, PAS `ReservationGroupId` :
+// se tromper de nom fait sauter l'appel en silence (aucune erreur, juste rien).
+const groupIds = [...new Set(resList.map((r) => r.GroupId).filter(Boolean))].slice(0, 20);
 if (groupIds.length) {
-  await probe('reservationGroups/getAll', { ReservationGroupIds: groupIds }, 'borne');
+  await probe('reservationGroups/getAll', { ReservationGroupIds: groupIds, Limitation: { Count: 50 } }, 'borne');
 }
 await probe('customers/getAll', {
   CreatedUtc: MED,
