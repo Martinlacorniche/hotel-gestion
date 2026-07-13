@@ -147,6 +147,18 @@ export async function listFolderIdsBefore(
   return (j.value || []).map((m) => ({ id: String(m.id), received: String(m.receivedDateTime || '') }));
 }
 
+// Id d'un dossier MAISON de la boîte de réception (« Hotsoft », « Clients »…), par son nom.
+// Les dossiers bien connus ('inbox', 'archive'…) s'adressent par leur nom Graph ; les dossiers
+// créés par l'équipe, eux, n'existent que sous forme d'id. Renvoie null si le dossier n'existe
+// pas (ex. « Hotsoft » n'existe qu'à La Corniche) : l'appelant décide quoi en faire.
+export async function findInboxFolderId(mailbox: string, displayName: string): Promise<string | null> {
+  const j = await gm<{ value: { id: string; displayName: string }[] }>(
+    mailbox, `/mailFolders/inbox/childFolders?$top=100&$select=id,displayName`,
+  );
+  const hit = (j.value || []).find((f) => f.displayName.toLowerCase() === displayName.toLowerCase());
+  return hit?.id ?? null;
+}
+
 export type FileAttachment = { id: string; name: string; contentType: string; size: number; contentBytes: string };
 
 // Pièces jointes FICHIER (avec contenu base64), pour lecture PDF / routage compta.

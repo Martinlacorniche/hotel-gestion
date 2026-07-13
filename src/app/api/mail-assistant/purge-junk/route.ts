@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { HOTEL_MAIL_CONFIG } from '@/lib/mailAssistant';
-import { purgeJunk, purgeTrash, JUNK_RETENTION_DAYS, TRASH_RETENTION_DAYS } from '@/lib/mailPurge';
+import { purgeJunk, purgeTrash, purgePmsReports, JUNK_RETENTION_DAYS, TRASH_RETENTION_DAYS, PMS_REPORTS_RETENTION_DAYS } from '@/lib/mailPurge';
 
 // Purge de stockage — « pensons à la planète » (Martin 2026-07-10) :
 //   · Courrier indésirable  → suppression définitive au-delà de 3 jours
 //   · Éléments supprimés    → suppression définitive au-delà de 7 jours
+//   · Éditions du PMS Hotsoft (Corniche) → au-delà de 4 jours (rééditables depuis le PMS)
 //
 //   POST /api/mail-assistant/purge-junk              -> les deux boîtes
 //   POST /api/mail-assistant/purge-junk?hotel=voiles -> une seule
@@ -38,11 +39,12 @@ export async function POST(req: NextRequest) {
     for (const h of cibles) {
       resultats.push(await purgeJunk(h.key));
       resultats.push(await purgeTrash(h.key));
+      resultats.push(await purgePmsReports(h.key));
     }
     const total = resultats.reduce((n, r) => n + r.deleted, 0);
     return NextResponse.json({
       ok: true,
-      retention_jours: { indesirables: JUNK_RETENTION_DAYS, corbeille: TRASH_RETENTION_DAYS },
+      retention_jours: { indesirables: JUNK_RETENTION_DAYS, corbeille: TRASH_RETENTION_DAYS, rapports_pms: PMS_REPORTS_RETENTION_DAYS },
       supprimes: total,
       detail: resultats,
     });

@@ -1,10 +1,11 @@
-import { listFolderIdsBefore, permanentDeleteBatch } from '@/lib/graphMailbox';
+import { listFolderIdsBefore, permanentDeleteBatch, findInboxFolderId } from '@/lib/graphMailbox';
 import { hotelConfig } from '@/lib/mailAssistant';
 
 // Purge de stockage (Martin 2026-07-10) : « on ne lit pas les indésirables, mais on vide la
 // boîte tous les 3 jours, pensons à la planète » + « mails supprimés, faut pas laisser traîner ».
 //   · Courrier indésirable → 3 jours
 //   · Éléments supprimés   → 7 jours
+//   · Éditions du PMS Hotsoft (Corniche) → 4 jours (Martin 2026-07-13)
 //
 // Pourquoi une suppression DÉFINITIVE et pas un `move` vers la corbeille : déplacer ne libère
 // aucun stockage (le mail reste dans la boîte, juste ailleurs). `permanentDelete` retire
@@ -15,7 +16,9 @@ import { hotelConfig } from '@/lib/mailAssistant';
 // repêchage manuel avant l'effacement, et les dossiers ne grossissent jamais au-delà.
 //
 // On ne lit RIEN : la requête ne demande que l'id et la date (cf `listFolderIdsBefore`).
-// La BOÎTE DE RÉCEPTION n'est jamais touchée : seuls 'junkemail' et 'deleteditems' sont purgés.
+// La BOÎTE DE RÉCEPTION elle-même n'est jamais touchée. Seuls sont purgés : 'junkemail',
+// 'deleteditems', et le dossier de classement « Hotsoft » (des éditions du PMS rééditables à
+// volonté — pas du courrier). Aucun mail reçu d'un tiers n'est jamais purgé.
 
 export const JUNK_RETENTION_DAYS = 3;
 // Corbeille : « mails supprimés, faut pas laisser traîner » (Martin 2026-07-10). 7 jours, c'est
@@ -49,6 +52,28 @@ export function purgeJunk(hotelKey: string, retentionDays = JUNK_RETENTION_DAYS)
 
 export function purgeTrash(hotelKey: string, retentionDays = TRASH_RETENTION_DAYS): Promise<PurgeResult> {
   return purgeFolder(hotelKey, 'deleteditems', retentionDays);
+}
+
+// Éditions automatiques du PMS Hotsoft (La Corniche) : feuille de caisse, situation HT/TTC,
+// Guests, Emergency Report… L'hôtel se les envoie chaque jour à sa propre boîte — 12 353 mails
+// empilés. « On supprime au-delà de 4 jours » (Martin 2026-07-13) : elles sont rééditables depuis
+// Hotsoft à tout moment, la copie mail n'est qu'un tampon de quelques jours.
+export const PMS_REPORTS_RETENTION_DAYS = 4;
+export const PMS_REPORTS_FOLDER = 'Hotsoft';
+
+// Le dossier n'existe qu'à La Corniche → purge à 0 ailleurs, sans erreur.
+export async function purgePmsReports(
+  hotelKey: string, retentionDays = PMS_REPORTS_RETENTION_DAYS,
+): Promise<PurgeResult> {
+  const cfg = hotelConfig(hotelKey);
+  if (!cfg) throw new Error(`hôtel inconnu: ${hotelKey}`);
+
+  const folderId = await findInboxFolderId(cfg.mailbox, PMS_REPORTS_FOLDER);
+  if (!folderId) {
+    return { hotel: cfg.key, mailbox: cfg.mailbox, folder: PMS_REPORTS_FOLDER, deleted: 0, oldest: null, capped: false, errors: 0 };
+  }
+  const res = await purgeFolder(hotelKey, folderId, retentionDays);
+  return { ...res, folder: PMS_REPORTS_FOLDER };
 }
 
 async function purgeFolder(hotelKey: string, folder: string, retentionDays: number): Promise<PurgeResult> {
