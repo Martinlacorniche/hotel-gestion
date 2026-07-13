@@ -79,7 +79,10 @@ const rx = {
   //  · Mews envoie les factures/folios clients depuis noreply@mews.li
   //  · le Rooftop / l'hôtel envoie ses factures depuis *@send.hotel-corniche.com
   factureInterneFrom: /noreply@mews\.li|@send\.hotel-corniche\.com/i,
-  // Relance de commission OTA (ex. Travel Counsellors) → corbeille (Martin 2026-07-09).
+  // Relance de commission d'agence (ex. Travel Counsellors) → même traitement qu'Onyx :
+  // brouillon « non commissionnables » PUIS corbeille (Martin 2026-07-13). Le `delete` sec
+  // d'avant (2026-07-09) supprimait une VRAIE facture sans que personne ne réponde → l'agence
+  // relançait (Reminder 1, 2, « overdue »). Répondre est ce qui arrête les relances.
   commissionOta: /travelcounsellors\.com/i,
   // Onyx CenterSource = chambre de compensation des commissions d'agences. Envoie un « relevé
   // à valider et payer » (.xls). Nos réservations ne sont PAS commissionnables → on répond ça
@@ -138,18 +141,17 @@ export function classifyMail(mail: MailInput): Classification {
     return { category: 'facture_interne', action: 'archive', reason: 'Notre propre facture (client Mews / Rooftop) → à classer', detail: {} };
   }
 
-  // 1e) Relance de commission OTA (Travel Counsellors…) -> corbeille (Martin 2026-07-09).
-  if (rx.commissionOta.test(from) && /commission/i.test(hay)) {
-    return { category: 'spam_alert', action: 'delete', reason: 'Relance de commission OTA (à supprimer)', detail: {} };
-  }
-
-  // 1g) Relevé de commissions Onyx CenterSource -> répondre « réservations non commissionnables »
-  //     puis supprimer le mail (Martin 2026-07-10). Réponse = brouillon, l'humain envoie.
-  if (rx.onyxCommission.test(from)) {
+  // 1e+1g) Réclamations de commission d'agence (Onyx CenterSource, Travel Counsellors…) ->
+  //     répondre « réservations non commissionnables » puis supprimer (Martin 2026-07-10,
+  //     étendu à Travel Counsellors le 2026-07-13). Réponse = brouillon, l'humain envoie.
+  //     ⚠️ Une facture NOMINATIVE portant sur une résa identifiable (client + dates + réf) peut
+  //     être réellement due — cas Farrar 07/2026, agence ayant réservé en direct sous son code
+  //     IATA. Le brouillon reste donc un brouillon : on ne l'envoie pas sans regarder la résa.
+  if (rx.onyxCommission.test(from) || (rx.commissionOta.test(from) && /commission/i.test(hay))) {
     return {
       category: 'commission_ota',
       action: 'draft_reply',
-      reason: 'Relevé de commissions Onyx → répondre « non commissionnables » puis supprimer',
+      reason: 'Réclamation de commission d’agence → répondre « non commissionnables » puis supprimer',
       detail: { template: 'non_commissionable' },
     };
   }
