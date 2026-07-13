@@ -31,6 +31,21 @@ DLL_PATH = DLL_DIR / "CardEncoder.dll"
 # autre app : il faut juste attendre qu'elle relâche, pas l'arracher via PnP).
 USB_FROZEN_CODES = {16, 1005}
 
+# Après un `pnputil /restart-device`, l'encodeur (composite HID + série) met
+# plusieurs SECONDES à ré-apparaître. Incident 2026-07-12 : le restart réussissait,
+# on ne laissait qu'une seconde au device pour revenir, le job abandonnait — et le
+# clic suivant de la réception relançait un restart qui cassait la ré-énumération en
+# cours. Cinq échecs d'affilée, chambre 34 jamais encodée. Le lendemain, un job a
+# échoué à 06:53 et le suivant est passé sans rien faire à 06:54 : le device était
+# revenu tout seul, on avait juste cessé d'attendre.
+RECONNECT_SETTLE_SEC = 30.0  # on sonde l'encodeur jusqu'à 30 s après une réparation
+RECONNECT_POLL_SEC = 2.0
+RESTART_COOLDOWN_SEC = 90.0  # jamais deux restarts coup sur coup : ça relance le gel
+
+# Instant du dernier redémarrage PnP réussi (monotonic), partagé par tous les jobs
+# du process : c'est ce qui empêche deux jobs successifs de se marcher dessus.
+_last_restart_at = 0.0
+
 # Device désactivé dans Windows : un cycle PnP l'aggraverait (c'est un cycle PnP
 # interrompu qui l'a mis dans cet état). Le seul remède est un Enable-PnpDevice.
 USB_DISABLED_CODES = {1003}
@@ -203,6 +218,7 @@ def restart_device() -> tuple[bool, str]:
 
     Renvoie (succès, raison).
     """
+    global _last_restart_at
     if platform.system() != "Windows":
         return False, "non-Windows"
     if not is_admin():
@@ -210,6 +226,7 @@ def restart_device() -> tuple[bool, str]:
     vid_pid = _encoder_vid_pid()
     code, err = _run_ps(_PS_RESTART.replace("__LOOKUP__", _pnp_lookup(vid_pid)))
     if code == 0:
+        _last_restart_at = time.monotonic()
         return True, f"redémarrage PnP du device OK ({vid_pid})"
     if code == 2:
         return False, f"device {vid_pid} introuvable (mauvais VID/PID ou encodeur débranché ?)"
@@ -256,6 +273,23 @@ if ($failed.Count -gt 0) { exit 4 }
 if ($disabled.Count -eq 0) { exit 3 }
 exit 0
 """
+
+
+def restart_cooldown_left() -> float:
+    """Secondes restantes avant qu'un nouveau redémarrage PnP soit permis. > 0 =
+    un restart vient d'avoir lieu, l'encodeur est probablement en train de revenir :
+    l'attendre au lieu de le redémarrer encore."""
+    if not _last_restart_at:
+        return 0.0
+    return max(0.0, RESTART_COOLDOWN_SEC - (time.monotonic() - _last_restart_at))
+
+
+# Le cycle disable/enable est REFUSÉ par Windows sur cet encodeur, et un disable
+# partiellement appliqué laisse le device sur ProblemCode 22 — c'est exactement ce
+# qui est arrivé le 2026-07-12 à 18:54. On ne le tente donc plus par défaut : mettre
+# AGENT_USB_ALLOW_PNP_CYCLE=1 pour le réactiver sur un autre matériel.
+def _pnp_cycle_allowed() -> bool:
+    return os.environ.get("AGENT_USB_ALLOW_PNP_CYCLE", "") == "1"
 
 
 def reenumerate_usb() -> tuple[bool, str]:
@@ -502,6 +536,31 @@ class CardEncoder:
             return None
         return out.value.decode("ascii") if out.value else None
 
+    def _wait_reconnect(self, port: str, budget: float = RECONNECT_SETTLE_SEC) -> bool:
+        """Sonde l'encodeur jusqu'à `budget` secondes après une réparation PnP.
+
+        Le composite (interface HID + interface série) ne réapparaît pas
+        instantanément : une seconde d'attente, c'est trop peu, et on abandonnait
+        alors que le device revenait juste derrière (incident 2026-07-12).
+
+        Renvoie True si la connexion est établie — `self` est alors connecté.
+        """
+        deadline = time.monotonic() + budget
+        while True:
+            time.sleep(RECONNECT_POLL_SEC)
+            try:
+                self.connect(port)
+            except EncoderError as e:
+                if time.monotonic() >= deadline:
+                    log.warning(
+                        f"Encodeur toujours injoignable {int(budget)} s après la réparation "
+                        f"(code {e.code})"
+                    )
+                    return False
+            else:
+                log.info("Encodeur revenu après ré-énumération")
+                return True
+
     @contextmanager
     def session(
         self,
@@ -518,15 +577,14 @@ class CardEncoder:
         Retry sur connect : si l'encodeur est tenu par une autre app au moment
         où on essaie, attend `connect_retry_delay` s et retente jusqu'à
         `connect_retries` fois. Sur un gel USB (code 1005/16, typiquement après
-        extinction/redémarrage du PC), on tente une ré-énumération PnP de
-        l'encodeur (= rebranchement logiciel) avant de retenter — évite le
-        débranchement/rebranchement manuel. La ré-énumération est retentée
-        jusqu'à `reenum_attempts` fois (c'est le seul vrai remède au gel), et son
-        échec est LOGGÉ (souvent : agent non administrateur).
+        extinction/redémarrage du PC), on redémarre le device via pnputil
+        (= rebranchement logiciel), puis on l'ATTEND : voir `_wait_reconnect`.
+        Un seul redémarrage par job, et jamais deux à moins de
+        `RESTART_COOLDOWN_SEC` d'intervalle — enchaîner les restarts casse la
+        ré-énumération en cours au lieu de réparer quoi que ce soit.
         """
-        reenum_attempts = 2
-        reenum_done = 0
         heal_done = False
+        restart_done = False
         last_reenum_reason = ""
         for attempt in range(1, connect_retries + 1):
             try:
@@ -552,23 +610,39 @@ class CardEncoder:
                     ok, reason = ensure_device_enabled()
                     last_reenum_reason = reason
                     if ok:
-                        log.warning(f"Device inaccessible (code {e.code}) → {reason}, retry connexion")
-                        time.sleep(1.0)
+                        log.warning(f"Device inaccessible (code {e.code}) → {reason}, attente du retour")
+                        if self._wait_reconnect(port):
+                            break
                         continue
                     log.warning(f"Device inaccessible (code {e.code}) → réactivation impossible : {reason}")
-                # Gel USB → redémarrer le device (pnputil), puis, en dernier
-                # recours, tenter le cycle disable/enable (refusé sur l'encodeur
-                # Sciener, mais peut marcher sur un autre matériel).
-                elif e.code in USB_FROZEN_CODES and reenum_done < reenum_attempts:
-                    reenum_done += 1
+                # Gel USB → redémarrer le device (pnputil) UNE fois, puis l'attendre.
+                elif e.code in USB_FROZEN_CODES and not restart_done:
+                    restart_done = True
+                    cooldown = restart_cooldown_left()
+                    if cooldown > 0:
+                        # Un job précédent vient de le redémarrer : il est en train de
+                        # revenir. Le redémarrer encore le renverrait à zéro.
+                        last_reenum_reason = (
+                            f"device déjà redémarré il y a moins de {int(RESTART_COOLDOWN_SEC)} s "
+                            "→ on le laisse revenir au lieu de casser la ré-énumération en cours"
+                        )
+                        log.warning(f"USB gelé (code {e.code}) → {last_reenum_reason}")
+                        if self._wait_reconnect(port, budget=cooldown + RECONNECT_SETTLE_SEC):
+                            break
+                        continue
                     ok, reason = restart_device()
-                    if not ok:
+                    if not ok and _pnp_cycle_allowed():
                         log.warning(f"USB gelé (code {e.code}) → redémarrage PnP KO : {reason}")
                         ok, reason = reenumerate_usb()
                     last_reenum_reason = reason
                     if ok:
-                        log.warning(f"USB gelé (code {e.code}) → {reason}, retry connexion")
-                        time.sleep(1.0)  # laisse l'USB réapparaître après le cycle PnP
+                        log.warning(f"USB gelé (code {e.code}) → {reason}, attente du retour")
+                        if self._wait_reconnect(port):
+                            break
+                        last_reenum_reason = (
+                            f"{reason}, mais l'encodeur est resté injoignable "
+                            f"{int(RECONNECT_SETTLE_SEC)} s après"
+                        )
                         continue
                     log.warning(f"USB gelé (code {e.code}) → auto-réparation impossible : {reason}")
                 time.sleep(connect_retry_delay)
