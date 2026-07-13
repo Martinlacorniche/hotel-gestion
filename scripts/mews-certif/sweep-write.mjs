@@ -319,14 +319,20 @@ if (customerId && posService) {
   if (oops?.OrderId) {
     // `OrderIds` n'est PAS un filtre accepté : on relit par compte + fenêtre de
     // création, puis on retrouve notre ligne par son libellé.
+    // Cohérence différée : la ligne met 1 à 3 s à être indexée, et d'ici là
+    // Mews renvoie « 0 ligne » sans erreur. On attend qu'elle apparaisse, sinon
+    // l'annulation qui suit est sautée en silence.
     const items = await call('orderItems/getAll', {
       AccountIds: [customerId],
       CreatedUtc: { StartUtc: iso(now - 3600e3), EndUtc: iso(now + 3600e3) },
       Limitation: { Count: 100 },
-    }, { module: 'pos', label: 'relire les lignes' });
+    }, {
+      module: 'pos', label: 'relire les lignes',
+      retries: 5, until: (j) => (j.OrderItems || []).length > 0,
+    });
+    // Une ligne n'expose pas d'OrderId : son libellé est dans `BillingName`.
     const itemId = (items?.OrderItems || [])
-      .find((i) => (i.Data?.Name ?? i.Name ?? '').startsWith('Café'))?.Id
-      ?? (items?.OrderItems || []).find((i) => i.OrderId === oops.OrderId)?.Id;
+      .find((i) => (i.BillingName || '').startsWith('Café'))?.Id;
     if (itemId) {
       await call('orderItems/cancel', { OrderItemIds: [itemId] }, { module: 'pos', label: 'annuler la ligne' });
     }

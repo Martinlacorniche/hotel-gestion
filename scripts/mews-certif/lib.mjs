@@ -45,9 +45,15 @@ export const results = [];
 //
 // `retries` : la démo est un environnement partagé, et Mews travaille en
 // concurrence optimiste (« Someone else just changed this bill »). Un échec de
-// ce type n'est pas une incapacité de l'API — on rejoue. Seule la dernière
-// tentative est consignée dans la matrice.
-export async function call(op, body, { module = 'divers', label = '', dump = false, retries = 0 } = {}) {
+// ce type n'est pas une incapacité de l'API — on rejoue.
+//
+// `until` : plusieurs lectures sont en COHÉRENCE DIFFÉRÉE. Une ligne posée par
+// orders/add met 1 à 3 s à ressortir dans orderItems/getAll — qui répond « 0
+// ligne » sans la moindre erreur en attendant. Sans cette attente, on croit
+// l'opération suivante certifiée alors qu'elle a été sautée en silence.
+//
+// Dans les deux cas, seule la dernière tentative est consignée dans la matrice.
+export async function call(op, body, { module = 'divers', label = '', dump = false, retries = 0, until = null } = {}) {
   let res, text, json;
   const t0 = Date.now();
   for (let attempt = 0; ; attempt++) {
@@ -58,7 +64,9 @@ export async function call(op, body, { module = 'divers', label = '', dump = fal
     });
     text = await res.text();
     try { json = JSON.parse(text); } catch { json = text; }
-    if (res.ok || attempt >= retries) break;
+
+    const satisfied = res.ok && (!until || until(json));
+    if (satisfied || attempt >= retries) break;
     await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
   }
 

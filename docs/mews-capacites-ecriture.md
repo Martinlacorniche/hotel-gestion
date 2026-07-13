@@ -60,6 +60,7 @@ Balayage du Connector API sur la **démo publique** (`api.mews-demo.com`), clien
 | `paymentRequests/add` | demander un paiement (lien) | OK | — |
 | `orders/add` | imputer une conso à tort | OK | — |
 | `orderItems/getAll` | relire les lignes | OK | — |
+| `orderItems/cancel` | annuler la ligne | OK | — |
 | `bills/close` | clôturer la note | OK | — |
 | `bills/getPdf` | éditer la facture PDF | OK | — |
 
@@ -73,4 +74,4 @@ Balayage du Connector API sur la **démo publique** (`api.mews-demo.com`), clien
 | `services/updateAvailability` | ajuster la disponibilité | OK | — |
 | `services/updateAvailability` | rétablir la disponibilité | OK | — |
 
-_46/46 appels en succès._
+_47/47 appels en succès._
