@@ -8,22 +8,34 @@
 // Scope du connecteur (vérifié 2026-06-23) : reservations/getAll et
 // resources/getAll OK avec extent minimal ; adresses / pièces d'identité
 // refusées (RGPD). Cf. mémoire project_borne_checkin_mews.
+//
+// ENVIRONNEMENT : par défaut la PROD (Les Voiles, données réelles). Poser
+// MEWS_BASE=https://api.mews-demo.com/api/connector/v1 pour viser la démo
+// publique (bac à sable partagé, tokens publics) — c'est là qu'on teste les
+// écritures et qu'on produit les traces d'appels que Mews relit à la
+// certification. Le champ `Client` doit rester unique et stable : c'est la clé
+// qui leur permet de retrouver nos appels dans leurs logs.
 
-const MEWS_BASE = 'https://api.mews.com/api/connector/v1';
+const MEWS_BASE = process.env.MEWS_BASE || 'https://api.mews.com/api/connector/v1';
+const MEWS_CLIENT = process.env.MEWS_CLIENT_NAME || 'Hotel Les Voiles Integration INT004073';
+
+// Vrai quand on tape le bac à sable partagé plutôt que l'hôtel réel.
+export function isMewsDemo(): boolean {
+  return /mews-demo\.com/.test(MEWS_BASE);
+}
 
 type MewsCreds = { ClientToken: string; AccessToken: string; Client: string };
 
 function creds(): MewsCreds {
   const ClientToken = process.env.MEWS_CLIENT_TOKEN;
   const AccessToken = process.env.MEWS_ACCESS_TOKEN;
-  const Client = process.env.MEWS_CLIENT_NAME || 'SiteConsignes';
   if (!ClientToken || !AccessToken) {
     throw new Error('MEWS_CLIENT_TOKEN / MEWS_ACCESS_TOKEN manquants en environnement');
   }
-  return { ClientToken, AccessToken, Client };
+  return { ClientToken, AccessToken, Client: MEWS_CLIENT };
 }
 
-async function callMews<T>(path: string, body: Record<string, unknown>): Promise<T> {
+export async function callMews<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${MEWS_BASE}/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

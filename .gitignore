@@ -60,3 +60,6 @@ scratchpad/
 .env.mails
 mailsecret*
 mail*voiles*.txt
+
+# Dumps du balayage Mews (données de démo, volumineux et régénérables)
+scripts/mews-certif/dumps/
