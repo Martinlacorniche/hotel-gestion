@@ -13,6 +13,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { moveMessage, createReplyDraft, getMessageText, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
 import { parseOtaResa, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
+import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
 import { receptionOnDuty } from '@/lib/onDuty';
 import type { HotelMailConfig, MailCategory } from '@/lib/mailAssistant';
 
@@ -485,6 +486,35 @@ async function actInvoiceNote(_cfg: HotelMailConfig, row: LogRow): Promise<ExecO
   return { status: 'executed', result: { kind: 'invoice_note', note, ota, ref } };
 }
 
+// presejour_check : le client a rempli le formulaire pré-séjour (LoungeUp). On le LIT.
+//   · il porte une demande (attente particulière, PDJ, late check-out, facture entreprise,
+//     heure d'arrivée hors 15 h) -> note pour la réception, et le mail reste (il sera classé
+//     une fois la demande traitée : « traiter d'abord, classer ensuite »).
+//   · il ne porte qu'une enquête marketing (distance, transport, motif) -> corbeille.
+// Martin 2026-07-13 : « on vérifie les pré-séjour si il y a une info importante, le reste ça dégage ».
+async function actPreSejour(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
+  const body = await getMessageText(cfg.mailbox, row.message_id);
+  const p = parsePreSejour(body);
+
+  if (!isPreSejourActionable(p)) {
+    await moveMessage(cfg.mailbox, row.message_id, 'deleteditems');
+    return {
+      status: 'executed',
+      result: { kind: 'presejour_empty', movedTo: 'deleteditems', guest: p.guest, room: p.room },
+    };
+  }
+
+  return {
+    status: 'executed',
+    result: {
+      kind: 'presejour_note',
+      note: preSejourNote(p),
+      flags: preSejourFlags(p),
+      guest: p.guest, room: p.room, arrival: p.arrival, resaRef: p.resaRef,
+    },
+  };
+}
+
 // ── Dispatch ────────────────────────────────────────────────────────────────
 
 const NOT_WIRED: Record<string, string> = {
@@ -502,6 +532,7 @@ export async function executeRow(cfg: HotelMailConfig, row: LogRow): Promise<Exe
       case 'agency_note':         return await actAgencyNote(cfg, row);
       case 'commercial_followup': return await actCommercialFollowup(cfg, row);
       case 'route_pennylane':     return await actRoutePennylane(cfg, row);
+      case 'presejour_check':     return await actPreSejour(cfg, row);
       default:
         return { status: 'blocked', error: NOT_WIRED[row.proposed_action] || `Action inconnue : ${row.proposed_action}` };
     }

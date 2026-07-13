@@ -43,11 +43,12 @@ export type MailInput = {
 
 export type MailCategory =
   | 'spam_alert' | 'resa_ota' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
-  | 'commission_ota' | 'candidature' | 'commercial' | 'client_msg' | 'autre';
+  | 'commission_ota' | 'candidature' | 'commercial' | 'client_msg' | 'pre_sejour' | 'rapport_pms'
+  | 'autre';
 
 export type MailAction =
   | 'delete' | 'archive' | 'resa_control' | 'agency_note' | 'route_pennylane' | 'invoice_note'
-  | 'draft_reply' | 'commercial_followup' | 'none';
+  | 'draft_reply' | 'commercial_followup' | 'presejour_check' | 'none';
 
 export type Classification = {
   category: MailCategory;
@@ -103,6 +104,13 @@ const rx = {
   // Vacances Accessibles — demande de mise à jour 2026 » = notre fiche dans leur brochure).
   prospectionSenders:
     /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris/i,
+  // LoungeUp (Corniche) : porte les formulaires PRÉ-SÉJOUR remplis par le client — cf preSejour.ts.
+  loungeUp: /@app(\.eu)?\.loungeup\.com/i,
+  // Éditions automatiques du PMS Hotsoft, que l'hôtel s'envoie à sa propre boîte (96 % du dossier
+  // « Hotsoft », 12 353 mails). Pièces d'exploitation et de sécurité — jamais de suppression sèche.
+  rapportPms:
+    /feuille de caisse|feuille de situation|contr[ôo]le des annulations|^guests$|emergency report|r[ée]servations\s*:\s*annulations|hotsoft/i,
+  pmsSenders: /@htbm\.fr|weareplanet\.com/i,
   // Un mail qui porte la parole d'un HUMAIN d'en face (réponse dans un fil, message d'un voyageur
   // relayé par l'OTA) ne part jamais à la corbeille sur le seul critère de l'expéditeur.
   guestMessage:
@@ -179,6 +187,22 @@ export function classifyMail(mail: MailInput): Classification {
   // 1f) Pub / prospection connue (expéditeurs déjà repérés) -> corbeille (Martin 2026-07-09).
   if (rx.prospectionSenders.test(from) && senderDeleteOk) {
     return { category: 'spam_alert', action: 'delete', reason: 'Pub / prospection (expéditeur connu)', detail: {} };
+  }
+
+  // 1h) Formulaire PRÉ-SÉJOUR rempli par le client (LoungeUp, Corniche) -> on LIT le formulaire :
+  //     s'il porte une demande (attentes particulières, PDJ, late check-out, facture entreprise),
+  //     note à la réception ; sinon le mail dégage (Martin 2026-07-13). Le tri se fait dans
+  //     l'action, pas ici : le `bodyPreview` de Graph (~255 car.) ne contient pas le formulaire.
+  //     ⚠️ Placé après le garde-fou : une RÉPONSE d'un client à ce mail reste un message client.
+  if (rx.loungeUp.test(from) && !humanThread) {
+    return { category: 'pre_sejour', action: 'presejour_check', reason: 'Formulaire pré-séjour client (à lire)', detail: {} };
+  }
+
+  // 1i) Éditions automatiques du PMS Hotsoft que l'hôtel s'envoie à lui-même (feuille de caisse,
+  //     situation HT/TTC, Guests, Emergency Report…). Pièces d'exploitation : on les CLASSE, on ne
+  //     les détruit pas ici — la purge à 4 jours s'en charge ensuite (Martin 2026-07-13).
+  if (rx.rapportPms.test(subj) && rx.pmsSenders.test(from)) {
+    return { category: 'rapport_pms', action: 'archive', reason: 'Édition automatique du PMS (Hotsoft)', detail: {} };
   }
 
   // 2) Résa OTA (D-Edge / Booking) -> contrôle résa
