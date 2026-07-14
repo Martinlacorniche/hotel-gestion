@@ -66,7 +66,7 @@ const SHIFT_ICONS: Record<ShiftType, React.ComponentType<any>> = {
 const SHIFT_COLORS: Record<ShiftType, { bg: string; text: string; border: string; btn: string; accent: string }> = {
   matin:   { bg: "bg-amber-50/40",   text: "text-amber-700",   border: "border-amber-200/70",   btn: "bg-amber-600 hover:bg-amber-700",   accent: "bg-amber-500" },
   soir:    { bg: "bg-orange-50/40",  text: "text-orange-700",  border: "border-orange-200/70",  btn: "bg-orange-600 hover:bg-orange-700", accent: "bg-orange-500" },
-  cloture: { bg: "bg-indigo-50/40",  text: "text-indigo-700",  border: "border-indigo-200/70",  btn: "bg-indigo-600 hover:bg-indigo-700", accent: "bg-indigo-500" },
+  cloture: { bg: "bg-[var(--brand-bg)]/40",  text: "text-[var(--brand)]",  border: "border-[var(--brand)]/70",  btn: "bg-[var(--brand)] hover:brightness-110", accent: "bg-[var(--brand-bg)]0" },
 };
 
 // Les Voiles : seul hôtel sous Mews, sans shift de nuit, avec un TPE Amex séparé.
@@ -930,7 +930,7 @@ function CaissePageInner() {
                         return (
                           <div className="enc-row enc-grid items-center py-1 group">
                             <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-700 leading-tight">
-                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                              <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-bg)]0 shrink-0" />
                               {hotelName.toLowerCase().includes('voiles') ? 'Paiement en ligne' : 'Stripe Direct'}
                             </span>
                             <input
@@ -939,7 +939,7 @@ function CaissePageInner() {
                               onChange={(e) => updateShift(sType, { pms_consigne: num(Number(e.target.value)) })}
                               className="enc-input h-7 w-full text-right text-[13px] font-medium tabular-nums px-2 rounded-md outline-none transition border bg-slate-50 border-transparent group-hover:bg-white group-hover:border-slate-200 focus:bg-white focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 disabled:bg-transparent disabled:text-slate-500 disabled:border-transparent"
                             />
-                            <span className="h-7 flex items-center justify-end text-right text-[13px] font-semibold tabular-nums px-2 text-indigo-600" title="Encaissé Stripe du jour — auto">{fmtEur(t.consigneReel)}</span>
+                            <span className="h-7 flex items-center justify-end text-right text-[13px] font-semibold tabular-nums px-2 text-[var(--brand)]" title="Encaissé Stripe du jour — auto">{fmtEur(t.consigneReel)}</span>
                             <span className={`ec-text text-[12px] font-medium tabular-nums text-right ${okC ? "text-slate-300" : t.ecartConsigne > 0 ? "text-emerald-700" : "text-rose-700"}`}>{okC ? "—" : fmtEur(t.ecartConsigne)}</span>
                           </div>
                         );

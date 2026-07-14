@@ -265,7 +265,7 @@ export default function InfosPage() {
               <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
                 <BookOpen className="w-6 h-6 text-[var(--brand)]" /> Infos
               </h1>
-              <button onClick={() => setShowCreateMenu((v) => !v)} className="p-2 bg-indigo-50 text-[var(--brand)] rounded-lg hover:bg-indigo-100 transition" title="Ajouter">
+              <button onClick={() => setShowCreateMenu((v) => !v)} className="p-2 bg-[var(--brand-bg)] text-[var(--brand)] rounded-lg hover:bg-[var(--brand-bg)] transition" title="Ajouter">
                 <Plus className="w-5 h-5" />
               </button>
               {showCreateMenu && (
@@ -289,7 +289,7 @@ export default function InfosPage() {
 
           {/* Recherche globale */}
           <div className="relative group">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-[var(--brand)] transition-colors" />
             <input
               className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:bg-white outline-none transition-all"
               placeholder="Rechercher (process, contacts, identifiants)…"
@@ -322,7 +322,7 @@ export default function InfosPage() {
               <div
                 key={`${r.kind}-${r.id}`}
                 onClick={() => selectRow(r)}
-                className={`group p-3 rounded-xl cursor-pointer transition-all border border-transparent flex items-center gap-3 ${active ? "bg-indigo-50 border-indigo-100" : "hover:bg-slate-50 hover:border-slate-100"}`}
+                className={`group p-3 rounded-xl cursor-pointer transition-all border border-transparent flex items-center gap-3 ${active ? "bg-[var(--brand-bg)] border-[var(--brand)]" : "hover:bg-slate-50 hover:border-slate-100"}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${M.bg} ${M.text}`}>
                   <M.Icon className="w-5 h-5" />
@@ -364,12 +364,12 @@ export default function InfosPage() {
                 {showEditor ? (
                   <>
                     <button onClick={() => { if (composing) resetSelection(); else { setMode("view"); if (selected?.kind === "process") setPForm({ title: selected.data.title, body: selected.data.body }); } }} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg transition">Annuler</button>
-                    <button onClick={saveProcess} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white btn-brand hover:bg-indigo-700 rounded-lg shadow-md shadow-slate-300/40 transition active:scale-95"><Save className="w-4 h-4" /> Enregistrer</button>
+                    <button onClick={saveProcess} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white btn-brand hover:brightness-110 rounded-lg shadow-md shadow-slate-300/40 transition active:scale-95"><Save className="w-4 h-4" /> Enregistrer</button>
                   </>
                 ) : (
                   <>
                     <button onClick={deleteProcess} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Supprimer"><Trash2 className="w-5 h-5" /></button>
-                    <button onClick={() => { if (selected?.kind === "process") { setPForm({ title: selected.data.title, body: selected.data.body }); setMode("edit"); } }} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[var(--brand)] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition"><Edit2 className="w-4 h-4" /> Modifier</button>
+                    <button onClick={() => { if (selected?.kind === "process") { setPForm({ title: selected.data.title, body: selected.data.body }); setMode("edit"); } }} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[var(--brand)] bg-[var(--brand-bg)] hover:bg-[var(--brand-bg)] rounded-lg transition"><Edit2 className="w-4 h-4" /> Modifier</button>
                   </>
                 )}
               </div>
@@ -394,8 +394,8 @@ export default function InfosPage() {
                   <div className="flex-1 min-w-0">
                     {showEditor ? (
                       <div className="space-y-2">
-                        <input className="text-xl font-bold text-slate-900 placeholder:text-slate-300 outline-none bg-transparent w-full border-b border-slate-300 focus:border-indigo-500 pb-1 transition-colors" placeholder="Nom / Qui / Quoi" value={cForm.qui_quoi} onChange={(e) => setCForm({ ...cForm, qui_quoi: e.target.value })} autoFocus />
-                        <input className="text-sm font-medium text-slate-600 placeholder:text-slate-300 outline-none bg-transparent w-full border-b border-slate-300 focus:border-indigo-500 pb-1 transition-colors" placeholder="Contact (Tél, Email, Adresse…)" value={cForm.contact} onChange={(e) => setCForm({ ...cForm, contact: e.target.value })} />
+                        <input className="text-xl font-bold text-slate-900 placeholder:text-slate-300 outline-none bg-transparent w-full border-b border-slate-300 focus:border-[var(--brand)] pb-1 transition-colors" placeholder="Nom / Qui / Quoi" value={cForm.qui_quoi} onChange={(e) => setCForm({ ...cForm, qui_quoi: e.target.value })} autoFocus />
+                        <input className="text-sm font-medium text-slate-600 placeholder:text-slate-300 outline-none bg-transparent w-full border-b border-slate-300 focus:border-[var(--brand)] pb-1 transition-colors" placeholder="Contact (Tél, Email, Adresse…)" value={cForm.contact} onChange={(e) => setCForm({ ...cForm, contact: e.target.value })} />
                       </div>
                     ) : selected?.kind === "contact" ? (
                       <>
@@ -409,12 +409,12 @@ export default function InfosPage() {
                   {showEditor ? (
                     <>
                       <button onClick={() => { if (composing) resetSelection(); else { setMode("view"); if (selected?.kind === "contact") setCForm({ qui_quoi: selected.data.qui_quoi, contact: selected.data.contact, commentaire: selected.data.commentaire || "" }); } }} className="p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition"><ChevronLeft className="w-5 h-5" /></button>
-                      <button onClick={saveContact} className="p-2 btn-brand text-white rounded-lg hover:bg-indigo-700 shadow-md transition active:scale-95"><Save className="w-5 h-5" /></button>
+                      <button onClick={saveContact} className="p-2 btn-brand text-white rounded-lg hover:brightness-110 shadow-md transition active:scale-95"><Save className="w-5 h-5" /></button>
                     </>
                   ) : (
                     <>
                       <button onClick={deleteContact} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"><Trash2 className="w-5 h-5" /></button>
-                      <button onClick={() => { if (selected?.kind === "contact") { setCForm({ qui_quoi: selected.data.qui_quoi, contact: selected.data.contact, commentaire: selected.data.commentaire || "" }); setMode("edit"); } }} className="p-2 text-[var(--brand)] hover:bg-indigo-50 rounded-lg transition"><Edit2 className="w-5 h-5" /></button>
+                      <button onClick={() => { if (selected?.kind === "contact") { setCForm({ qui_quoi: selected.data.qui_quoi, contact: selected.data.contact, commentaire: selected.data.commentaire || "" }); setMode("edit"); } }} className="p-2 text-[var(--brand)] hover:bg-[var(--brand-bg)] rounded-lg transition"><Edit2 className="w-5 h-5" /></button>
                     </>
                   )}
                 </div>
@@ -422,7 +422,7 @@ export default function InfosPage() {
               <div className="p-8">
                 <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Notes / Commentaires</label>
                 {showEditor ? (
-                  <textarea className="w-full h-32 resize-none outline-none text-sm text-slate-700 leading-relaxed placeholder:text-slate-300 bg-slate-50 p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-100 transition-all" placeholder="Informations complémentaires…" value={cForm.commentaire} onChange={(e) => setCForm({ ...cForm, commentaire: e.target.value })} />
+                  <textarea className="w-full h-32 resize-none outline-none text-sm text-slate-700 leading-relaxed placeholder:text-slate-300 bg-slate-50 p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[var(--brand)] transition-all" placeholder="Informations complémentaires…" value={cForm.commentaire} onChange={(e) => setCForm({ ...cForm, commentaire: e.target.value })} />
                 ) : (
                   <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl border border-slate-100 min-h-[100px]">{(selected?.kind === "contact" && selected.data.commentaire) || <span className="italic text-slate-400">Aucune note disponible.</span>}</div>
                 )}
@@ -430,7 +430,7 @@ export default function InfosPage() {
               {!showEditor && selected?.kind === "contact" && (
                 <div className="bg-slate-50 p-4 border-t border-slate-100 flex gap-4 justify-center">
                   {selected.data.contact.includes("@") && (
-                    <a href={`mailto:${selected.data.contact}`} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-[var(--brand)] transition shadow-sm"><Mail className="w-4 h-4" /> Envoyer Email</a>
+                    <a href={`mailto:${selected.data.contact}`} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:border-[var(--brand)] hover:text-[var(--brand)] transition shadow-sm"><Mail className="w-4 h-4" /> Envoyer Email</a>
                   )}
                   {(/[0-9]{2}/.test(selected.data.contact) || selected.data.contact.startsWith("+")) && (
                     <a href={`tel:${selected.data.contact}`} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:border-green-300 hover:text-green-600 transition shadow-sm"><Phone className="w-4 h-4" /> Appeler</a>
@@ -444,7 +444,7 @@ export default function InfosPage() {
           <div className="flex-1 flex items-center justify-center p-6">
             <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in duration-200">
               <div className="bg-slate-900 p-6 flex justify-between items-start relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500 rounded-full blur-3xl opacity-20 -mr-10 -mt-10" />
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--brand-bg)]0 rounded-full blur-3xl opacity-20 -mr-10 -mt-10" />
                 <div className="flex items-center gap-4 relative z-10 min-w-0">
                   <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-2xl font-bold text-white border border-white/10 shadow-inner shrink-0">{selected.data.outil.substring(0, 1).toUpperCase()}</div>
                   <div className="min-w-0">
@@ -464,7 +464,7 @@ export default function InfosPage() {
                   <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 flex items-center gap-1"><User className="w-3 h-3" /> Identifiant</label>
                   <div className="flex gap-2">
                     <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-mono text-sm text-slate-700 font-medium break-all">{selected.data.identifiant}</div>
-                    <button onClick={() => copyToClipboard(selected.data.identifiant, "id")} className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === "id" ? "bg-green-50 border-green-200 text-green-600" : "bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-[var(--brand)]"}`}>{copiedField === "id" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}{copiedField === "id" ? "Copié" : "Copier"}</button>
+                    <button onClick={() => copyToClipboard(selected.data.identifiant, "id")} className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === "id" ? "bg-green-50 border-green-200 text-green-600" : "bg-white border-slate-200 text-slate-600 hover:border-[var(--brand)] hover:text-[var(--brand)]"}`}>{copiedField === "id" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}{copiedField === "id" ? "Copié" : "Copier"}</button>
                   </div>
                 </div>
                 <div>
@@ -474,7 +474,7 @@ export default function InfosPage() {
                       {showPassword ? selected.data.mot_de_passe : "••••••••••••••••"}
                       <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 text-slate-400 hover:text-[var(--brand)] transition">{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
                     </div>
-                    <button onClick={() => copyToClipboard(selected.data.mot_de_passe, "pwd")} className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === "pwd" ? "bg-green-50 border-green-200 text-green-600" : "bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-[var(--brand)]"}`}>{copiedField === "pwd" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}{copiedField === "pwd" ? "Copié" : "Copier"}</button>
+                    <button onClick={() => copyToClipboard(selected.data.mot_de_passe, "pwd")} className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === "pwd" ? "bg-green-50 border-green-200 text-green-600" : "bg-white border-slate-200 text-slate-600 hover:border-[var(--brand)] hover:text-[var(--brand)]"}`}>{copiedField === "pwd" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}{copiedField === "pwd" ? "Copié" : "Copier"}</button>
                   </div>
                 </div>
                 {selected.data.commentaire && (
@@ -508,7 +508,7 @@ export default function InfosPage() {
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button className="px-5 py-3 rounded-xl text-slate-500 font-bold hover:bg-slate-50 transition" onClick={() => setShowKeyModal(false)}>Annuler</button>
-              <button className="px-5 py-3 rounded-xl btn-brand text-white font-bold shadow-lg hover:bg-indigo-700 transition" onClick={saveKey}>{editingKeyId ? "Enregistrer" : "Créer"}</button>
+              <button className="px-5 py-3 rounded-xl btn-brand text-white font-bold shadow-lg hover:brightness-110 transition" onClick={saveKey}>{editingKeyId ? "Enregistrer" : "Créer"}</button>
             </div>
           </div>
         </div>

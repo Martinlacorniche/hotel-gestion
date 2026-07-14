@@ -80,7 +80,7 @@ export default function UpdatePasswordClientPage() {
           <div>
             <p className="text-red-600 text-sm font-medium">❌ Lien invalide ou expiré.</p>
             <p className="text-gray-500 text-xs mt-2">Ce lien ne contient pas de jeton de récupération valide. Redemandez un email de réinitialisation.</p>
-            <a href="/forgot-password" className="inline-block mt-4 bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition text-sm">Redemander un lien</a>
+            <a href="/forgot-password" className="inline-block mt-4 bg-[var(--brand)] text-white px-4 py-2 rounded hover:brightness-110 transition text-sm">Redemander un lien</a>
           </div>
         ) : !isSubmitted ? (
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -106,7 +106,7 @@ export default function UpdatePasswordClientPage() {
 
             <button
               type="submit"
-              className="w-full bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700 transition"
+              className="w-full bg-[var(--brand)] text-white p-2 rounded hover:brightness-110 transition"
             >
               {flow === 'invite' ? '✅ Valider et accéder à l\'app' : '🔁 Mettre à jour'}
             </button>
@@ -117,7 +117,7 @@ export default function UpdatePasswordClientPage() {
     <div className="mt-6">
       <a
         href="/login"
-        className="inline-block bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition"
+        className="inline-block bg-[var(--brand)] text-white px-4 py-2 rounded hover:brightness-110 transition"
       >
         🔑 Se connecter
       </a>

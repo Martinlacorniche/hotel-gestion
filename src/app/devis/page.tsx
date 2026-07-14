@@ -382,7 +382,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
     document.title = originalTitle;
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /></div>;
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-[var(--brand)]" /></div>;
   if (loadError) return (
     <div className="h-screen flex flex-col items-center justify-center gap-4 text-slate-500">
       <p className="text-sm font-black uppercase tracking-widest text-red-400">{loadError}</p>
@@ -447,11 +447,11 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   )}
 </PDFDownloadLink>
 
-  <Button onClick={handleSendMail} variant="outline" className="bg-white border-indigo-200 text-indigo-600 font-bold shadow-sm hover:bg-indigo-50">
+  <Button onClick={handleSendMail} variant="outline" className="bg-white border-[var(--brand)] text-[var(--brand)] font-bold shadow-sm hover:bg-[var(--brand-bg)]">
     <Mail className="w-4 h-4 mr-2" /> Mail
   </Button>
   
-  <Button onClick={handleSave} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest px-6 shadow-lg shadow-indigo-200">
+  <Button onClick={handleSave} disabled={saving} className="bg-[var(--brand)] hover:brightness-110 text-white font-black uppercase tracking-widest px-6 shadow-lg shadow-indigo-200">
     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
     Sauvegarder
   </Button>
@@ -474,7 +474,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
                     </p>
                 </div>
                 <div className="text-right">
-    <div className="text-lg font-black text-indigo-600 uppercase italic">
+    <div className="text-lg font-black text-[var(--brand)] uppercase italic">
         {hotel?.nom || 'Chargement...'}
     </div>
     <div className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-tight">
@@ -489,8 +489,8 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
               
               {/* CARTE CLIENT */}
               <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3 print:bg-transparent print:border-none print:p-0">
-                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-2 print:hidden"><User className="w-3 h-3"/> Client</span>
-                <span className="hidden print:block text-[10px] font-black text-indigo-500 uppercase tracking-widest">Client</span>
+                <span className="text-[10px] font-black text-[var(--brand)] uppercase tracking-widest flex items-center gap-2 print:hidden"><User className="w-3 h-3"/> Client</span>
+                <span className="hidden print:block text-[10px] font-black text-[var(--brand)] uppercase tracking-widest">Client</span>
                 
                 <div className="space-y-1">
                     <div className="font-black text-slate-800 text-lg">{client?.nom_client}</div>
@@ -508,16 +508,16 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
               {/* CARTE ÉVÉNEMENT */}
               <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3 print:bg-transparent print:border-none print:p-0">
-                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-2 print:hidden"><Calendar className="w-3 h-3"/> Événement</span>
-                <span className="hidden print:block text-[10px] font-black text-indigo-500 uppercase tracking-widest">Événement</span>
+                <span className="text-[10px] font-black text-[var(--brand)] uppercase tracking-widest flex items-center gap-2 print:hidden"><Calendar className="w-3 h-3"/> Événement</span>
+                <span className="hidden print:block text-[10px] font-black text-[var(--brand)] uppercase tracking-widest">Événement</span>
                 
                 <div className="space-y-2 pt-0.5">
                     <div className="text-sm font-black text-slate-700 leading-tight">
                         {client?.titre_demande || 'Événement professionnel'}
                     </div>
                     <div className="flex items-center gap-2 font-bold text-slate-800 text-sm mt-2 bg-white print:bg-transparent print:p-0 print:border-none p-2 rounded-lg border border-slate-200 w-fit">
-                        <Calendar className="w-4 h-4 text-indigo-400 print:hidden"/> 
-                        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-transparent border-none p-0 focus:ring-0 font-bold text-indigo-700 print:text-slate-800"/>
+                        <Calendar className="w-4 h-4 text-[var(--brand)] print:hidden"/> 
+                        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-transparent border-none p-0 focus:ring-0 font-bold text-[var(--brand)] print:text-slate-800"/>
                     </div>
                 </div>
               </div>
@@ -547,9 +547,9 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
         
         <td className="p-3 align-top">
           <div className="print:hidden">
-            <Input type="date" value={l.date || date} onChange={(e) => setLines(lines.map(x => x.id === l.id ? {...x, date: e.target.value} : x))} className="border-none bg-transparent font-bold h-7 focus:ring-0 p-1 text-[10px] text-indigo-600" />
+            <Input type="date" value={l.date || date} onChange={(e) => setLines(lines.map(x => x.id === l.id ? {...x, date: e.target.value} : x))} className="border-none bg-transparent font-bold h-7 focus:ring-0 p-1 text-[10px] text-[var(--brand)]" />
           </div>
-          <div className="hidden print:block text-[8px] text-indigo-500 font-black uppercase pt-1">
+          <div className="hidden print:block text-[8px] text-[var(--brand)] font-black uppercase pt-1">
             {l.date ? new Date(l.date).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit'}) : '--'}
           </div>
         </td>
@@ -580,14 +580,14 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
                   .map(item => (
                     <button
                       key={item.id}
-                      className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-indigo-50 flex justify-between items-center border-b border-slate-50 last:border-none"
+                      className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-[var(--brand-bg)] flex justify-between items-center border-b border-slate-50 last:border-none"
                       onClick={() => {
                         setLines(lines.map(x => x.id === l.id ? { ...x, label: item.name, unitPriceTTC: item.price_ttc, tvaRate: item.tva } : x));
                         setShowSuggestions(null);
                       }}
                     >
                       <span>{item.name}</span>
-                      <span className="text-indigo-600">{item.price_ttc} €</span>
+                      <span className="text-[var(--brand)]">{item.price_ttc} €</span>
                     </button>
                   ))}
               </div>
@@ -662,7 +662,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
         <Button
           variant="outline"
           size="sm"
-          className="text-[10px] font-black uppercase border-slate-200 text-slate-500 hover:text-indigo-600"
+          className="text-[10px] font-black uppercase border-slate-200 text-slate-500 hover:text-[var(--brand)]"
           onClick={() => setIsCatalogModalOpen(true)}
         >
           <StickyNote className="w-4 h-4 mr-2" /> Gérer le Catalogue
@@ -677,7 +677,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
  <section className="bg-white p-6 rounded-2xl border border-slate-200 print:border-none print:p-0 print:mt-4">
-    <h2 className="text-[10px] font-black uppercase text-indigo-500 mb-4 tracking-widest">Conditions Particulières</h2>
+    <h2 className="text-[10px] font-black uppercase text-[var(--brand)] mb-4 tracking-widest">Conditions Particulières</h2>
     <div className="space-y-2">
       {cancellationTerms.map((term, i) => (
         <div key={i} className="flex gap-3 border-b border-slate-50 pb-1 print:border-none print:pb-0 print:mb-1">
@@ -741,7 +741,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
         <aside className="print:hidden">
           <section className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 sticky top-8 border border-slate-100">
             <div className="flex items-center gap-2 mb-8 text-xl font-black italic uppercase tracking-tighter text-slate-800">
-                <Calculator className="w-5 h-5 text-indigo-500" /> Total Devis
+                <Calculator className="w-5 h-5 text-[var(--brand)]" /> Total Devis
             </div>
             <div className="space-y-4">
               <div className="flex justify-between text-slate-500 font-bold uppercase text-[10px] tracking-widest">
@@ -753,7 +753,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
                   <span className="text-slate-700">{totals.tva.toFixed(2)} €</span>
               </div>
               <div className="pt-6 border-t border-slate-100 mt-6 flex flex-col gap-1 items-end">
-                <span className="text-[10px] font-black uppercase text-indigo-500 tracking-widest">Total TTC</span>
+                <span className="text-[10px] font-black uppercase text-[var(--brand)] tracking-widest">Total TTC</span>
                 <span className="text-4xl font-black text-slate-900">
                     {totals.ttc.toFixed(2)} €
                 </span>
@@ -762,7 +762,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
             <Button 
                 onClick={handleSave} 
                 disabled={saving} 
-                className="w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white h-14 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-indigo-200 active:scale-95 transition-all"
+                className="w-full mt-8 bg-[var(--brand)] hover:brightness-110 text-white h-14 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-indigo-200 active:scale-95 transition-all"
             >
                 Sauvegarder
             </Button>
@@ -793,7 +793,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
                         <span>TVA</span><span>{totals.tva.toFixed(2)} €</span>
                     </div>
                     <div className="flex justify-between items-end border-t border-slate-200 pt-1 mt-1">
-                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">TTC</span>
+                        <span className="text-[10px] font-black text-[var(--brand)] uppercase tracking-widest">TTC</span>
                         <span className="text-lg font-black text-slate-900 leading-none">{totals.ttc.toFixed(2)} €</span>
                     </div>
                 </div>
@@ -844,7 +844,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
             }, {} as Record<string, any[]>)
         ).sort(([catA], [catB]) => catA.localeCompare(catB)).map(([category, items]) => (
             <div key={category} className="space-y-2">
-                <h3 className="text-[10px] font-black uppercase text-indigo-400 tracking-widest border-b border-slate-100 pb-1">{category}</h3>
+                <h3 className="text-[10px] font-black uppercase text-[var(--brand)] tracking-widest border-b border-slate-100 pb-1">{category}</h3>
                 {(items as any[]).map((item) => (
                   editingItem?.id === item.id ? (
                     /* MODE ÉDITION (admin only) */
@@ -852,7 +852,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
                       <select
                         value={editingItem.category || 'Général'}
                         onChange={e => setEditingItem({...editingItem, category: e.target.value})}
-                        className="w-full sm:w-28 text-xs font-bold h-8 border border-slate-200 rounded px-1 focus:ring-indigo-500"
+                        className="w-full sm:w-28 text-xs font-bold h-8 border border-slate-200 rounded px-1 focus:ring-[var(--brand)]"
                       >
                         <option value="Hébergement">Hébergement</option>
                         <option value="Restauration">Restauration</option>
@@ -912,7 +912,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
                     </div>
                   ) : (
                     /* MODE LECTURE */
-                    <div key={item.id} className={`flex items-center justify-between p-3 bg-white border rounded-xl transition-all group ${isCatalogAdminMode ? 'border-amber-100 hover:border-amber-300' : 'border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer'}`}
+                    <div key={item.id} className={`flex items-center justify-between p-3 bg-white border rounded-xl transition-all group ${isCatalogAdminMode ? 'border-amber-100 hover:border-amber-300' : 'border-slate-100 hover:border-[var(--brand)] hover:bg-[var(--brand-bg)] cursor-pointer'}`}
                       onClick={() => {
                         if (isCatalogAdminMode) return;
                         const newLine = { id: Math.random().toString(36).substr(2,9), label: item.name, description: item.description || '', quantity: 1, unitPriceTTC: item.price_ttc, tvaRate: item.tva };
@@ -929,7 +929,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
                         <span className="text-sm font-black text-slate-700">{item.name}</span>
                         {item.description && <span className="text-[10px] text-slate-400 leading-snug mt-0.5">{item.description}</span>}
                       </div>
-                      <span className="text-[10px] font-bold text-indigo-500 uppercase shrink-0">{item.price_ttc} € TTC — TVA {item.tva}%</span>
+                      <span className="text-[10px] font-bold text-[var(--brand)] uppercase shrink-0">{item.price_ttc} € TTC — TVA {item.tva}%</span>
                       {isCatalogAdminMode && (
                         <div className="flex gap-1">
                           <Button variant="ghost" size="sm" className="text-slate-400 hover:text-amber-500 h-8 w-8 p-0" onClick={() => setEditingItem(item)}>
@@ -960,7 +960,7 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
           <select
             value={newItem.category}
             onChange={e => setNewItem({...newItem, category: e.target.value})}
-            className="w-full sm:w-32 text-xs font-bold h-10 border border-slate-200 rounded shadow-sm px-2 focus:ring-indigo-500 focus:border-indigo-500">
+            className="w-full sm:w-32 text-xs font-bold h-10 border border-slate-200 rounded shadow-sm px-2 focus:ring-[var(--brand)] focus:border-[var(--brand)]">
             <option value="Hébergement">Hébergement</option>
             <option value="Restauration">Restauration</option>
             <option value="Salles">Salles</option>
@@ -985,14 +985,14 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
           <select
             value={newItem.tva}
             onChange={e => setNewItem({...newItem, tva: parseFloat(e.target.value)})}
-            className="w-20 text-xs font-bold h-10 border border-slate-200 rounded shadow-sm px-2 focus:ring-indigo-500 focus:border-indigo-500">
+            className="w-20 text-xs font-bold h-10 border border-slate-200 rounded shadow-sm px-2 focus:ring-[var(--brand)] focus:border-[var(--brand)]">
             <option value="20">20%</option>
             <option value="10">10%</option>
             <option value="5.5">5.5%</option>
             <option value="0">0%</option>
           </select>
           <Button
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase text-[10px] px-4 h-10 w-full sm:w-auto"
+            className="bg-[var(--brand)] hover:brightness-110 text-white font-black uppercase text-[10px] px-4 h-10 w-full sm:w-auto"
             onClick={async () => {
               if (!newItem.name || !newItem.price_ttc) return;
               const { data } = await supabase.from('articles').insert([{

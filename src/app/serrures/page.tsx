@@ -662,7 +662,7 @@ export default function SerruresPage() {
         <h1 className="text-2xl font-light text-stone-800 mb-4">Aucune chambre mappée</h1>
         <Link
           href="/serrures/config"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg btn-brand hover:bg-indigo-700 text-white"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg btn-brand hover:brightness-110 text-white"
         >
           <Settings className="w-4 h-4" />
           Configuration
@@ -769,7 +769,7 @@ export default function SerruresPage() {
                     isSel
                       ? occ
                         ? 'bg-emerald-100 ring-emerald-300 text-emerald-900'
-                        : 'bg-indigo-50 ring-indigo-200 text-indigo-900'
+                        : 'bg-[var(--brand-bg)] ring-[var(--brand)] text-indigo-900'
                       : occ
                       ? 'bg-emerald-50/60 ring-transparent hover:bg-emerald-50 text-emerald-900'
                       : 'ring-transparent hover:bg-white text-stone-700'
@@ -1143,7 +1143,7 @@ function PassPanel(props: {
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           placeholder="Nom du pass (ex. Ménage, Maintenance)"
-          className="w-full h-11 rounded-xl px-4 text-sm bg-stone-50 border border-stone-200 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 text-stone-800 mb-3"
+          className="w-full h-11 rounded-xl px-4 text-sm bg-stone-50 border border-stone-200 outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)] text-stone-800 mb-3"
         />
         <button
           onClick={() => {
@@ -1151,7 +1151,7 @@ function PassPanel(props: {
             setLabel('');
           }}
           disabled={busy}
-          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 font-medium shadow-sm shadow-slate-300/40 transition"
+          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl btn-brand hover:brightness-110 text-white disabled:opacity-50 font-medium shadow-sm shadow-slate-300/40 transition"
         >
           <Users className="w-5 h-5" />
           Nouveau pass
@@ -1235,7 +1235,7 @@ function PassRow(props: {
           <button
             onClick={onReplace}
             disabled={busy}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 disabled:opacity-50 transition text-sm font-medium"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[var(--brand-bg)] hover:bg-[var(--brand-bg)] text-[var(--brand)] border border-[var(--brand)] disabled:opacity-50 transition text-sm font-medium"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Remplacer
@@ -1318,7 +1318,7 @@ function NumberPills({
           }}
           min={1}
           max={upperLimit}
-          className="flex-1 h-12 rounded-xl px-4 font-medium text-base bg-white border border-indigo-300 ring-2 ring-indigo-100 outline-none text-stone-800"
+          className="flex-1 h-12 rounded-xl px-4 font-medium text-base bg-white border border-[var(--brand)] ring-2 ring-[var(--brand)] outline-none text-stone-800"
         />
       ) : (
         <>
@@ -1453,7 +1453,7 @@ function ParamsPanel(props: {
             value={checkoutTime}
             onChange={(e) => setCheckoutTime(e.target.value)}
             step={60}
-            className="h-12 rounded-xl px-4 font-medium text-base bg-white border border-stone-200 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 text-stone-800 w-32 tabular-nums"
+            className="h-12 rounded-xl px-4 font-medium text-base bg-white border border-stone-200 outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)] text-stone-800 w-32 tabular-nums"
           />
           <div className="mt-3 text-xs text-stone-500">
             Checkout{' '}
@@ -1477,7 +1477,7 @@ function ParamsPanel(props: {
             <button
               onClick={onCarte}
               disabled={busy}
-              className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
+              className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:brightness-110 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
             >
               <CreditCard className="w-6 h-6" />
               {nbCartes > 1 ? `${nbCartes} cartes` : 'Carte'}
@@ -1503,7 +1503,7 @@ function ParamsPanel(props: {
                 <button
                   onClick={onReplace}
                   disabled={busy}
-                  className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
+                  className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:brightness-110 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
                 >
                   <RefreshCw className="w-6 h-6" />
                   Remplacer la carte ({nbCartes > 1 ? `${nbCartes} cartes` : '1 carte'}, {nuits} nuit{nuits > 1 ? 's' : ''})
@@ -1526,7 +1526,7 @@ function ParamsPanel(props: {
                 <button
                   onClick={onAdd}
                   disabled={busy}
-                  className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
+                  className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl btn-brand hover:brightness-110 text-white disabled:opacity-50 text-lg font-medium shadow-sm shadow-slate-300/40 transition"
                 >
                   <Plus className="w-6 h-6" />
                   Ajouter {nbCartes > 1 ? `${nbCartes} cartes` : 'une carte'}
@@ -2012,7 +2012,7 @@ function EncodingPanel(props: {
         <button
           onClick={onNext}
           disabled={busy}
-          className="mt-6 w-full flex items-center justify-center gap-2 py-4 rounded-2xl btn-brand hover:bg-indigo-700 text-white disabled:opacity-50 font-medium shadow-sm shadow-slate-300/40 transition"
+          className="mt-6 w-full flex items-center justify-center gap-2 py-4 rounded-2xl btn-brand hover:brightness-110 text-white disabled:opacity-50 font-medium shadow-sm shadow-slate-300/40 transition"
         >
           <CreditCard className="w-5 h-5" />
           Carte suivante ({encoding.carteIndex + 1}/{encoding.totalCartes})

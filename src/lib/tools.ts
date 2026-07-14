@@ -5,6 +5,7 @@ import {
   CalendarDays, BookOpen, ShoppingCart, Car, Stamp, Package, Wrench,
   Thermometer, CreditCard, Tv2, Wifi, Wind, Monitor, Handshake,
   ListChecks, DoorOpen, Tag, Users, Euro, KeyRound, ConciergeBell, Martini, Wallet,
+  Flower2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -18,7 +19,8 @@ export type ToolDef = {
   icon: LucideIcon;
   bg: string;
   text: string;
-  condition?: ToolCondition;
+  // Une condition, ou plusieurs à remplir TOUTES (ET logique). Ex. ['corniche','superadmin'].
+  condition?: ToolCondition | ToolCondition[];
 };
 
 export const TOOLS: ToolDef[] = [
@@ -75,6 +77,7 @@ export const CLIENTS_CHILDREN: ToolDef[] = [
   { id: 'parking',     label: 'Parking',    href: '/parking',     icon: Car,     bg: 'bg-green-50',  text: 'text-green-700',  condition: 'parking' },
   { id: 'fidelite',    label: 'Co-Work',    href: '/fidelite',    icon: Stamp,   bg: 'bg-purple-50', text: 'text-purple-700', condition: 'coworking' },
   { id: 'objets-pret', label: 'Curiosités', href: '/objets-pret', icon: Package, bg: 'bg-amber-50',  text: 'text-amber-700',  condition: 'corniche' },
+  { id: 'parfums',     label: 'Parfums',    href: '/parfums',     icon: Flower2, bg: 'bg-rose-50',   text: 'text-rose-700',   condition: ['corniche', 'superadmin'] },
 ];
 
 // Hubs ayant un sous-menu déroulant dans la sidebar (id de l'outil → enfants).
@@ -95,9 +98,8 @@ export type ToolVisibilityCtx = {
   isAdmin?: boolean;
 };
 
-// Un outil est visible selon sa condition (hôtel courant + rôle).
-export function isToolVisible(t: ToolDef, ctx: ToolVisibilityCtx): boolean {
-  switch (t.condition) {
+function checkCondition(c: ToolCondition, ctx: ToolVisibilityCtx): boolean {
+  switch (c) {
     case 'parking':    return !!ctx.hasParking;
     case 'coworking':  return !!ctx.hasCoworking;
     case 'corniche':   return !!ctx.isCorniche;
@@ -106,6 +108,14 @@ export function isToolVisible(t: ToolDef, ctx: ToolVisibilityCtx): boolean {
     case 'admin':      return !!ctx.isAdmin;
     default:           return true;
   }
+}
+
+// Un outil est visible selon sa/ses condition(s) (hôtel courant + rôle). Un tableau
+// de conditions doit être rempli ENTIÈREMENT (ET). Ex. ['corniche','superadmin'].
+export function isToolVisible(t: ToolDef, ctx: ToolVisibilityCtx): boolean {
+  if (!t.condition) return true;
+  const conds = Array.isArray(t.condition) ? t.condition : [t.condition];
+  return conds.every((c) => checkCondition(c, ctx));
 }
 
 export function toolHref(t: ToolDef, hotelId: string): string {

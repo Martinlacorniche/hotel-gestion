@@ -158,7 +158,7 @@ export default function SerruresPage() {
           </p>
           <Link
             href="/serrures"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg btn-brand hover:bg-indigo-700 text-white text-sm"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg btn-brand hover:brightness-110 text-white text-sm"
           >
             Retour aux serrures
           </Link>
@@ -232,7 +232,7 @@ export default function SerruresPage() {
                         setReplacingFor(c);
                         setNewLockId(null);
                       }}
-                      className="text-neutral-400 hover:text-indigo-600"
+                      className="text-neutral-400 hover:text-[var(--brand)]"
                       title="Remplacer la serrure (serrure changée physiquement)"
                     >
                       <Repeat className="w-4 h-4" />
@@ -416,7 +416,7 @@ export default function SerruresPage() {
                           onClick={() => setNewLockId(l.lockId)}
                           className={`w-full text-left rounded-md border px-3 py-2 flex items-center justify-between gap-3 ${
                             sel
-                              ? 'border-indigo-500 bg-indigo-50'
+                              ? 'border-[var(--brand)] bg-[var(--brand-bg)]'
                               : 'border-neutral-200 hover:bg-neutral-50'
                           }`}
                         >
@@ -439,7 +439,7 @@ export default function SerruresPage() {
                               <Radio className="w-3.5 h-3.5" />
                               {l.hasGateway ? 'gw' : 'pas de gw'}
                             </span>
-                            {sel && <Check className="w-4 h-4 text-indigo-600" />}
+                            {sel && <Check className="w-4 h-4 text-[var(--brand)]" />}
                           </div>
                         </button>
                       </li>
@@ -458,7 +458,7 @@ export default function SerruresPage() {
               <button
                 onClick={replaceLock}
                 disabled={busy || !newLockId}
-                className="px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 text-sm"
+                className="px-3 py-2 rounded bg-[var(--brand)] hover:brightness-110 text-white disabled:opacity-50 text-sm"
               >
                 {busy ? 'Remplacement…' : 'Remplacer'}
               </button>

@@ -96,7 +96,7 @@ const TYPE_COLORS: Record<string, string> = {
   'salle de bain': 'text-cyan-600 bg-cyan-50 border-cyan-100',
   'murs':          'text-rose-600 bg-rose-50 border-rose-100',
   'portes':        'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-100',
-  'clim':          'text-indigo-600 bg-indigo-50 border-indigo-100',
+  'clim':          'text-[var(--brand)] bg-[var(--brand-bg)] border-[var(--brand)]',
   'dégat':         'text-red-600 bg-red-50 border-red-100',
   'autres':        'text-slate-600 bg-slate-50 border-slate-100',
 };
@@ -511,7 +511,7 @@ function MaintenancePageInner() {
                                                 {type} <span className="text-xs font-medium text-slate-400 bg-white px-2 py-1 rounded-full shadow-sm border border-slate-100">{enCours.length}</span>
                                             </h2>
                                         </div>
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${open ? 'bg-indigo-100 text-[var(--brand)] rotate-180' : 'bg-white text-slate-400'}`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${open ? 'bg-[var(--brand-bg)] text-[var(--brand)] rotate-180' : 'bg-white text-slate-400'}`}>
                                             <ChevronDown className="w-5 h-5" />
                                         </div>
                                     </button>
@@ -552,7 +552,7 @@ function MaintenancePageInner() {
                                                 Chambre {room} <span className="text-xs font-medium text-slate-400 bg-white px-2 py-1 rounded-full shadow-sm border border-slate-100">{enCours.length}</span>
                                             </h2>
                                         </div>
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${open ? 'bg-indigo-100 text-[var(--brand)] rotate-180' : 'bg-white text-slate-400'}`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${open ? 'bg-[var(--brand-bg)] text-[var(--brand)] rotate-180' : 'bg-white text-slate-400'}`}>
                                             <ChevronDown className="w-5 h-5" />
                                         </div>
                                     </button>
@@ -578,7 +578,7 @@ function MaintenancePageInner() {
                     <TabsContent value="historique" className="mt-0 h-full flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* 1. Filtres */}
                         <div className="bg-white p-3 rounded-3xl border border-slate-100 shadow-sm mb-4 flex flex-wrap items-center gap-3 shrink-0">
-                            <div className="flex items-center gap-2 text-sm text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">
+                            <div className="flex items-center gap-2 text-sm text-indigo-900 bg-[var(--brand-bg)] px-3 py-1.5 rounded-lg border border-[var(--brand)]">
                                 <Calendar className="w-4 h-4" />
                                 <span className="font-bold text-xs uppercase tracking-wide">Période</span>
                             </div>
@@ -622,8 +622,8 @@ function MaintenancePageInner() {
 
                         <Tabs defaultValue="h-type" className="w-full flex-1 overflow-hidden flex flex-col">
                             <TabsList className="w-full bg-transparent justify-start rounded-none p-0 mb-4 h-auto space-x-6 border-b border-slate-200 shrink-0">
-                                <TabsTrigger value="h-type" className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:text-[var(--brand)] data-[state=active]:bg-transparent pb-3 font-bold text-sm text-slate-400 hover:text-slate-600 transition-colors">Par Type</TabsTrigger>
-                                <TabsTrigger value="h-room" className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:text-[var(--brand)] data-[state=active]:bg-transparent pb-3 font-bold text-sm text-slate-400 hover:text-slate-600 transition-colors">Par Chambre</TabsTrigger>
+                                <TabsTrigger value="h-type" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--brand)] data-[state=active]:text-[var(--brand)] data-[state=active]:bg-transparent pb-3 font-bold text-sm text-slate-400 hover:text-slate-600 transition-colors">Par Type</TabsTrigger>
+                                <TabsTrigger value="h-room" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--brand)] data-[state=active]:text-[var(--brand)] data-[state=active]:bg-transparent pb-3 font-bold text-sm text-slate-400 hover:text-slate-600 transition-colors">Par Chambre</TabsTrigger>
                             </TabsList>
 
                             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
@@ -710,7 +710,7 @@ function MaintenancePageInner() {
                     <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Type de problème</label>
                     <div className="flex flex-wrap gap-2">
                         {TYPE_OPTIONS.map(t => (
-                            <button key={t} onClick={() => setNewItem({ ...newItem, type: t })} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${newItem.type === t ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>
+                            <button key={t} onClick={() => setNewItem({ ...newItem, type: t })} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${newItem.type === t ? 'bg-[var(--brand)] text-white border-[var(--brand)] shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-[var(--brand)]'}`}>
                                 {t}
                             </button>
                         ))}
@@ -722,7 +722,7 @@ function MaintenancePageInner() {
               <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Lieux concernés</label>
               <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-40 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100 custom-scrollbar">
                 {ROOM_OPTIONS.map(r => (
-                    <label key={r} className={`cursor-pointer flex items-center justify-center px-2 py-2 rounded-lg border text-xs font-bold transition-all ${newItem.chambres?.includes(r) ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>
+                    <label key={r} className={`cursor-pointer flex items-center justify-center px-2 py-2 rounded-lg border text-xs font-bold transition-all ${newItem.chambres?.includes(r) ? 'bg-[var(--brand)] text-white border-[var(--brand)] shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-[var(--brand)]'}`}>
                         <input type="checkbox" className="hidden" checked={newItem.chambres?.includes(r)} onChange={(e) => { const cur = new Set(newItem.chambres || []); if (e.target.checked) cur.add(r); else cur.delete(r); setNewItem({ ...newItem, chambres: Array.from(cur) }); }} />
                         {r}
                     </label>
@@ -769,7 +769,7 @@ function MaintenancePageInner() {
               {/* Header */}
               <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-[var(--brand)] shrink-0">
+                  <div className="w-9 h-9 rounded-full bg-[var(--brand-bg)] flex items-center justify-center text-[var(--brand)] shrink-0">
                     <Wrench className="w-4 h-4" />
                   </div>
                   <div className="leading-tight min-w-0">
@@ -814,14 +814,14 @@ function MaintenancePageInner() {
                   const isEditing = editingReplyId === r.id;
                   return (
                     <div key={r.id} className={`group/msg flex items-end gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${mine ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${mine ? 'bg-[var(--brand-bg)] text-[var(--brand)]' : 'bg-slate-200 text-slate-600'}`}>
                         {initials(r.auteur)}
                       </div>
                       <div className="max-w-[75%]">
                         <div className={`text-[10px] text-slate-400 mb-0.5 ${mine ? 'text-right mr-1' : 'ml-1'}`}>{r.auteur}</div>
 
                         {isEditing ? (
-                          <div className={`p-2 rounded-2xl shadow-sm ${mine ? 'bg-indigo-600 rounded-br-sm' : 'bg-white border border-slate-200 rounded-bl-sm'}`}>
+                          <div className={`p-2 rounded-2xl shadow-sm ${mine ? 'bg-[var(--brand)] rounded-br-sm' : 'bg-white border border-slate-200 rounded-bl-sm'}`}>
                             <textarea
                               value={editingReplyText}
                               onChange={(e) => setEditingReplyText(e.target.value)}
@@ -831,22 +831,22 @@ function MaintenancePageInner() {
                               }}
                               autoFocus
                               rows={2}
-                              className={`w-full resize-none outline-none text-sm rounded-lg px-2 py-1 ${mine ? 'bg-indigo-500 text-white placeholder-indigo-200' : 'bg-slate-50 text-slate-800'}`}
+                              className={`w-full resize-none outline-none text-sm rounded-lg px-2 py-1 ${mine ? 'bg-[var(--brand-bg)]0 text-white placeholder-indigo-200' : 'bg-slate-50 text-slate-800'}`}
                             />
                             <div className="flex justify-end gap-2 mt-1">
                               <button
                                 onClick={cancelEditReply}
-                                className={`text-[11px] px-2 py-0.5 rounded ${mine ? 'text-indigo-100 hover:bg-indigo-500' : 'text-slate-500 hover:bg-slate-100'}`}
+                                className={`text-[11px] px-2 py-0.5 rounded ${mine ? 'text-indigo-100 hover:bg-[var(--brand-bg)]0' : 'text-slate-500 hover:bg-slate-100'}`}
                               >Annuler</button>
                               <button
                                 onClick={saveEditReply}
                                 disabled={editingReplyText.trim() === ''}
-                                className={`text-[11px] px-2 py-0.5 rounded font-medium ${mine ? 'bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50' : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'}`}
+                                className={`text-[11px] px-2 py-0.5 rounded font-medium ${mine ? 'bg-white text-[var(--brand)] hover:bg-[var(--brand-bg)] disabled:opacity-50' : 'bg-[var(--brand)] text-white hover:brightness-110 disabled:opacity-50'}`}
                               >Enregistrer</button>
                             </div>
                           </div>
                         ) : (
-                          <div className={`relative px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words shadow-sm ${mine ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'}`}>
+                          <div className={`relative px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words shadow-sm ${mine ? 'bg-[var(--brand)] text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'}`}>
                             {r.texte}
                             {mine && (
                               <div className={`absolute top-1/2 -translate-y-1/2 ${mine ? '-left-14' : '-right-14'} flex gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity`}>
@@ -893,7 +893,7 @@ function MaintenancePageInner() {
                       }
                     }}
                     rows={1}
-                    className="flex-1 resize-none bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-indigo-500 outline-none max-h-32"
+                    className="flex-1 resize-none bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-[var(--brand)] outline-none max-h-32"
                   />
                   <button
                     onClick={sendReply}
@@ -952,7 +952,7 @@ function TaskCard({ item, onEdit, onClose, onDelete, onChat }: { item: MaintItem
                     <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Calendar className="w-3 h-3"/> {toFr(item.date_creation)}</span>
                     <button
                         onClick={onChat}
-                        className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full transition ${replyCount > 0 ? 'bg-indigo-50 text-[var(--brand)] hover:bg-indigo-100' : 'text-slate-400 hover:bg-slate-100'}`}
+                        className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full transition ${replyCount > 0 ? 'bg-[var(--brand-bg)] text-[var(--brand)] hover:bg-[var(--brand-bg)]' : 'text-slate-400 hover:bg-slate-100'}`}
                         title="Conversation"
                     >
                         <MessageCircle className="w-3 h-3" />
@@ -961,7 +961,7 @@ function TaskCard({ item, onEdit, onClose, onDelete, onChat }: { item: MaintItem
                 </div>
 
                 <div className="flex items-center gap-1 opacity-100 lg:opacity-0 group-hover/card:opacity-100 transition-opacity">
-                    <button onClick={onEdit} className="p-1.5 text-slate-400 hover:text-[var(--brand)] hover:bg-indigo-50 rounded-lg transition"><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={onEdit} className="p-1.5 text-slate-400 hover:text-[var(--brand)] hover:bg-[var(--brand-bg)] rounded-lg transition"><Edit2 className="w-4 h-4"/></button>
                     <button onClick={onDelete} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"><Trash2 className="w-4 h-4"/></button>
                     <button onClick={onClose} className="ml-1 flex items-center gap-1 px-3 py-1.5 btn-brand text-white rounded-lg text-xs font-bold transition shadow-md transform active:scale-95">
                         <CheckCircle className="w-3.5 h-3.5"/> Fait
@@ -982,7 +982,7 @@ function HistoryFolder({ title, items, openState, toggleFunc, id, onReopen, onCh
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden group">
             <button onClick={toggleFunc} className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-xl transition-colors ${open ? 'bg-indigo-100 text-[var(--brand)]' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-indigo-500'}`}>
+                    <div className={`p-2 rounded-xl transition-colors ${open ? 'bg-[var(--brand-bg)] text-[var(--brand)]' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-[var(--brand)]'}`}>
                         {open ? <ChevronDown className="w-5 h-5"/> : <ChevronRight className="w-5 h-5"/>}
                     </div>
                     <div className="text-left">
@@ -1024,7 +1024,7 @@ function HistoryFolder({ title, items, openState, toggleFunc, id, onReopen, onCh
                                     return (
                                         <button
                                             onClick={() => onChat(it)}
-                                            className={`flex items-center gap-1 text-xs h-8 px-2.5 rounded-lg border transition ${replyCount > 0 ? 'bg-indigo-50 text-[var(--brand)] border-indigo-100 hover:bg-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                                            className={`flex items-center gap-1 text-xs h-8 px-2.5 rounded-lg border transition ${replyCount > 0 ? 'bg-[var(--brand-bg)] text-[var(--brand)] border-[var(--brand)] hover:bg-[var(--brand-bg)]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
                                             title="Conversation"
                                         >
                                             <MessageCircle className="w-3.5 h-3.5" />
@@ -1110,7 +1110,7 @@ function ClimCard({ r, query, onReport, onEdit, onDelete }: { r: ClimReseau; que
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all group/row">
             {/* Moteur = chambres reliées */}
             <div className="flex items-center gap-2.5 px-4 pt-3 pb-2">
-                <Fan className="w-4 h-4 text-indigo-500 shrink-0" />
+                <Fan className="w-4 h-4 text-[var(--brand)] shrink-0" />
                 <div className="flex-1 min-w-0 text-sm font-extrabold text-slate-800 leading-tight">
                     {r.label?.trim()
                         ? <span className="truncate">{r.label}</span>
@@ -1119,7 +1119,7 @@ function ClimCard({ r, query, onReport, onEdit, onDelete }: { r: ClimReseau; que
                             return (
                                 <span key={rm}>
                                     {i > 0 && <span className="text-slate-300"> · </span>}
-                                    <span className={hit ? 'text-[var(--brand)] bg-indigo-50 rounded px-1' : ''}>
+                                    <span className={hit ? 'text-[var(--brand)] bg-[var(--brand-bg)] rounded px-1' : ''}>
                                         {rm === 'Seminaire' ? 'Séminaire' : `#${rm}`}
                                     </span>
                                 </span>
@@ -1139,7 +1139,7 @@ function ClimCard({ r, query, onReport, onEdit, onDelete }: { r: ClimReseau; que
                 <span className={`flex-1 min-w-0 truncate text-xs ${r.tableau ? 'text-slate-500 font-medium' : 'text-amber-500 font-semibold'}`}>
                     {r.tableau || 'À renseigner'}
                 </span>
-                <button onClick={onReport} title="Signaler une panne sur ce réseau" className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-[var(--brand)] hover:bg-indigo-50 rounded-md px-2 h-7 transition active:scale-95">
+                <button onClick={onReport} title="Signaler une panne sur ce réseau" className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-[var(--brand)] hover:bg-[var(--brand-bg)] rounded-md px-2 h-7 transition active:scale-95">
                     <Plus className="w-3 h-3" /> Panne
                 </button>
             </div>
@@ -1165,7 +1165,7 @@ function ClimEditModal({ initial, ROOM_OPTIONS, onCancel, onSave }: { initial: C
                         {ROOM_OPTIONS.map(r => {
                             const on = rooms.includes(r);
                             return (
-                                <button key={r} type="button" onClick={() => setRooms(prev => (on ? prev.filter(x => x !== r) : [...prev, r]))} className={`px-2 py-2 rounded-lg border text-xs font-bold transition-all ${on ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>
+                                <button key={r} type="button" onClick={() => setRooms(prev => (on ? prev.filter(x => x !== r) : [...prev, r]))} className={`px-2 py-2 rounded-lg border text-xs font-bold transition-all ${on ? 'bg-[var(--brand)] text-white border-[var(--brand)] shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-[var(--brand)]'}`}>
                                     {r === 'Seminaire' ? 'Sém.' : r}
                                 </button>
                             );

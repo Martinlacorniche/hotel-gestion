@@ -38,7 +38,7 @@ function BriefBody({ text }: { text: string }) {
       {lines.map((line, i) => {
         if (line.startsWith('#')) {
           return (
-            <h3 key={i} className="pt-2 text-[11px] font-bold uppercase tracking-wider text-indigo-500 first:pt-0">
+            <h3 key={i} className="pt-2 text-[11px] font-bold uppercase tracking-wider text-[var(--brand)] first:pt-0">
               {line.replace(/^#+\s*/, '')}
             </h3>
           );
@@ -129,7 +129,7 @@ export default function BriefingModal({
         onClick={openBrief}
         title="Ce qui a bougé depuis ton dernier shift — résumé généré par IA"
         disabled={loading}
-        className="inline-flex w-fit items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 transition hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-70"
+        className="inline-flex w-fit items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 transition hover:border-[var(--brand)] hover:text-[var(--brand)] disabled:opacity-70"
       >
         {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sunrise className="h-3.5 w-3.5" />}
         {loading ? 'Je lis tout…' : 'Mon brief'}
@@ -165,7 +165,7 @@ export default function BriefingModal({
 
             <button
               onClick={() => setOpen(false)}
-              className="mt-4 w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700"
+              className="mt-4 w-full rounded-xl bg-[var(--brand)] py-2.5 text-sm font-bold text-white transition hover:brightness-110"
             >
               C’est parti
             </button>

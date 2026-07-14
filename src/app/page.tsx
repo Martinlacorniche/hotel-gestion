@@ -9,13 +9,21 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
+import { SectionHeader } from '@/components/ui/section-header';
+import { FilterMenu } from '@/components/ui/filter-menu';
+import { AddButton } from '@/components/ui/add-button';
+import { Pill } from '@/components/ui/pill';
+import { SelectField } from '@/components/ui/select-field';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
   ChevronLeft, ChevronRight, PlusCircle, Filter,
   Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
   MessageCircle, Send, // Conversation consignes
-  X // Chambres libérées
+  X, // Chambres libérées
+  Pin, ListChecks, // en-têtes colonnes (design-system)
+  DoorOpen, Car, BarChart3, Luggage, // en-têtes colonne 3 + objets trouvés
+  Wallet, BedDouble, Tag, Star // icônes KPI
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useSelectedHotel } from '@/context/SelectedHotelContext';
@@ -1018,7 +1026,7 @@ const birthdayMessage = useMemo(() => {
             </Button>
             <button
               onClick={() => setShowCalendar(true)}
-              className="h-8 w-[220px] text-center text-sm font-semibold text-slate-700 hover:text-indigo-600 transition-colors first-letter:uppercase"
+              className="h-8 w-[220px] text-center text-sm font-semibold text-slate-700 hover:text-[var(--brand)] transition-colors first-letter:uppercase"
             >
               {format(selectedDate, 'eeee d MMMM yyyy', { locale: fr })}
             </button>
@@ -1080,7 +1088,7 @@ const birthdayMessage = useMemo(() => {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Rechercher…"
-          className="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-200 bg-white shadow-sm text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+          className="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-200 bg-white shadow-sm text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand)] transition"
         />
         {searchQuery && (
           <button
@@ -1097,31 +1105,29 @@ const birthdayMessage = useMemo(() => {
         
         {/* COL 1 : CONSIGNES */}
         <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  📌 Consignes
-                  <span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full">{consignesVisibles.length}</span>
-                </h2>
-                <div className="flex items-center gap-3">
-                    <button 
+            <SectionHeader
+                icon={Pin}
+                title="Consignes"
+                count={consignesVisibles.length}
+                action={(
+                  <div className="flex items-center gap-3">
+                    <button
                         onClick={() => setShowValidatedConsignes(!showValidatedConsignes)}
-                        className={`text-xs px-2 py-1 rounded-md transition-colors ${showValidatedConsignes ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-slate-500 hover:bg-slate-100'}`}
+                        className={`text-xs px-2 py-1 rounded-md transition-colors ${showValidatedConsignes ? 'bg-[var(--brand-bg)] text-[var(--brand)] font-medium' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
                         {showValidatedConsignes ? 'Masquer validées' : 'Voir validées'}
                     </button>
-                    <Button
-                        size="sm"
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow shadow-indigo-200 w-8 h-8 p-0 flex items-center justify-center"
+                    <AddButton
+                        label="Nouvelle consigne"
                         onClick={() => {
                             setNewConsigne({ texte: '', service: 'Tous les services', date: '', valide: false, utilisateurs_ids: [], date_fin: '', });
                             setEditConsigneIndex(null);
                             setShowConsigneModal(true);
                         }}
-                    >
-                        <PlusCircle className="w-5 h-5" />
-                    </Button>
-                </div>
-            </div>
+                    />
+                  </div>
+                )}
+            />
 
             <div className="flex flex-col gap-3">
                 {consignesVisibles.map((c, idx) => {
@@ -1130,7 +1136,7 @@ const birthdayMessage = useMemo(() => {
                     <div
                         key={idx}
                         onClick={() => { setChatConsigne(c); setChatInput(''); }}
-                        className={`group relative p-5 rounded-2xl border transition-all duration-300 cursor-pointer ${c.valide ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-100 shadow-sm hover:shadow-md hover:border-indigo-200'}`}
+                        className={`group relative p-5 rounded-2xl border transition-all duration-300 cursor-pointer ${c.valide ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-100 shadow-sm hover:shadow-md hover:border-[var(--brand)]'}`}
                     >
                         <div className="flex justify-between items-start mb-2">
                              <div className="flex items-center gap-2">
@@ -1143,7 +1149,7 @@ const birthdayMessage = useMemo(() => {
 
                              {/* Actions au survol */}
                              <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200" onClick={(e) => e.stopPropagation()}>
-                                <button onClick={() => modifierConsigne(idx)} className="p-1.5 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition"><Edit2 className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => modifierConsigne(idx)} className="p-1.5 hover:bg-slate-100 rounded text-slate-400 hover:text-[var(--brand)] transition"><Edit2 className="w-3.5 h-3.5" /></button>
                                 {!c.valide && (
                                     <button onClick={() => validerConsigne(idx)} className="p-1.5 hover:bg-green-50 rounded text-slate-400 hover:text-green-600 transition" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
                                 )}
@@ -1157,7 +1163,7 @@ const birthdayMessage = useMemo(() => {
                         {/* Pied de carte : conversation */}
                         <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
                             <span className="text-slate-400 italic">— {(() => { const u = users.find((x: any) => x.name === c.auteur); return (u as any)?.emoji ? `${(u as any).emoji} ` : ''; })()}{c.auteur || 'Anonyme'}</span>
-                            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full transition ${replyCount > 0 ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-slate-400 group-hover:bg-slate-100'}`}>
+                            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full transition ${replyCount > 0 ? 'bg-[var(--brand-bg)] text-[var(--brand)] font-medium' : 'text-slate-400 group-hover:bg-slate-100'}`}>
                                 <MessageCircle className="w-3 h-3" />
                                 {replyCount > 0 ? `${replyCount} réponse${replyCount > 1 ? 's' : ''}` : 'Répondre'}
                             </span>
@@ -1171,42 +1177,35 @@ const birthdayMessage = useMemo(() => {
 
         {/* COL 2 : TICKETS (TO DO) */}
         <div className="flex flex-col gap-4">
-             <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  🎟️ To Do
-                  <span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full">{ticketsVisibles.length}</span>
-                </h2>
-                <div className="flex items-center gap-2">
+            <SectionHeader
+                icon={ListChecks}
+                title="To Do"
+                count={ticketsVisibles.length}
+                action={(
+                  <div className="flex items-center gap-2">
                     {/* Filtre service */}
-                    <select 
-                        className="text-xs bg-white border border-slate-200 rounded-full px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        value={filterService} onChange={(e) => setFilterService(e.target.value)}
-                    >
-                        <option value="Tous">Tous</option>
-                        <option value="Réception">Réception</option>
-                        <option value="Housekeeping">Housekeeping</option>
-                        <option value="F&B">F&B</option>
-                        <option value="Maintenance">Maintenance</option>
-                    </select>
-                     <button 
+                    <FilterMenu
+                        value={filterService}
+                        options={['Tous', 'Réception', 'Housekeeping', 'F&B', 'Maintenance']}
+                        onChange={setFilterService}
+                    />
+                     <button
                         onClick={() => setShowValidatedTickets(!showValidatedTickets)}
-                        className={`text-xs px-2 py-1 rounded-md transition-colors ${showValidatedTickets ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-slate-500 hover:bg-slate-100'}`}
+                        className={`text-xs px-2 py-1 rounded-md transition-colors ${showValidatedTickets ? 'bg-[var(--brand-bg)] text-[var(--brand)] font-medium' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
                         {showValidatedTickets ? 'Masquer' : 'Voir'} faits
                     </button>
-                    <Button 
-                        size="sm" 
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow shadow-indigo-200 w-8 h-8 p-0 flex items-center justify-center"
+                    <AddButton
+                        label="Nouvelle tâche"
                         onClick={() => {
                             setNewTicket({ titre: '', service: 'Réception', dateAction: formatDate(selectedDate, 'yyyy-MM-dd'), priorite: 'Moyenne', date_fin: '' });
                             setEditTicketIndex(null);
                             setShowTicketModal(true);
                         }}
-                    >
-                        <PlusCircle className="w-5 h-5" />
-                    </Button>
-                </div>
-            </div>
+                    />
+                  </div>
+                )}
+            />
 
             <div className="flex flex-col gap-3">
                 {ticketsVisibles.map((t, idx) => (
@@ -1214,9 +1213,9 @@ const birthdayMessage = useMemo(() => {
                         
                         <div className="flex justify-between items-start mb-2">
                              <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">{etiquette(t.service)}</span>
-                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${priorityColor(t.priorite)}`}>
+                             <Pill tone={t.priorite === 'Haute' ? 'danger' : t.priorite === 'Moyenne' ? 'warn' : 'good'}>
                                 {t.priorite}
-                             </span>
+                             </Pill>
                         </div>
 
                         <div className={`text-sm font-medium leading-snug break-words ${t.valide ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
@@ -1232,7 +1231,7 @@ const birthdayMessage = useMemo(() => {
                                     setEditTicketIndex(realIndex);
                                     setShowTicketModal(true);
                                 }}
-                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                                className="p-1.5 text-slate-400 hover:text-[var(--brand)] hover:bg-[var(--brand-bg)] rounded-md transition-colors"
                             >
                                 <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -1254,9 +1253,10 @@ const birthdayMessage = useMemo(() => {
         {/* COL 3 : SIDEBAR (KPIs, Taxis, Chambres libérées) — météo remontée dans le header */}
         <div className="flex flex-col gap-4">
 
-            {/* En-tête fantôme : aligne la 1ʳᵉ carte avec celles de Consignes/Tickets */}
-            <div className="hidden lg:flex items-center" aria-hidden>
-              <h2 className="text-lg font-bold flex items-center gap-2 invisible">.<span className="text-xs px-2 py-0.5 rounded-full">.</span></h2>
+            {/* En-tête fantôme : aligne la 1ʳᵉ carte avec celles de Consignes/Tickets
+                (même composant SectionHeader, rendu invisible → hauteur identique). */}
+            <div className="hidden lg:block" aria-hidden>
+              <SectionHeader icon={Pin} title="." count="." className="invisible" />
             </div>
 
             {/* CHAMBRES LIBÉRÉES — compact : champ seul, liste du jour au survol.
@@ -1264,18 +1264,16 @@ const birthdayMessage = useMemo(() => {
             {LIBERATIONS_ENABLED && currentHotel?.nom?.trim() !== 'Les Voiles' && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-slate-800">🚪 Chambres libérées</h3>
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><DoorOpen className="w-4 h-4 text-slate-400" />Chambres libérées</h3>
                     {liberations.length > 0 && (
                       <div className="relative group">
-                        <span className="cursor-default rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
-                          {liberations.reduce((n, l) => n + (l.chambres?.length ?? 0), 0)} auj.
-                        </span>
+                        <Pill tone="neutral" className="cursor-default">{liberations.reduce((n, l) => n + (l.chambres?.length ?? 0), 0)} auj.</Pill>
                         <div className="absolute right-0 top-full z-20 hidden w-60 rounded-xl border border-slate-200 bg-white p-3 shadow-lg group-hover:block">
                           <div className="space-y-2">
                             {liberations.map((l) => (
                               <div key={l.id} className="flex items-center gap-1.5 flex-wrap text-sm">
                                 {(l.chambres ?? []).map((num: string, i: number) => (
-                                  <span key={`${num}-${i}`} className="rounded-md bg-emerald-50 border border-emerald-200 px-2 py-0.5 font-bold text-emerald-800">
+                                  <span key={`${num}-${i}`} className="rounded-md bg-slate-100 border border-slate-200 px-2 py-0.5 font-bold text-slate-700">
                                     {num}
                                   </span>
                                 ))}
@@ -1300,13 +1298,14 @@ const birthdayMessage = useMemo(() => {
                     <input
                       value={liberationInput}
                       onChange={(e) => setLiberationInput(e.target.value)}
-                      placeholder="12 ou 12 14 22"
-                      className="min-w-0 flex-1 h-9 rounded-lg border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="Ex. 12  ou  12 14 22"
+                      className="min-w-0 flex-1 h-9 rounded-lg border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
                     />
                     <button
                       type="submit"
                       disabled={!liberationInput.trim()}
-                      className="h-9 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40"
+                      style={{ background: 'var(--brand)' }}
+                      className="h-9 rounded-lg px-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
                     >
                       Envoyer
                     </button>
@@ -1317,7 +1316,7 @@ const birthdayMessage = useMemo(() => {
             {/* TAXIS / REVEILS */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-800">🚖 Taxis & Réveils</h3>
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Car className="w-4 h-4 text-slate-400" />Taxis &amp; Réveils</h3>
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => setShowChauffeurModal(true)} className="w-6 h-6 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-600 transition" title="Gérer les chauffeurs VTC">
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
@@ -1368,7 +1367,7 @@ const birthdayMessage = useMemo(() => {
                                      if (realIndex === -1) return;
                                      setNewTaxi({ type: d.type ?? 'Taxi', chambre: d.chambre ?? '', heure: d.heure ?? '', prix: d.prix ?? '', chauffeur: d.chauffeur_id ?? '', statut: d.statut ?? 'Prévu', dateAction: d.date ?? formatDate(selectedDate, 'yyyy-MM-dd') });
                                      setEditDemandeIndex(realIndex); setShowTaxiModal(true);
-                                }} className="text-slate-300 hover:text-indigo-600"><Edit2 className="w-3 h-3"/></button>
+                                }} className="text-slate-300 hover:text-[var(--brand)]"><Edit2 className="w-3 h-3"/></button>
                                 <button onClick={async () => { if (await confirmDialog('Supprimer ?')) deleteDemande(d.id); }} className="text-slate-300 hover:text-red-500"><XCircle className="w-3 h-3"/></button>
                              </div>
                         </div>
@@ -1396,21 +1395,21 @@ const birthdayMessage = useMemo(() => {
              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                        📊 Performance
+                        <BarChart3 className="w-4 h-4 text-slate-400" />Performance
                     </h3>
                     {isAdmin && (
-                        <div className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full font-medium animate-pulse">
-                            Mode Édition
-                        </div>
+                        <Pill tone="brand" className="animate-pulse">Mode Édition</Pill>
                     )}
                 </div>
 
                 <div className="flex flex-col gap-6">
                     {[
-                      { key: "ca", label: "Chiffre d'affaires", suffix: "€", icon: "💰", color: "bg-yellow-50 text-yellow-600" },
-                      { key: "taux_occupation", label: "Taux d'occupation", suffix: "%", icon: "🛏️", color: "bg-blue-50 text-blue-600" },
-                      { key: "prix_moyen", label: "Prix Moyen", suffix: "€", icon: "🏷️", color: "bg-emerald-50 text-emerald-600" },
-                      { key: "guest_review", label: "Note Guest", suffix: "/10", icon: "⭐", color: "bg-purple-50 text-purple-600" },
+                      // `bar` : barre de progression vers l'objectif — pertinent pour le CA
+                      // et le taux d'occupation (cumulatifs), pas pour la note/le prix moyen.
+                      { key: "ca", label: "Chiffre d'affaires", suffix: "€", icon: Wallet, bar: true },
+                      { key: "taux_occupation", label: "Taux d'occupation", suffix: "%", icon: BedDouble, bar: true },
+                      { key: "prix_moyen", label: "Prix Moyen", suffix: "€", icon: Tag, bar: false },
+                      { key: "guest_review", label: "Note Guest", suffix: "/10", icon: Star, bar: false },
                     ].map((def, i) => {
                       // Les Voiles : CA / taux d'occupation / prix moyen remplis en
                       // direct depuis le cache Mews du mois sélectionné (lecture seule).
@@ -1429,22 +1428,22 @@ const birthdayMessage = useMemo(() => {
                       const progress = value && target ? Math.min(100, (value / target) * 100) : 0;
                       
                       // Couleurs barre
-                      let barColor = "bg-indigo-500";
+                      let barColor = "bg-[var(--brand)]";
                       if (progress >= 100) barColor = "bg-emerald-500";
                       else if (progress < 50) barColor = "bg-orange-400";
 
                       return (
                         <div key={i} className="flex items-center gap-4">
                             {/* Icône carrée */}
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-sm ${def.color}`}>
-                                {def.icon}
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm bg-slate-100 text-slate-500">
+                                <def.icon className="w-5 h-5" />
                             </div>
 
                             {/* Contenu */}
                             <div className="flex-1">
                                 <div className="flex justify-between items-end mb-1">
                                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">{def.label}</span>
-                                    <span className={`text-xs font-bold ${progress >= 100 ? 'text-emerald-600' : 'text-slate-400'}`}>{progress.toFixed(0)}%</span>
+                                    {def.bar && <span className={`text-xs font-bold ${progress >= 100 ? 'text-emerald-600' : 'text-slate-400'}`}>{progress.toFixed(0)}%</span>}
                                 </div>
 
                                 <div className="flex items-baseline gap-1.5">
@@ -1453,7 +1452,7 @@ const birthdayMessage = useMemo(() => {
     {isAdmin && !isLiveTO ? (
         <input
             type="number"
-            className="w-24 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 text-xl font-bold text-slate-800 outline-none transition-all p-0 m-0"
+            className="w-24 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[var(--brand)] text-xl font-bold text-slate-800 outline-none transition-all p-0 m-0"
             value={value ?? ""}
             placeholder="0"
             onChange={(e) => setKpis((prev:any) => ({ ...prev, [def.key]: Number(e.target.value) }))}
@@ -1475,7 +1474,7 @@ const birthdayMessage = useMemo(() => {
      {isAdmin ? (
         <input 
             type="number" 
-            className="w-16 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 text-sm font-medium text-slate-400 outline-none transition-all p-0 m-0" 
+            className="w-16 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[var(--brand)] text-sm font-medium text-slate-400 outline-none transition-all p-0 m-0" 
             value={target ?? ""} 
             placeholder="Obj"
             onChange={(e) => setKpis((prev:any) => ({ ...prev, [`${def.key}_objectif`]: Number(e.target.value) }))} 
@@ -1487,13 +1486,15 @@ const birthdayMessage = useMemo(() => {
 </div>
                                 </div>
 
-                                {/* Barre de progression */}
+                                {/* Barre de progression — uniquement pour les KPI cumulatifs (CA, TO) */}
+                                {def.bar && (
                                 <div className="mt-2 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                    <div 
-                                        className={`h-full rounded-full transition-all duration-1000 ease-out ${barColor}`} 
+                                    <div
+                                        className={`h-full rounded-full transition-all duration-1000 ease-out ${barColor}`}
                                         style={{ width: `${progress}%` }}
                                     />
                                 </div>
+                                )}
                             </div>
                         </div>
                       );
@@ -1502,7 +1503,7 @@ const birthdayMessage = useMemo(() => {
 
                 {isAdmin && (
                     <div className="flex justify-end mt-6">
-                         <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all hover:-translate-y-0.5" onClick={async () => {
+                         <Button size="sm" className="bg-[var(--brand)] hover:brightness-110 text-white shadow-md transition-all hover:-translate-y-0.5" onClick={async () => {
                              const payload = { hotel_id: hotelId, mois: selectedDate.getMonth() + 1, annee: selectedDate.getFullYear(), ...kpis };
                              await supabase.from("kpis").upsert(payload, { onConflict: "hotel_id,mois,annee" });
                              toast.success("Données mises à jour");
@@ -1521,13 +1522,13 @@ const birthdayMessage = useMemo(() => {
          {/* Objets Trouvés */}
          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <h2 className="text-lg font-bold text-slate-800">🧳 Objets trouvés</h2>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Luggage className="w-5 h-5 text-slate-400" />Objets trouvés</h2>
                 <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                     <div className="relative flex-1">
                         <Search className="absolute left-2 top-2.5 w-4 h-4 text-slate-400" />
                         <input 
-                            className="pl-8 pr-4 py-2 text-sm border border-slate-200 rounded-full w-full focus:ring-2 focus:ring-indigo-500 focus:outline-none" 
-                            placeholder="Rechercher..." 
+                            className="pl-8 pr-4 py-2 text-sm border border-slate-200 rounded-full w-full focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
+                            placeholder="Rechercher..."
                             value={searchObjets} onChange={(e) => setSearchObjets(e.target.value)}
                         />
                     </div>
@@ -1539,7 +1540,7 @@ const birthdayMessage = useMemo(() => {
                         onClick={() => setShowAllObjets(!showAllObjets)}
                         className="group flex items-center gap-1.5 text-xs bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-full transition"
                     >
-                        <span className={`inline-block h-3 w-3 rounded-full transition ${showAllObjets ? "bg-indigo-600" : "bg-slate-400"}`} />
+                        <span className={`inline-block h-3 w-3 rounded-full transition ${showAllObjets ? "bg-[var(--brand)]" : "bg-slate-400"}`} />
                         <span className="whitespace-nowrap select-none font-medium text-slate-600">{showAllObjets ? 'Tout masquer' : 'Tout afficher'}</span>
                     </button>
 
@@ -1547,10 +1548,11 @@ const birthdayMessage = useMemo(() => {
                         <a href="https://resort.mylhost.com/login" target="_blank" className="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-2 rounded-full hover:bg-orange-100 transition flex items-center gap-1">
                              LHOST <ExternalLink className="w-3 h-3"/>
                         </a>
-                        <Button 
-    size="sm" 
-    onClick={() => setShowObjetModal(true)} 
-    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow shadow-indigo-200"
+                        <Button
+    size="sm"
+    onClick={() => setShowObjetModal(true)}
+    style={{ background: 'var(--brand)' }}
+    className="text-white rounded-full shadow-sm hover:brightness-110"
 >
     <PlusCircle className="w-4 h-4 mr-1"/> Ajouter
 </Button>
@@ -1577,7 +1579,7 @@ const birthdayMessage = useMemo(() => {
                              <div className="flex items-center gap-4 flex-wrap">
                                  {['ficheLhost', 'paiementClient', 'colisEnvoye'].map(field => (
                                      <label key={field} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-                                         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${o[field] ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'}`}>
+                                         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${o[field] ? 'bg-[var(--brand)] border-[var(--brand)]' : 'border-slate-300 bg-white'}`}>
                                              {o[field] && <CheckCircle className="w-3 h-3 text-white" />}
                                          </div>
                                          <input type="checkbox" className="hidden" checked={!!o[field]} onChange={(e) => toggleObjetCheckbox(o.id, field, e.target.checked)} />
@@ -1594,7 +1596,7 @@ const birthdayMessage = useMemo(() => {
         setEditObjetIndex(realIndex); 
         setShowObjetModal(true); 
     }} 
-    className="text-slate-400 hover:text-indigo-600"
+    className="text-slate-400 hover:text-[var(--brand)]"
 >
     <Edit2 className="w-4 h-4"/>
 </button>
@@ -1615,22 +1617,22 @@ const birthdayMessage = useMemo(() => {
             </div>
          )}
 
-         {/* Footer Apps */}
-         <div className="text-center py-10">
-             <h3 className="text-slate-400 text-sm mb-6 font-medium uppercase tracking-widest">Télécharger l'application mobile</h3>
-             <div className="flex flex-wrap justify-center gap-6">
-                 <a href={PLAY_URL} target="_blank" className="group flex items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition">
-                     <QRCodeSVG value={PLAY_URL} size={60} />
+         {/* Footer Apps — discret (installation ponctuelle, pas un besoin quotidien) */}
+         <div className="text-center py-6 mt-4 border-t border-slate-100">
+             <h3 className="text-slate-400 text-[11px] mb-3 font-medium uppercase tracking-widest">Application mobile</h3>
+             <div className="flex flex-wrap justify-center gap-3">
+                 <a href={PLAY_URL} target="_blank" className="group flex items-center gap-2.5 bg-white px-3 py-2 rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition">
+                     <QRCodeSVG value={PLAY_URL} size={40} />
                      <div className="text-left">
-                         <div className="text-xs text-slate-500">Disponible sur</div>
-                         <div className="font-bold text-slate-800">Google Play</div>
+                         <div className="text-[10px] text-slate-400">Disponible sur</div>
+                         <div className="text-sm font-semibold text-slate-600">Google Play</div>
                      </div>
                  </a>
-                 <a href={APPLE_URL} target="_blank" className="group flex items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition">
-                     <QRCodeSVG value={APPLE_URL} size={60} />
+                 <a href={APPLE_URL} target="_blank" className="group flex items-center gap-2.5 bg-white px-3 py-2 rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition">
+                     <QRCodeSVG value={APPLE_URL} size={40} />
                      <div className="text-left">
-                         <div className="text-xs text-slate-500">Disponible sur</div>
-                         <div className="font-bold text-slate-800">App Store</div>
+                         <div className="text-[10px] text-slate-400">Disponible sur</div>
+                         <div className="text-sm font-semibold text-slate-600">App Store</div>
                      </div>
                  </a>
              </div>
@@ -1645,9 +1647,11 @@ const birthdayMessage = useMemo(() => {
           <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md space-y-4 animate-in fade-in zoom-in duration-200">
             <h2 className="text-xl font-bold text-slate-800">Nouveau Taxi / Réveil</h2>
             <div className="grid grid-cols-2 gap-3">
-                <select className="border rounded-lg px-3 py-2" value={newTaxi.type} onChange={(e) => setNewTaxi({ ...newTaxi, type: e.target.value })}>
-                    <option value="Taxi">Taxi</option><option value="Réveil">Réveil</option><option value="VTC">VTC</option>
-                </select>
+                <SelectField
+                    value={newTaxi.type}
+                    options={['Taxi', 'Réveil', 'VTC']}
+                    onChange={(v) => setNewTaxi({ ...newTaxi, type: v })}
+                />
                 <input type="date" className="border rounded-lg px-3 py-2" value={newTaxi.dateAction} onChange={(e) => setNewTaxi({ ...newTaxi, dateAction: e.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1657,15 +1661,17 @@ const birthdayMessage = useMemo(() => {
             {newTaxi.type === "VTC" && (
                 <div className="space-y-2 bg-slate-50 p-3 rounded-lg">
                      <Input type="number" placeholder="Prix (€)" value={newTaxi.prix} onChange={(e) => setNewTaxi({ ...newTaxi, prix: e.target.value })} />
-                     <select className="w-full border rounded px-2 py-2 text-sm" value={newTaxi.chauffeur || ""} onChange={(e) => setNewTaxi({ ...newTaxi, chauffeur: e.target.value })}>
-                        <option value="">Choisir chauffeur</option>
-                        {chauffeurs.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
-                     </select>
+                     <SelectField
+                        value={newTaxi.chauffeur || ""}
+                        placeholder="Choisir chauffeur"
+                        options={chauffeurs.map((c) => ({ value: String(c.id), label: c.nom }))}
+                        onChange={(v) => setNewTaxi({ ...newTaxi, chauffeur: v })}
+                     />
                 </div>
             )}
             <div className="flex justify-end gap-2 mt-4">
               <Button variant="ghost" onClick={() => setShowTaxiModal(false)}>Annuler</Button>
-              <Button onClick={createDemande} className="bg-indigo-600 text-white hover:bg-indigo-700">{editDemandeIndex !== null ? 'Modifier' : 'Créer'}</Button>
+              <Button onClick={createDemande} className="bg-[var(--brand)] text-white hover:brightness-110">{editDemandeIndex !== null ? 'Modifier' : 'Créer'}</Button>
             </div>
           </div>
         </div>
@@ -1700,7 +1706,7 @@ const birthdayMessage = useMemo(() => {
                 onKeyDown={e => e.key === 'Enter' && createChauffeur()}
                 className="text-sm"
               />
-              <Button onClick={createChauffeur} disabled={!newChauffeur.trim()} className="bg-indigo-600 text-white hover:bg-indigo-700 shrink-0">
+              <Button onClick={createChauffeur} disabled={!newChauffeur.trim()} className="bg-[var(--brand)] text-white hover:brightness-110 shrink-0">
                 Ajouter
               </Button>
             </div>
@@ -1718,15 +1724,21 @@ const birthdayMessage = useMemo(() => {
             <div className="grid grid-cols-2 gap-3">
                  <div>
                     <label className="text-xs text-slate-500 font-bold uppercase">Service</label>
-                    <select className="w-full border rounded-lg px-3 py-2 mt-1" value={newTicket.service} onChange={(e) => setNewTicket({ ...newTicket, service: e.target.value })}>
-                        <option>Réception</option><option>Housekeeping</option><option>F&B</option><option>Maintenance</option>
-                    </select>
+                    <SelectField
+                        className="mt-1"
+                        value={newTicket.service}
+                        options={['Réception', 'Housekeeping', 'F&B', 'Maintenance']}
+                        onChange={(v) => setNewTicket({ ...newTicket, service: v })}
+                    />
                  </div>
                  <div>
                     <label className="text-xs text-slate-500 font-bold uppercase">Priorité</label>
-                    <select className="w-full border rounded-lg px-3 py-2 mt-1" value={newTicket.priorite} onChange={(e) => setNewTicket({ ...newTicket, priorite: e.target.value })}>
-                        <option>Basse</option><option>Moyenne</option><option>Haute</option>
-                    </select>
+                    <SelectField
+                        className="mt-1"
+                        value={newTicket.priorite}
+                        options={['Basse', 'Moyenne', 'Haute']}
+                        onChange={(v) => setNewTicket({ ...newTicket, priorite: v })}
+                    />
                  </div>
             </div>
             
@@ -1745,7 +1757,7 @@ const birthdayMessage = useMemo(() => {
 
             <div className="flex justify-end gap-2 mt-4">
               <Button variant="ghost" onClick={() => { setShowTicketModal(false); setEditTicketIndex(null); }}>Annuler</Button>
-              <Button onClick={createTicket} className="bg-indigo-600 text-white hover:bg-indigo-700">{editTicketIndex !== null ? 'Modifier' : 'Créer'}</Button>
+              <Button onClick={createTicket} className="bg-[var(--brand)] text-white hover:brightness-110">{editTicketIndex !== null ? 'Modifier' : 'Créer'}</Button>
             </div>
           </div>
         </div>
@@ -1771,7 +1783,7 @@ const birthdayMessage = useMemo(() => {
               {/* Header */}
               <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700">
+                  <div className="w-9 h-9 rounded-full bg-[var(--brand-bg)] flex items-center justify-center text-xs font-bold text-[var(--brand)]">
                     {initials(chatConsigne.auteur)}
                   </div>
                   <div className="leading-tight">
@@ -1810,14 +1822,14 @@ const birthdayMessage = useMemo(() => {
                   const isEditing = editingReplyId === r.id;
                   return (
                     <div key={r.id} className={`group/msg flex items-end gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${mine ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${mine ? 'bg-[var(--brand-bg)] text-[var(--brand)]' : 'bg-slate-200 text-slate-600'}`}>
                         {initials(r.auteur)}
                       </div>
                       <div className="max-w-[75%]">
                         <div className={`text-[10px] text-slate-400 mb-0.5 ${mine ? 'text-right mr-1' : 'ml-1'}`}>{r.auteur}</div>
 
                         {isEditing ? (
-                          <div className={`p-2 rounded-2xl shadow-sm ${mine ? 'bg-indigo-600 rounded-br-sm' : 'bg-white border border-slate-200 rounded-bl-sm'}`}>
+                          <div className={`p-2 rounded-2xl shadow-sm ${mine ? 'bg-[var(--brand)] rounded-br-sm' : 'bg-white border border-slate-200 rounded-bl-sm'}`}>
                             <textarea
                               value={editingReplyText}
                               onChange={(e) => setEditingReplyText(e.target.value)}
@@ -1827,32 +1839,32 @@ const birthdayMessage = useMemo(() => {
                               }}
                               autoFocus
                               rows={2}
-                              className={`w-full resize-none outline-none text-sm rounded-lg px-2 py-1 ${mine ? 'bg-indigo-500 text-white placeholder-indigo-200' : 'bg-slate-50 text-slate-800'}`}
+                              className={`w-full resize-none outline-none text-sm rounded-lg px-2 py-1 ${mine ? 'bg-[var(--brand-bg)]0 text-white placeholder-indigo-200' : 'bg-slate-50 text-slate-800'}`}
                             />
                             <div className="flex justify-end gap-2 mt-1">
                               <button
                                 onClick={cancelEditReply}
-                                className={`text-[11px] px-2 py-0.5 rounded ${mine ? 'text-indigo-100 hover:bg-indigo-500' : 'text-slate-500 hover:bg-slate-100'}`}
+                                className={`text-[11px] px-2 py-0.5 rounded ${mine ? 'text-indigo-100 hover:bg-[var(--brand-bg)]0' : 'text-slate-500 hover:bg-slate-100'}`}
                               >
                                 Annuler
                               </button>
                               <button
                                 onClick={saveEditReply}
                                 disabled={editingReplyText.trim() === ''}
-                                className={`text-[11px] px-2 py-0.5 rounded font-medium ${mine ? 'bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50' : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'}`}
+                                className={`text-[11px] px-2 py-0.5 rounded font-medium ${mine ? 'bg-white text-[var(--brand)] hover:bg-[var(--brand-bg)] disabled:opacity-50' : 'bg-[var(--brand)] text-white hover:brightness-110 disabled:opacity-50'}`}
                               >
                                 Enregistrer
                               </button>
                             </div>
                           </div>
                         ) : (
-                          <div className={`relative px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words shadow-sm ${mine ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'}`}>
+                          <div className={`relative px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words shadow-sm ${mine ? 'bg-[var(--brand)] text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'}`}>
                             {r.texte}
                             {mine && (
                               <div className={`absolute top-1/2 -translate-y-1/2 ${mine ? '-left-14' : '-right-14'} flex gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity`}>
                                 <button
                                   onClick={() => startEditReply(r)}
-                                  className="p-1 rounded-full bg-white shadow text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition"
+                                  className="p-1 rounded-full bg-white shadow text-slate-500 hover:text-[var(--brand)] hover:bg-slate-50 transition"
                                   title="Modifier"
                                 >
                                   <Edit2 className="w-3 h-3" />
@@ -1893,12 +1905,12 @@ const birthdayMessage = useMemo(() => {
                       }
                     }}
                     rows={1}
-                    className="flex-1 resize-none bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none max-h-32"
+                    className="flex-1 resize-none bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-[var(--brand)] outline-none max-h-32"
                   />
                   <button
                     onClick={sendReply}
                     disabled={chatInput.trim() === ''}
-                    className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-full w-10 h-10 flex items-center justify-center shadow-md transition shrink-0"
+                    className="bg-[var(--brand)] hover:brightness-110 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-full w-10 h-10 flex items-center justify-center shadow-md transition shrink-0"
                     aria-label="Envoyer"
                   >
                     <Send className="w-4 h-4" />
@@ -1923,7 +1935,7 @@ const birthdayMessage = useMemo(() => {
                 value={newConsigne.texte} 
                 onChange={(e) => setNewConsigne({ ...newConsigne, texte: e.target.value })} 
                 rows={5} 
-                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none text-sm bg-slate-50"
+                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-[var(--brand)] focus:border-[var(--brand)] outline-none resize-none text-sm bg-slate-50"
             />
             
             {/* Sélecteur Utilisateurs */}
@@ -1949,7 +1961,7 @@ const birthdayMessage = useMemo(() => {
                             <label key={u.id_auth} className="flex items-center gap-2 px-2 py-2 hover:bg-slate-50 rounded cursor-pointer text-sm">
                                 <input 
                                     type="checkbox" 
-                                    className="rounded text-indigo-600 focus:ring-indigo-500" 
+                                    className="rounded text-[var(--brand)] focus:ring-[var(--brand)]" 
                                     checked={newConsigne.utilisateurs_ids.includes(u.id_auth)} 
                                     onChange={(e) => {
                                         if (e.target.checked) setNewConsigne({ ...newConsigne, utilisateurs_ids: [...newConsigne.utilisateurs_ids, u.id_auth] });
@@ -1971,7 +1983,7 @@ const birthdayMessage = useMemo(() => {
                         {newConsigne.utilisateurs_ids.map((id) => {
                             const user = users.find((u) => u.id_auth === id);
                             return (
-                                <span key={id} className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full text-[10px] font-bold border border-indigo-100">
+                                <span key={id} className="bg-[var(--brand-bg)] text-[var(--brand)] px-2 py-0.5 rounded-full text-[10px] font-bold border border-[var(--brand)]">
                                     {user?.name || "Inconnu"}
                                 </span>
                             );
@@ -1985,7 +1997,7 @@ const birthdayMessage = useMemo(() => {
                 <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                     <input 
                         type="checkbox" 
-                        className="rounded text-indigo-600 focus:ring-indigo-500"
+                        className="rounded text-[var(--brand)] focus:ring-[var(--brand)]"
                         checked={!!newConsigne.date_fin} 
                         onChange={(e) => setNewConsigne({...newConsigne, date_fin: e.target.checked ? formatDate(selectedDate, 'yyyy-MM-dd') : ''})}
                     />
@@ -2003,7 +2015,7 @@ const birthdayMessage = useMemo(() => {
 
             <div className="flex justify-end gap-2 mt-4 pt-2 border-t border-slate-100">
               <Button variant="ghost" onClick={() => { setShowConsigneModal(false); setEditConsigneIndex(null); }}>Annuler</Button>
-              <Button onClick={createConsigne} className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-md">
+              <Button onClick={createConsigne} className="bg-[var(--brand)] text-white hover:brightness-110 shadow-md">
                   {editConsigneIndex !== null ? 'Modifier' : 'Envoyer'}
               </Button>
             </div>
@@ -2053,7 +2065,7 @@ const birthdayMessage = useMemo(() => {
               </Button>
               <Button 
                 onClick={createObjetTrouve} 
-                className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
+                className="bg-[var(--brand)] text-white hover:brightness-110 shadow-md"
               >
                 {editObjetIndex !== null ? 'Modifier' : 'Créer'}
               </Button>
@@ -2094,7 +2106,7 @@ const birthdayMessage = useMemo(() => {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-7 border border-slate-100">
             <h2 className="text-lg font-extrabold text-slate-800 mb-4">📣 Communiquer une nouveauté</h2>
-            <textarea value={flashMsg} onChange={(e) => setFlashMsg(e.target.value)} rows={4} placeholder="Ton message aux équipes…" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-200 resize-none" />
+            <textarea value={flashMsg} onChange={(e) => setFlashMsg(e.target.value)} rows={4} placeholder="Ton message aux équipes…" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[var(--brand)] resize-none" />
             <div className="mt-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Destinataires</span>

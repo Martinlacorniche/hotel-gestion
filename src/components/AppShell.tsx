@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Menu, X, Home, ChevronDown, Check, LogOut, GripVertical } from 'lucide-react';
+import { Home, ChevronDown, Check, LogOut, GripVertical, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -36,6 +36,14 @@ function basePath(t: ToolDef): string {
   return toolHref(t, '').split('?')[0];
 }
 
+// Icônes d'outils : fond UNIFORME (fini l'arc-en-ciel de pastilles pastel), mais
+// l'icône garde la couleur de son outil (identité/mémoire). L'outil ACTIF passe en
+// teinte de MARQUE (thème de l'utilisateur) → la couleur y signale « vous êtes ici ».
+// Les fonds par-outil (t.bg) ne sont plus utilisés.
+function iconTone(active: boolean, glyph: string): string {
+  return active ? 'bg-[var(--brand-bg)] text-[var(--brand)]' : `bg-slate-100 ${glyph}`;
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, isLoading, logout } = useAuth();
   const pathname = usePathname() || '/';
@@ -44,6 +52,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     'id, nom, has_parking, has_coworking',
   );
   const [open, setOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false); // >=1024px : sidebar dockée (pas d'overlay)
+  const [navQuery, setNavQuery] = useState('');       // recherche d'outil dans la nav dépliée
   const [expanded, setExpanded] = useState<string | null>(null); // hub déplié (accordéon)
   const [flyout, setFlyout] = useState<{ id: string; top: number; left: number } | null>(null); // sous-menu plié
   const [hotelMenu, setHotelMenu] = useState(false);
@@ -78,6 +88,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .then(({ data }) => { if (Array.isArray(data?.nav_order)) setNavOrder(data.nav_order as string[]); });
   }, [navUid]);
 
+  // Desktop (>=1024px) : la sidebar est DÉPLIÉE par défaut et dockée (pousse le
+  // contenu, sans voile). Le choix plié/déplié de l'utilisateur est mémorisé
+  // (localStorage) → « faut pouvoir la replier » et ça reste replié au retour.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => setIsDesktop(mq.matches);
+    sync();
+    let saved: string | null = null;
+    try { saved = localStorage.getItem('nav_open'); } catch { /* privé/SSR */ }
+    setOpen(saved != null ? saved === '1' : mq.matches);
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
   // Pages publiques : rendu direct, sans sidebar.
   if (isPublic) return <>{children}</>;
 
@@ -91,7 +115,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const closeAll = () => { setOpen(false); setExpanded(null); setHotelMenu(false); };
+  // Persiste le choix plié/déplié (bouton burger).
+  const setOpenPersist = (v: boolean) => {
+    setOpen(v);
+    try { localStorage.setItem('nav_open', v ? '1' : '0'); } catch { /* privé */ }
+    if (!v) { setExpanded(null); setHotelMenu(false); setNavQuery(''); }
+  };
+  // Après une navigation : on ferme sous-menus/flyout ; on ne REPLIE la sidebar que
+  // sur mobile (overlay). Sur desktop elle est dockée et reste ouverte.
+  const closeAll = () => {
+    setExpanded(null); setHotelMenu(false); setFlyout(null);
+    if (!isDesktop) setOpen(false);
+  };
 
   const isSuperadmin = user!.role === 'superadmin';
   const isAdmin = isSuperadmin || user!.role === 'admin';
@@ -135,6 +170,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const visibleTools = tools.filter((t) => !TOOL_CHILDREN[t.id] || childrenOf(t.id).length > 0);
   const orderedTools = [...visibleTools].sort((a, b) => rank(a.id) - rank(b.id));
 
+  // Recherche d'outil (nav dépliée) : on aplatit en FEUILLES cliquables (les enfants
+  // d'un hub, sinon l'outil lui-même), dédupliquées, puis filtrées par libellé.
+  const navQ = navQuery.trim().toLowerCase();
+  const seenLeaf = new Set<string>();
+  const leafTools: ToolDef[] = [];
+  for (const t of visibleTools) {
+    const kids = childrenOf(t.id);
+    for (const l of kids.length ? kids : [t]) {
+      if (!seenLeaf.has(l.id)) { seenLeaf.add(l.id); leafTools.push(l); }
+    }
+  }
+  const searchHits = navQ ? leafTools.filter((t) => t.label.toLowerCase().includes(navQ)) : [];
+
   const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
@@ -160,13 +208,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return (
         <Row open={open} href={toolHref(lead, hotelId)} label={lead.label} active={isActive(basePath(lead))} onClick={closeAll}
           trailing={grip}
-          iconEl={withBadge(<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${lead.bg} ${lead.text}`}><lead.icon className="w-5 h-5" /></span>, badgeCount(lead.id))} />
+          iconEl={withBadge(<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${iconTone(isActive(basePath(lead)), lead.text)}`}><lead.icon className="w-5 h-5" /></span>, badgeCount(lead.id))} />
       );
     }
 
     const groupActive = isActive(basePath(t)) || kids.some((c) => isActive(basePath(c)));
     const isExp = expanded === t.id;
-    const iconEl = withBadge(<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${t.bg} ${t.text}`}><t.icon className="w-5 h-5" /></span>, badgeCount(t.id));
+    const iconEl = withBadge(<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${iconTone(groupActive, t.text)}`}><t.icon className="w-5 h-5" /></span>, badgeCount(t.id));
     return (
       <>
         <Row
@@ -186,7 +234,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mt-1 ml-7 pl-3 border-l border-slate-100 space-y-1">
             {kids.map((c) => (
               <Row key={c.id} open compact href={toolHref(c, hotelId)} label={c.label} active={isActive(basePath(c))} onClick={closeAll}
-                iconEl={withBadge(<span className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${c.bg} ${c.text}`}><c.icon className="w-4 h-4" /></span>, badgeCount(c.id))} />
+                iconEl={withBadge(<span className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${iconTone(isActive(basePath(c)), c.text)}`}><c.icon className="w-4 h-4" /></span>, badgeCount(c.id))} />
             ))}
           </div>
         )}
@@ -232,8 +280,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {/* Voile (déplié) */}
-      {open && (
+      {/* Voile — seulement en overlay MOBILE (desktop : sidebar dockée, pas de voile) */}
+      {open && !isDesktop && (
         <div
           className="fixed inset-0 z-40 bg-slate-900/30 backdrop-blur-[1px] animate-in fade-in duration-150"
           onClick={closeAll}
@@ -244,16 +292,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <aside
         className={`fixed left-0 top-0 bottom-0 z-50 bg-white border-r border-slate-200 flex flex-col py-2 shadow-sm overflow-x-hidden transition-[width] duration-200 ease-out ${open ? 'w-72 max-w-[85vw]' : 'w-16'}`}
       >
-        {/* Burger / fermer */}
-        <div className="px-3.5 mb-1">
+        {/* Barre haute : bouton replier/déplier + recherche d'outil (dépliée) sur la même ligne */}
+        <div className="px-3.5 mb-1 flex items-center gap-2">
           <button
-            onClick={() => (open ? closeAll() : setOpen(true))}
-            aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
-            title={open ? 'Fermer' : 'Menu'}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition"
+            onClick={() => setOpenPersist(!open)}
+            aria-label={open ? 'Replier le menu' : 'Déplier le menu'}
+            title={open ? 'Replier' : 'Menu'}
+            className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition"
           >
-            {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {open ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
           </button>
+          {open && (
+            <input
+              type="text"
+              value={navQuery}
+              onChange={(e) => setNavQuery(e.target.value)}
+              placeholder="Rechercher un outil…"
+              aria-label="Rechercher un outil"
+              className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand)] focus:border-[var(--brand)] transition"
+            />
+          )}
         </div>
 
         {/* Contrôle hôtel (morphe : avatar seul ↔ avatar + nom + chevron) */}
@@ -300,7 +358,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Row open={open} href="/" label="Accueil" active={isActive('/')} onClick={closeAll}
             iconEl={<span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center"><Home className="w-5 h-5" /></span>} />
 
-          {open ? (
+          {open && navQ ? (
+            searchHits.length ? (
+              searchHits.map((c) => (
+                <Row key={c.id} open href={toolHref(c, hotelId)} label={c.label} active={isActive(basePath(c))} onClick={closeAll}
+                  iconEl={withBadge(<span className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${iconTone(isActive(basePath(c)), c.text)}`}><c.icon className="w-5 h-5" /></span>, badgeCount(c.id))} />
+              ))
+            ) : (
+              <div className="px-4 py-3 text-sm text-slate-400">Aucun outil « {navQuery} ».</div>
+            )
+          ) : open ? (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={orderedTools.map((t) => t.id)} strategy={verticalListSortingStrategy}>
                 {orderedTools.map((t) => <SortableTool key={t.id} id={t.id}>{renderTool(t)}</SortableTool>)}
@@ -338,7 +405,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {flyoutKids.map((c) => (
               <Link key={c.id} href={toolHref(c, hotelId)} onClick={() => setFlyout(null)}
                 className={`flex items-center gap-2.5 px-2 py-2 rounded-lg text-sm font-medium transition ${isActive(basePath(c)) ? 'bg-slate-100 text-slate-900' : 'text-slate-700 hover:bg-slate-50'}`}>
-                {withBadge(<span className={`w-7 h-7 rounded-md flex items-center justify-center ${c.bg} ${c.text}`}><c.icon className="w-4 h-4" /></span>, badgeCount(c.id))}
+                {withBadge(<span className={`w-7 h-7 rounded-md flex items-center justify-center ${iconTone(isActive(basePath(c)), c.text)}`}><c.icon className="w-4 h-4" /></span>, badgeCount(c.id))}
                 {c.label}
               </Link>
             ))}
@@ -346,8 +413,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </>
       )}
 
-      {/* Contenu décalé de la largeur du rail plié (la sidebar dépliée passe par-dessus) */}
-      <div className="pl-16">{children}</div>
+      {/* Contenu : décalé du rail (pl-16) ; sur desktop déplié, la sidebar est dockée
+          et pousse le contenu (pl-72). Sur mobile déplié, elle passe par-dessus (pl-16 + voile). */}
+      <div className={`transition-[padding] duration-200 ease-out ${open && isDesktop ? 'pl-72' : 'pl-16'}`}>{children}</div>
     </>
   );
 }

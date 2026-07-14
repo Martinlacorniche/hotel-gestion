@@ -107,7 +107,7 @@ export function ConfirmHost() {
               'px-4 py-2 rounded-lg text-sm font-semibold text-white transition shadow-sm ' +
               (danger
                 ? 'bg-red-600 hover:bg-red-700 focus:ring-2 focus:ring-red-400'
-                : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-400')
+                : 'bg-[var(--brand)] hover:brightness-110 focus:ring-2 focus:ring-[var(--brand)]')
             }
           >
             {o.confirmLabel || 'Confirmer'}

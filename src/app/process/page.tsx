@@ -123,7 +123,7 @@ export default function ProcessPage() {
                     <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
                         <BookOpen className="w-6 h-6 text-[var(--brand)]" /> Process
                     </h1>
-                    <button onClick={handleCreate} className="p-2 bg-indigo-50 text-[var(--brand)] rounded-lg hover:bg-indigo-100 transition" title="Nouveau process">
+                    <button onClick={handleCreate} className="p-2 bg-[var(--brand-bg)] text-[var(--brand)] rounded-lg hover:bg-[var(--brand-bg)] transition" title="Nouveau process">
                         <Plus className="w-5 h-5" />
                     </button>
                 </div>
@@ -131,7 +131,7 @@ export default function ProcessPage() {
 
             {/* Recherche */}
             <div className="relative group">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-[var(--brand)] transition-colors" />
                 <input 
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:bg-white outline-none transition-all" 
                     placeholder="Chercher un process..." 
@@ -152,7 +152,7 @@ export default function ProcessPage() {
                     className={`
                         group p-3 rounded-xl cursor-pointer transition-all border border-transparent
                         ${selectedProcess?.id === p.id 
-                            ? 'bg-indigo-50 border-indigo-100 text-indigo-900' 
+                            ? 'bg-[var(--brand-bg)] border-[var(--brand)] text-indigo-900' 
                             : 'hover:bg-slate-50 text-slate-700 hover:border-slate-100'
                         }
                     `}
@@ -160,7 +160,7 @@ export default function ProcessPage() {
                     <div className="flex items-start gap-3">
                         <FileText className={`w-5 h-5 mt-0.5 shrink-0 ${selectedProcess?.id === p.id ? 'text-[var(--brand)]' : 'text-slate-400 group-hover:text-slate-500'}`} />
                         <div className="overflow-hidden">
-                            <h3 className={`font-bold text-sm truncate ${selectedProcess?.id === p.id ? 'text-indigo-700' : 'text-slate-800'}`}>{p.title}</h3>
+                            <h3 className={`font-bold text-sm truncate ${selectedProcess?.id === p.id ? 'text-[var(--brand)]' : 'text-slate-800'}`}>{p.title}</h3>
                             <p className="text-xs text-slate-400 truncate mt-0.5">{p.body.substring(0, 50)}...</p>
                         </div>
                     </div>
@@ -202,7 +202,7 @@ export default function ProcessPage() {
                                   <button onClick={() => { if(selectedProcess) { setIsEditing(false); setForm({title: selectedProcess.title, body: selectedProcess.body}); } else { setSelectedProcess(null); setIsEditing(false); } }} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg transition">
                                       Annuler
                                   </button>
-                                  <button onClick={saveProcess} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white btn-brand hover:bg-indigo-700 rounded-lg shadow-md shadow-slate-300/40 transition transform active:scale-95">
+                                  <button onClick={saveProcess} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white btn-brand hover:brightness-110 rounded-lg shadow-md shadow-slate-300/40 transition transform active:scale-95">
                                       <Save className="w-4 h-4" /> Enregistrer
                                   </button>
                               </>
@@ -211,7 +211,7 @@ export default function ProcessPage() {
                                   <button onClick={deleteProcess} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Supprimer">
                                       <Trash2 className="w-5 h-5" />
                                   </button>
-                                  <button onClick={() => { setForm({ title: selectedProcess!.title, body: selectedProcess!.body }); setIsEditing(true); }} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[var(--brand)] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition">
+                                  <button onClick={() => { setForm({ title: selectedProcess!.title, body: selectedProcess!.body }); setIsEditing(true); }} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[var(--brand)] bg-[var(--brand-bg)] hover:bg-[var(--brand-bg)] rounded-lg transition">
                                       <Edit2 className="w-4 h-4" /> Modifier
                                   </button>
                               </>

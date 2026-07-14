@@ -182,9 +182,9 @@ export default function FidelitePage() {
                <Crown className="w-6 h-6 text-[var(--brand)]" /> Fidélité
             </h1>
             <div className="relative group">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-[var(--brand)] transition-colors" />
                 <input 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:bg-white focus:border-indigo-500 outline-none transition-all" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:bg-white focus:border-[var(--brand)] outline-none transition-all" 
                     placeholder="Rechercher..." 
                     value={search} 
                     onChange={(e) => setSearch(e.target.value)} 
@@ -196,7 +196,7 @@ export default function FidelitePage() {
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
             <button 
                 onClick={() => setShowClientModal(true)}
-                className="w-full flex items-center justify-center gap-2 p-3 mb-2 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-bold hover:border-indigo-300 hover:text-[var(--brand)] hover:bg-indigo-50 transition-all"
+                className="w-full flex items-center justify-center gap-2 p-3 mb-2 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-bold hover:border-[var(--brand)] hover:text-[var(--brand)] hover:bg-[var(--brand-bg)] transition-all"
             >
                 <Plus className="w-4 h-4" /> Nouveau Client
             </button>
@@ -305,8 +305,8 @@ export default function FidelitePage() {
                                         className={`
                                             w-12 h-12 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all duration-200
                                             ${date 
-                                                ? 'border-indigo-600 bg-indigo-50/50 rotate-[-12deg]' 
-                                                : 'border-dashed border-[#D8D0B8] hover:border-indigo-300'
+                                                ? 'border-[var(--brand)] bg-[var(--brand-bg)]/50 rotate-[-12deg]' 
+                                                : 'border-dashed border-[#D8D0B8] hover:border-[var(--brand)]'
                                             }
                                         `}
                                     >
@@ -333,7 +333,7 @@ export default function FidelitePage() {
                                         <div className="text-4xl mb-2">🎁</div>
                                         <h3 className="text-xl font-extrabold text-slate-800 mb-1">Félicitations !</h3>
                                         <p className="text-slate-500 text-sm mb-4">Le prochain passage est offert.</p>
-                                        <button onClick={resetCarte} className="btn-brand hover:bg-indigo-700 text-white px-6 py-2 rounded-full font-bold shadow-lg transition">
+                                        <button onClick={resetCarte} className="btn-brand hover:brightness-110 text-white px-6 py-2 rounded-full font-bold shadow-lg transition">
                                             Utiliser le cadeau
                                         </button>
                                     </div>
@@ -363,7 +363,7 @@ export default function FidelitePage() {
                                         setAbonnement(null); setAboEdit(false);
                                     }
                                 }} />
-                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:btn-brand"></div>
+                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[var(--brand)] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:btn-brand"></div>
                              </label>
                          </div>
 
@@ -401,7 +401,7 @@ export default function FidelitePage() {
                                          <div><label className="text-xs font-bold text-slate-500 uppercase">Note</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm bg-white resize-none" rows={2} value={abonnement.commentaire || ''} onChange={(e) => setAbonnement({ ...abonnement, commentaire: e.target.value })} /></div>
                                          <div className="flex gap-2 justify-end">
                                              <button onClick={() => { selectClient(selectedClient); /* Reset */ }} className="px-4 py-2 rounded-lg text-slate-500 font-bold hover:bg-white transition text-sm">Annuler</button>
-                                             <button onClick={saveAbonnement} disabled={savingAbo} className="px-4 py-2 rounded-lg btn-brand text-white font-bold hover:bg-indigo-700 transition text-sm shadow-md">{savingAbo ? '...' : 'Enregistrer'}</button>
+                                             <button onClick={saveAbonnement} disabled={savingAbo} className="px-4 py-2 rounded-lg btn-brand text-white font-bold hover:brightness-110 transition text-sm shadow-md">{savingAbo ? '...' : 'Enregistrer'}</button>
                                          </div>
                                      </div>
                                  )}
@@ -443,7 +443,7 @@ export default function FidelitePage() {
                                                     <span className="text-xs font-bold text-slate-400">{c.total_passages} passages</span>
                                                 </div>
                                                 <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${percent}%` }}></div>
+                                                    <div className="h-full bg-[var(--brand-bg)]0 rounded-full" style={{ width: `${percent}%` }}></div>
                                                 </div>
                                             </div>
                                         </div>
@@ -523,7 +523,7 @@ export default function FidelitePage() {
 
             <div className="flex justify-end gap-3 pt-2">
               <button className="px-5 py-3 rounded-xl text-slate-500 font-bold hover:bg-slate-50 transition" onClick={() => { setShowClientModal(false); setEditMode(false); }}>Annuler</button>
-              <button className="px-5 py-3 rounded-xl btn-brand text-white font-bold shadow-lg hover:bg-indigo-700 transition"
+              <button className="px-5 py-3 rounded-xl btn-brand text-white font-bold shadow-lg hover:brightness-110 transition"
                 onClick={async () => {
                   if (editMode && selectedClient) {
                     const { data, error } = await supabase.from('clients').update(newClient).eq('id', selectedClient.id).select().single();

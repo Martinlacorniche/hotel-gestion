@@ -30,7 +30,7 @@ node --env-file=.env.mews-demo scripts/mews-certif/sweep-read.mjs
 | `reservations/getAll` | OK | 100 | Id, ServiceId, GroupId, Number, ChannelNumber, ChannelManagerNumber, ChannelManagerGroupNumber, ChannelManager |
 | `reservationGroups/getAll` | OK | 20 | Id, Name, ChannelManager, ChannelManagerGroupNumber, EnterpriseId |
 | `customers/getAll` | OK | 50 | Id, ChainId, Number, Title, Sex, Gender, FirstName, LastName |
-| `customers/search` | OK | 2080 | Customer, Reservation, Id, FirstName, LastName, RoomNumber, ResourceName |
+| `customers/search` | OK | 2071 | Customer, Reservation, Id, FirstName, LastName, RoomNumber, ResourceName |
 | `cancellationPolicies/getAll` | KO (400) | — | Invalid ServiceIds. |
 | `ageCategories/getAll` | OK | 6 | Id, ServiceId, MinimalAge, MaximalAge, Names, ShortNames, CreatedUtc, UpdatedUtc |
 

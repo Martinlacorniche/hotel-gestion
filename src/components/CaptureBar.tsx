@@ -177,7 +177,7 @@ function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-11 rounded-md border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      className="h-11 rounded-md border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
     >
       {options.map((o) => (
         <option key={o} value={o}>
@@ -211,7 +211,7 @@ function ProposalFields({ p, patch }: { p: CaptureProposal; patch: PatchFn }) {
             value={p.consigne.texte}
             onChange={(e) => patch('consigne', { texte: e.target.value })}
             rows={3}
-            className="w-full resize-none rounded-md border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full resize-none rounded-md border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
           />
         </Field>
         <Field label="Date de fin (optionnel)">
@@ -720,7 +720,7 @@ export default function CaptureBar() {
         onClick={() => setOpen(true)}
         aria-label="Capture rapide (Ctrl+K)"
         title="Capture rapide (Ctrl+K)"
-        className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg transition hover:bg-indigo-700 active:scale-95"
+        className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand)] text-white shadow-lg transition hover:brightness-110 active:scale-95"
       >
         <Sparkles className="h-6 w-6" />
       </button>
@@ -731,7 +731,7 @@ export default function CaptureBar() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-indigo-600" />
+                  <Sparkles className="h-5 w-5 text-[var(--brand)]" />
                   Capture rapide
                 </DialogTitle>
                 <DialogDescription>
@@ -761,7 +761,7 @@ export default function CaptureBar() {
                 rows={3}
                 maxLength={500}
                 placeholder="Ex : taxi 12 demain 9h aéroport — ou colle/photographie une image"
-                className="w-full resize-none rounded-md border border-gray-300 p-3 text-base focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full resize-none rounded-md border border-gray-300 p-3 text-base focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
               />
               <div className="flex items-center gap-3">
                 <button
@@ -847,7 +847,7 @@ export default function CaptureBar() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700">
+                        <span className="rounded-full bg-[var(--brand-bg)] px-3 py-1 text-sm font-medium text-[var(--brand)]">
                           {TYPE_LABELS[it.p.type] ?? it.p.type}
                         </span>
                         <p className="mt-2 text-sm text-gray-600">{it.p.resume}</p>
@@ -910,7 +910,7 @@ export default function CaptureBar() {
                                 : prev,
                             )
                           }
-                          className="h-11 rounded-md border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="h-11 rounded-md border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
                         >
                           {!it.hotelId && <option value="">— Choisir —</option>}
                           {hotels.map((h) => (

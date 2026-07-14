@@ -168,14 +168,14 @@ export default function TrousseauPage() {
                     <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
                         <Key className="w-6 h-6 text-[var(--brand)]" /> Identifiants
                     </h1>
-                    <button onClick={handleCreate} className="p-2 bg-indigo-50 text-[var(--brand)] rounded-lg hover:bg-indigo-100 transition" title="Nouvelle clé">
+                    <button onClick={handleCreate} className="p-2 bg-[var(--brand-bg)] text-[var(--brand)] rounded-lg hover:bg-[var(--brand-bg)] transition" title="Nouvelle clé">
                         <Plus className="w-5 h-5" />
                     </button>
                 </div>
             </div>
 
             <div className="relative group">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 group-focus-within:text-[var(--brand)] transition-colors" />
                 <input 
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:bg-white outline-none transition-all" 
                     placeholder="Rechercher un outil..." 
@@ -201,7 +201,7 @@ export default function TrousseauPage() {
                         }
                     `}
                 >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${selectedEntry?.id === entry.id ? 'bg-white/20 text-white' : 'bg-indigo-50 text-[var(--brand)]'}`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${selectedEntry?.id === entry.id ? 'bg-white/20 text-white' : 'bg-[var(--brand-bg)] text-[var(--brand)]'}`}>
                         {entry.outil.substring(0, 2).toUpperCase()}
                     </div>
                     <div className="overflow-hidden">
@@ -224,7 +224,7 @@ export default function TrousseauPage() {
                   {/* Header Card */}
                   <div className="bg-slate-900 p-6 flex justify-between items-start relative overflow-hidden">
                       {/* Background Pattern */}
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500 rounded-full blur-3xl opacity-20 -mr-10 -mt-10"></div>
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--brand-bg)]0 rounded-full blur-3xl opacity-20 -mr-10 -mt-10"></div>
                       
                       <div className="flex items-center gap-4 relative z-10">
                           <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-2xl font-bold text-white border border-white/10 shadow-inner">
@@ -262,7 +262,7 @@ export default function TrousseauPage() {
                               </div>
                               <button 
                                   onClick={() => copyToClipboard(selectedEntry.identifiant, 'id')} 
-                                  className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === 'id' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-[var(--brand)]'}`}
+                                  className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === 'id' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-slate-200 text-slate-600 hover:border-[var(--brand)] hover:text-[var(--brand)]'}`}
                               >
                                   {copiedField === 'id' ? <Check className="w-4 h-4"/> : <Copy className="w-4 h-4"/>}
                                   {copiedField === 'id' ? 'Copié' : 'Copier'}
@@ -282,7 +282,7 @@ export default function TrousseauPage() {
                               </div>
                               <button 
                                   onClick={() => copyToClipboard(selectedEntry.mot_de_passe, 'pwd')} 
-                                  className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === 'pwd' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-[var(--brand)]'}`}
+                                  className={`px-4 rounded-xl font-bold text-sm transition-all border flex items-center justify-center gap-2 w-24 ${copiedField === 'pwd' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-slate-200 text-slate-600 hover:border-[var(--brand)] hover:text-[var(--brand)]'}`}
                               >
                                   {copiedField === 'pwd' ? <Check className="w-4 h-4"/> : <Copy className="w-4 h-4"/>}
                                   {copiedField === 'pwd' ? 'Copié' : 'Copier'}
@@ -330,7 +330,7 @@ export default function TrousseauPage() {
 
             <div className="flex justify-end gap-3 pt-2">
               <button className="px-5 py-3 rounded-xl text-slate-500 font-bold hover:bg-slate-50 transition" onClick={() => setShowModal(false)}>Annuler</button>
-              <button className="px-5 py-3 rounded-xl btn-brand text-white font-bold shadow-lg hover:bg-indigo-700 transition" onClick={createOrUpdateEntry}>
+              <button className="px-5 py-3 rounded-xl btn-brand text-white font-bold shadow-lg hover:brightness-110 transition" onClick={createOrUpdateEntry}>
                 {editingId ? 'Enregistrer' : 'Créer'}
               </button>
             </div>

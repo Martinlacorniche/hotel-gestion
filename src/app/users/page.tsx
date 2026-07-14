@@ -77,7 +77,7 @@ const ROLE_LABEL: Record<AppRole, string> = {
 
 const ROLE_BADGE: Record<AppRole, string> = {
   superadmin: "bg-violet-50 text-violet-700 ring-violet-200",
-  admin: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+  admin: "bg-[var(--brand-bg)] text-[var(--brand)] ring-[var(--brand)]",
   user: "bg-slate-100 text-slate-600 ring-slate-200",
 };
 
@@ -358,7 +358,7 @@ export default function UsersPage() {
           icon={UsersIcon}
           title="Utilisateurs"
           subtitle="Gérez les accès et les rôles de votre équipe"
-          iconClassName="bg-indigo-50 text-indigo-700"
+          iconClassName="bg-[var(--brand-bg)] text-[var(--brand)]"
           actions={
             <Button
               onClick={() => setInviteOpen(true)}
@@ -372,7 +372,7 @@ export default function UsersPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <StatCard icon={UsersIcon} iconBg="bg-slate-100" iconColor="text-slate-600" label="Total" value={stats.total} />
           <StatCard icon={UserCheck} iconBg="bg-emerald-100" iconColor="text-emerald-600" label="Actifs" value={stats.active} />
-          <StatCard icon={ShieldCheck} iconBg="bg-indigo-100" iconColor="text-[var(--brand)]" label="Admins" value={stats.admins} />
+          <StatCard icon={ShieldCheck} iconBg="bg-[var(--brand-bg)]" iconColor="text-[var(--brand)]" label="Admins" value={stats.admins} />
           <StatCard icon={UserX} iconBg="bg-rose-100" iconColor="text-rose-600" label="Désactivés" value={stats.inactive} />
         </div>
 
@@ -638,7 +638,7 @@ export default function UsersPage() {
           </div>
           <div className="flex justify-end gap-2 mt-6">
             <Button variant="ghost" onClick={() => setEditTarget(null)} disabled={editingProfile}>Annuler</Button>
-            <Button onClick={doEditProfile} disabled={editingProfile} className="btn-brand hover:bg-indigo-700 text-white">
+            <Button onClick={doEditProfile} disabled={editingProfile} className="btn-brand hover:brightness-110 text-white">
               {editingProfile ? <><Loader2 size={14} className="animate-spin mr-2" /> Enregistrement…</> : "Enregistrer"}
             </Button>
           </div>
@@ -690,7 +690,7 @@ export default function UsersPage() {
             </Field>
             <div className="flex justify-end gap-2">
               {editingContratId && <Button variant="ghost" onClick={resetContratForm}>Annuler</Button>}
-              <Button onClick={saveContrat} disabled={savingContrat} className="btn-brand hover:bg-indigo-700 text-white">
+              <Button onClick={saveContrat} disabled={savingContrat} className="btn-brand hover:brightness-110 text-white">
                 {savingContrat ? <><Loader2 size={14} className="animate-spin mr-2" />…</> : (editingContratId ? "Mettre à jour" : <><Plus size={14} className="mr-2" /> Ajouter</>)}
               </Button>
             </div>

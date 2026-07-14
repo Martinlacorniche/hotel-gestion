@@ -8,7 +8,7 @@ export function PageHeader({
   icon: Icon,
   title,
   subtitle,
-  iconClassName = 'bg-indigo-50 text-[var(--brand)]',
+  iconClassName = 'bg-[var(--brand-bg)] text-[var(--brand)]',
   actions,
   className = '',
 }: {

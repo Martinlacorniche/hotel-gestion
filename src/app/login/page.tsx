@@ -53,7 +53,7 @@ export default function LoginPage() {
 
         <button
           onClick={handleLogin}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-md font-semibold"
+          className="w-full bg-[var(--brand)] hover:brightness-110 text-white py-2 rounded-md font-semibold"
         >
           Se connecter
         </button>

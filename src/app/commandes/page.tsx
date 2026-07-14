@@ -167,15 +167,15 @@ export default function PageCommandes() {
             </h1>
             
             {/* Formulaire Ajout */}
-            <div className="bg-indigo-50 rounded-2xl p-4 space-y-3 border border-indigo-100">
+            <div className="bg-[var(--brand-bg)] rounded-2xl p-4 space-y-3 border border-[var(--brand)]">
                 <h3 className="text-sm font-bold text-indigo-900 flex items-center gap-2">
                     <Plus className="w-4 h-4" /> Ajouter un besoin
                 </h3>
                 
                 <div>
-                    <label className="text-[10px] font-bold text-indigo-400 uppercase">Fournisseur</label>
+                    <label className="text-[10px] font-bold text-[var(--brand)] uppercase">Fournisseur</label>
                     <input 
-                        className="w-full mt-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[var(--brand)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
                         placeholder="Ex: Metro, Amazon..."
                         value={quickAdd.fournisseur}
                         onChange={e => setQuickAdd({...quickAdd, fournisseur: e.target.value})}
@@ -183,9 +183,9 @@ export default function PageCommandes() {
                 </div>
 
                 <div>
-                    <label className="text-[10px] font-bold text-indigo-400 uppercase">Produit</label>
+                    <label className="text-[10px] font-bold text-[var(--brand)] uppercase">Produit</label>
                     <input 
-                        className="w-full mt-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[var(--brand)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
                         placeholder="Ex: 500g Café grains"
                         value={quickAdd.produit}
                         onChange={e => setQuickAdd({...quickAdd, produit: e.target.value})}
@@ -194,9 +194,9 @@ export default function PageCommandes() {
                 </div>
 
                 <div>
-                    <label className="text-[10px] font-bold text-indigo-400 uppercase">Note (Optionnel)</label>
+                    <label className="text-[10px] font-bold text-[var(--brand)] uppercase">Note (Optionnel)</label>
                     <input 
-                        className="w-full mt-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[var(--brand)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
                         placeholder="Réf, quantité..."
                         value={quickAdd.commentaire}
                         onChange={e => setQuickAdd({...quickAdd, commentaire: e.target.value})}
@@ -205,14 +205,14 @@ export default function PageCommandes() {
                 </div>
 
                 <label className="flex items-center gap-2 cursor-pointer group">
-                    <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors ${quickAdd.urgence ? 'bg-red-500 border-red-500' : 'bg-white border-indigo-200'}`}>
+                    <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors ${quickAdd.urgence ? 'bg-red-500 border-red-500' : 'bg-white border-[var(--brand)]'}`}>
                         {quickAdd.urgence && <CheckCircle className="w-3 h-3 text-white" />}
                     </div>
                     <input type="checkbox" className="hidden" checked={quickAdd.urgence} onChange={e => setQuickAdd({...quickAdd, urgence: e.target.checked})} />
                     <span className={`text-xs font-bold ${quickAdd.urgence ? 'text-red-500' : 'text-slate-500'}`}>Marquer comme Urgent</span>
                 </label>
 
-                <Button onClick={handleAddNeed} className="w-full btn-brand hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md shadow-slate-300/40 transition-all active:scale-95">
+                <Button onClick={handleAddNeed} className="w-full btn-brand hover:brightness-110 text-white rounded-xl font-bold shadow-md shadow-slate-300/40 transition-all active:scale-95">
                     Ajouter à la liste
                 </Button>
             </div>
@@ -371,7 +371,7 @@ function CommandeCard({ cmd, lignes, onDeleteLigne, onDeleteCmd, onNextStep, nex
             {/* Footer Actions */}
             {!isDone && onNextStep && (
                 <div className="pt-3 border-t border-slate-100 flex justify-end">
-                    <button onClick={onNextStep} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-transform active:scale-95 ${color === 'blue' ? 'btn-brand hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                    <button onClick={onNextStep} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-transform active:scale-95 ${color === 'blue' ? 'btn-brand hover:brightness-110' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
                         {nextLabel} <ChevronRight className="w-3 h-3"/>
                     </button>
                 </div>

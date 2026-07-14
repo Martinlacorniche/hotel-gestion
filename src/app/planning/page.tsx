@@ -31,7 +31,7 @@ const SERVICE_ROWS = [
 const SHIFT_OPTIONS = [
   // RECEPTION (Bleu / Indigo) — fond doux + texte foncé (lisible, sans ombre)
   { label: "Réception matin", value: "Réception matin", color: "bg-sky-200 text-sky-900" },
-  { label: "Réception soir", value: "Réception soir", color: "bg-indigo-200 text-indigo-900" },
+  { label: "Réception soir", value: "Réception soir", color: "bg-[var(--brand-bg)] text-indigo-900" },
   { label: "Night", value: "Night", color: "bg-slate-600 text-white" },
 
   // HOUSEKEEPING (Vert / Teal)
@@ -1070,7 +1070,7 @@ export default function PlanningPage() {
                                   })()}
                                   {/* BOUTON DUPLIQUER CORRIGÉ ICI (Icône Copy) */}
                                   {isAdmin && (
-                                    <button onClick={() => openDuplicationModal(row)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Dupliquer la semaine">
+                                    <button onClick={() => openDuplicationModal(row)} className="text-slate-400 hover:text-[var(--brand)] transition-colors" title="Dupliquer la semaine">
                                         <Copy className="w-3.5 h-3.5"/>
                                     </button>
                                   )}
@@ -1213,7 +1213,7 @@ export default function PlanningPage() {
            <div className="flex items-center bg-slate-100 p-1 rounded-full shadow-inner">
               <button onClick={goToPreviousWeek} className="p-2 hover:bg-white rounded-full text-slate-500 hover:text-slate-800 transition shadow-sm"><ChevronLeft className="w-5 h-5"/></button>
               <div className="relative">
-                <button ref={datepickerButtonRef} onClick={() => setIsDatePickerOpen(!isDatePickerOpen)} className="px-6 py-2 text-sm font-bold text-slate-700 hover:text-indigo-600 transition flex items-center gap-2">
+                <button ref={datepickerButtonRef} onClick={() => setIsDatePickerOpen(!isDatePickerOpen)} className="px-6 py-2 text-sm font-bold text-slate-700 hover:text-[var(--brand)] transition flex items-center gap-2">
                    <CalendarIcon className="w-4 h-4 text-slate-400"/>
                    {format(currentWeekStart, 'dd MMMM', { locale: fr })} - {format(addDays(currentWeekStart, 6), 'dd MMMM', { locale: fr })}
                 </button>
@@ -1265,7 +1265,7 @@ export default function PlanningPage() {
                   </button>
 
                   <div className="relative">
-                    <button onClick={() => setShowServiceFilter(!showServiceFilter)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition ${hiddenServices.size > 0 ? 'bg-[var(--brand-bg)] text-[var(--brand)] ring-1 ring-indigo-100' : 'hover:bg-white hover:text-slate-700 text-slate-500'}`}>
+                    <button onClick={() => setShowServiceFilter(!showServiceFilter)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition ${hiddenServices.size > 0 ? 'bg-[var(--brand-bg)] text-[var(--brand)] ring-1 ring-[var(--brand)]' : 'hover:bg-white hover:text-slate-700 text-slate-500'}`}>
                         <Filter className="w-4 h-4"/> Services
                         {hiddenServices.size > 0 && <span className="text-[10px] font-bold bg-white/70 px-1.5 py-0.5 rounded-full">{SERVICE_ROWS.length - hiddenServices.size}/{SERVICE_ROWS.length}</span>}
                         <ArrowDown className="w-3 h-3 opacity-50"/>
@@ -1285,14 +1285,14 @@ export default function PlanningPage() {
                             );
                           })}
                           {hiddenServices.size > 0 && (
-                            <button onClick={() => SERVICE_ROWS.forEach(s => hiddenServices.has(s.id) && toggleServiceVisibility(s.id))} className="w-full text-center text-xs font-semibold text-[var(--brand)] hover:bg-indigo-50 rounded-lg py-2 mt-1">Tout afficher</button>
+                            <button onClick={() => SERVICE_ROWS.forEach(s => hiddenServices.has(s.id) && toggleServiceVisibility(s.id))} className="w-full text-center text-xs font-semibold text-[var(--brand)] hover:bg-[var(--brand-bg)] rounded-lg py-2 mt-1">Tout afficher</button>
                           )}
                         </div>
                       </>
                     )}
                   </div>
-                  <button onClick={() => router.push('/users')} className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-[var(--brand)] hover:bg-indigo-50 rounded-lg text-sm font-semibold transition" title="Gérer l'équipe : contrats, profils, rôles"><User className="w-4 h-4"/> Équipe</button>
-                  <button onClick={exportPDF} className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg text-sm font-semibold transition" title="Exporter le PDF (récap mois + éléments de paie)"><Printer className="w-4 h-4"/> Imprimer</button>
+                  <button onClick={() => router.push('/users')} className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-[var(--brand)] hover:bg-[var(--brand-bg)] rounded-lg text-sm font-semibold transition" title="Gérer l'équipe : contrats, profils, rôles"><User className="w-4 h-4"/> Équipe</button>
+                  <button onClick={exportPDF} className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-[var(--brand)] hover:bg-[var(--brand-bg)] rounded-lg text-sm font-semibold transition" title="Exporter le PDF (récap mois + éléments de paie)"><Printer className="w-4 h-4"/> Imprimer</button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1342,7 +1342,7 @@ export default function PlanningPage() {
                   </div>
                 )}
                 {surveillance.alerts.filter(a => a.type === 'prevenance').map((a, i) => (
-                  <div key={`p${i}`} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700">
+                  <div key={`p${i}`} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-[var(--brand-bg)] text-[var(--brand)]">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {a.label}
                   </div>
                 ))}
@@ -1412,11 +1412,11 @@ export default function PlanningPage() {
                   <div className="grid grid-cols-2 gap-4">
                      <div>
                         <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Du</label>
-                        <input type="date" className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" value={publishFrom} onChange={e => setPublishFrom(e.target.value)} />
+                        <input type="date" className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--brand)]" value={publishFrom} onChange={e => setPublishFrom(e.target.value)} />
                      </div>
                      <div>
                         <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Au</label>
-                        <input type="date" className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" value={publishUntil} onChange={e => setPublishUntil(e.target.value)} />
+                        <input type="date" className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--brand)]" value={publishUntil} onChange={e => setPublishUntil(e.target.value)} />
                      </div>
                   </div>
                   <p className="text-xs text-slate-500 text-center mt-2">Si vide = tout publier pour les sélectionnés.</p>
@@ -1426,7 +1426,7 @@ export default function PlanningPage() {
                   <div className="flex justify-between items-center mb-2">
                      <span className="text-sm font-bold text-slate-700">Salariés concernés</span>
                      <div className="flex gap-2">
-                        <button className="text-xs text-indigo-600 font-semibold hover:underline" onClick={() => setPublishSelectedUserIds(users.map(u => u.id_auth))}>Tous</button>
+                        <button className="text-xs text-[var(--brand)] font-semibold hover:underline" onClick={() => setPublishSelectedUserIds(users.map(u => u.id_auth))}>Tous</button>
                         <button className="text-xs text-slate-400 hover:text-slate-600" onClick={() => setPublishSelectedUserIds([])}>Aucun</button>
                      </div>
                   </div>
@@ -1444,7 +1444,7 @@ export default function PlanningPage() {
   .sort((a,b) => (a.name||'').localeCompare(b.name||''))
   .map(u => (
     <label key={u.id_auth} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg cursor-pointer transition">
-      <input type="checkbox" className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300" checked={publishSelectedUserIds.includes(u.id_auth)} onChange={e => setPublishSelectedUserIds(prev => e.target.checked ? [...prev, u.id_auth] : prev.filter(id => id !== u.id_auth))} />
+      <input type="checkbox" className="rounded text-[var(--brand)] focus:ring-[var(--brand)] border-gray-300" checked={publishSelectedUserIds.includes(u.id_auth)} onChange={e => setPublishSelectedUserIds(prev => e.target.checked ? [...prev, u.id_auth] : prev.filter(id => id !== u.id_auth))} />
       <span className="text-sm text-slate-700 font-medium">{(u as any).emoji ? `${(u as any).emoji} ` : ''}{u.name || u.email}</span>
     </label>
   ))
@@ -1453,7 +1453,7 @@ export default function PlanningPage() {
                </div>
                <div className="flex justify-end gap-3">
                   <button onClick={() => setShowPublishModal(false)} className="px-5 py-2.5 rounded-xl text-slate-500 font-bold hover:bg-slate-50 transition">Annuler</button>
-                  <button onClick={() => { handlePublish(); setShowPublishModal(false); }} disabled={publishSelectedUserIds.length === 0} className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition disabled:opacity-50">Publier</button>
+                  <button onClick={() => { handlePublish(); setShowPublishModal(false); }} disabled={publishSelectedUserIds.length === 0} className="px-5 py-2.5 rounded-xl bg-[var(--brand)] text-white font-bold shadow-lg shadow-indigo-200 hover:brightness-110 transition disabled:opacity-50">Publier</button>
                </div>
             </div>
          </div>
@@ -1467,7 +1467,7 @@ export default function PlanningPage() {
                
                <div>
                   <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Type de shift</label>
-                  <select className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 transition" value={shiftInput} onChange={(e) => setShiftInput(e.target.value)}>
+                  <select className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--brand)] transition" value={shiftInput} onChange={(e) => setShiftInput(e.target.value)}>
                      <option value="">- Sélectionner -</option>
                      {SHIFT_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
@@ -1476,13 +1476,13 @@ export default function PlanningPage() {
                <div className="grid grid-cols-2 gap-4">
                   <div>
                      <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Début</label>
-                     <select value={startTime} onChange={e => setStartTime(e.target.value)} className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500">
+                     <select value={startTime} onChange={e => setStartTime(e.target.value)} className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--brand)]">
                         {[...Array(24).keys()].flatMap(h => quarterHours.map(m => `${String(h).padStart(2,'0')}:${m}`)).map(t => <option key={t} value={t}>{t}</option>)}
                      </select>
                   </div>
                   <div>
                      <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Fin</label>
-                     <select value={endTime} onChange={e => setEndTime(e.target.value)} className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500">
+                     <select value={endTime} onChange={e => setEndTime(e.target.value)} className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--brand)]">
                         {[...Array(24).keys()].flatMap(h => quarterHours.map(m => `${String(h).padStart(2,'0')}:${m}`)).map(t => <option key={t} value={t}>{t}</option>)}
                      </select>
                   </div>
@@ -1490,7 +1490,7 @@ export default function PlanningPage() {
 
                <div className="flex flex-col gap-3 bg-slate-50 p-3 rounded-xl">
                   <label className="flex items-center gap-3 cursor-pointer">
-                     <input type="checkbox" className="rounded text-indigo-600 w-4 h-4" checked={useAsDefault} onChange={(e) => setUseAsDefault(e.target.checked)} />
+                     <input type="checkbox" className="rounded text-[var(--brand)] w-4 h-4" checked={useAsDefault} onChange={(e) => setUseAsDefault(e.target.checked)} />
                      <span className="text-sm text-slate-600 font-medium">Sauvegarder comme horaires par défaut</span>
                   </label>
                   <label className="flex items-center gap-3 cursor-pointer">
@@ -1503,7 +1503,7 @@ export default function PlanningPage() {
 
                <div className="flex justify-end gap-3 pt-2">
                   <button className="px-5 py-2.5 rounded-xl text-slate-500 font-bold hover:bg-slate-50 transition" onClick={() => { setShowShiftModal(false); setEditingCell(null); }}>Annuler</button>
-                  <button className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition" onClick={saveShift}>Enregistrer</button>
+                  <button className="px-5 py-2.5 rounded-xl bg-[var(--brand)] text-white font-bold shadow-lg shadow-indigo-200 hover:brightness-110 transition" onClick={saveShift}>Enregistrer</button>
                </div>
             </div>
          </div>
@@ -1514,7 +1514,7 @@ export default function PlanningPage() {
          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md border border-slate-100">
                <h2 className="text-lg font-extrabold text-slate-800 mb-4 flex items-center gap-2">
-                   <Copy className="w-5 h-5 text-indigo-500"/> Dupliquer
+                   <Copy className="w-5 h-5 text-[var(--brand)]"/> Dupliquer
                </h2>
                
                <div className="space-y-4">
@@ -1533,7 +1533,7 @@ export default function PlanningPage() {
                            <label key={u.id_auth} className="flex items-center gap-2 p-2 hover:bg-white rounded-lg cursor-pointer transition-colors">
                               <input 
                                 type="checkbox" 
-                                className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300" 
+                                className="rounded text-[var(--brand)] focus:ring-[var(--brand)] border-gray-300" 
                                 checked={duplicationTargetIds.includes(u.id_auth)} 
                                 onChange={e => e.target.checked ? setDuplicationTargetIds([...duplicationTargetIds, u.id_auth]) : setDuplicationTargetIds(duplicationTargetIds.filter(id => id !== u.id_auth))} 
                               />
@@ -1559,7 +1559,7 @@ export default function PlanningPage() {
                
                <div className="flex justify-end gap-3 mt-6">
                   <button onClick={closeDuplicationModal} className="px-4 py-2 rounded-xl text-slate-500 font-bold hover:bg-slate-50 text-sm">Annuler</button>
-                  <button onClick={handleDuplicateMultiWeeks} className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 text-sm transition-transform hover:-translate-y-0.5">Dupliquer</button>
+                  <button onClick={handleDuplicateMultiWeeks} className="px-4 py-2 rounded-xl bg-[var(--brand)] text-white font-bold shadow hover:brightness-110 text-sm transition-transform hover:-translate-y-0.5">Dupliquer</button>
                </div>
             </div>
          </div>

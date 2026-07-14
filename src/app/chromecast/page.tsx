@@ -245,7 +245,7 @@ function AddRoomModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
         {/* Scan */}
         {scanning ? (
           <div className="flex flex-col items-center justify-center gap-3 py-8">
-            <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
+            <Loader2 className="w-7 h-7 animate-spin text-[var(--brand)]" />
             <p className="text-sm text-slate-500">Scan en cours (~15s)…</p>
           </div>
         ) : (
@@ -257,7 +257,7 @@ function AddRoomModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
                   <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
                     Appareils disponibles ({unknownDevices.length})
                   </p>
-                  <button onClick={scan} className="text-xs text-indigo-500 hover:underline flex items-center gap-1">
+                  <button onClick={scan} className="text-xs text-[var(--brand)] hover:underline flex items-center gap-1">
                     <RefreshCw className="w-3 h-3" /> Rescanner
                   </button>
                 </div>
@@ -270,7 +270,7 @@ function AddRoomModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
                         key={d.ip}
                         onClick={() => { setSelectedIp(d.ip); setCustomIp(''); }}
                         className={`w-full text-left px-3 py-2 rounded-lg text-sm font-mono flex items-center gap-2 transition-colors ${
-                          selectedIp === d.ip ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-slate-50 hover:bg-slate-100 text-slate-700'
+                          selectedIp === d.ip ? 'bg-[var(--brand-bg)] text-[var(--brand)] border border-[var(--brand)]' : 'bg-slate-50 hover:bg-slate-100 text-slate-700'
                         }`}
                       >
                         <Signal className="w-3 h-3 shrink-0" />
@@ -292,7 +292,7 @@ function AddRoomModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
                 placeholder="192.168.0.XXX"
                 value={customIp}
                 onChange={(e) => { setCustomIp(e.target.value); setSelectedIp(''); }}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
               />
             </div>
 
@@ -306,7 +306,7 @@ function AddRoomModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
                 placeholder="Ex: 12"
                 value={roomNumber}
                 onChange={(e) => setRoomNumber(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
               />
             </div>
 
@@ -315,7 +315,7 @@ function AddRoomModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
             <Button
               onClick={handleAdd}
               disabled={saving || !effectiveIp || !roomNumber}
-              className="w-full btn-brand hover:bg-indigo-700 text-white"
+              className="w-full btn-brand hover:brightness-110 text-white"
             >
               {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Ajout en cours…</> : 'Ajouter la chambre'}
             </Button>
@@ -434,7 +434,7 @@ export default function ChromecastDashboard() {
               <Button
                 onClick={() => setShowAddModal(true)}
                 size="sm"
-                className="btn-brand hover:bg-indigo-700 text-white flex items-center gap-1"
+                className="btn-brand hover:brightness-110 text-white flex items-center gap-1"
               >
                 <Plus className="w-4 h-4" /> Ajouter
               </Button>
