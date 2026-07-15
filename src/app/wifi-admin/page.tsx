@@ -187,7 +187,7 @@ function WifiAdminContent() {
     <HotelCtx.Provider value={hotelId}>
       <div className="min-h-screen">
         <ThemedBackground />
-        <div className="max-w-2xl mx-auto px-4 py-8">
+        <div className="max-w-5xl mx-auto px-4 py-8">
           <PageHeader
             icon={Wifi}
             title="Gestion de l'interface WiFi"
@@ -311,12 +311,12 @@ function TilesTab() {
   const sorted = [...tiles].sort((a, b) => a.ordre - b.ordre);
 
   return (
-    <div className="space-y-2">
+    <div className="grid md:grid-cols-2 gap-3 items-start">
       {sorted.map((tile, idx) => {
         const isOpen = openSlug === tile.slug;
         const fields = getConfigFields(tile.slug, isVoiles);
         return (
-          <div key={tile.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div key={tile.id} className={`bg-white rounded-xl border border-slate-200 overflow-hidden ${isOpen ? 'md:col-span-2' : ''}`}>
             <div
               className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition select-none"
               onClick={() => setOpenSlug(isOpen ? null : tile.slug)}
@@ -489,7 +489,9 @@ function TilesTab() {
         );
       })}
 
-      <AddTileForm onAdd={tile => setTiles(prev => [...prev, tile])} nextOrdre={sorted.length} />
+      <div className="md:col-span-2">
+        <AddTileForm onAdd={tile => setTiles(prev => [...prev, tile])} nextOrdre={sorted.length} />
+      </div>
     </div>
   );
 }
