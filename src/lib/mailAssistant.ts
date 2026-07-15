@@ -42,7 +42,7 @@ export type MailInput = {
 };
 
 export type MailCategory =
-  | 'spam_alert' | 'resa_ota' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
+  | 'spam_alert' | 'resa_ota' | 'resa_swile' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
   | 'commission_ota' | 'candidature' | 'commercial' | 'client_msg' | 'pre_sejour' | 'rapport_pms'
   | 'autre';
 
@@ -102,8 +102,12 @@ const rx = {
   // c'est l'agence de destination = un PARTENAIRE. Backtest sur l'historique Corniche : l'équipe
   // range ses mails dans « Partenaires » et « Infos Tourisme » — elle les GARDE (ex. « RE: Brochure
   // Vacances Accessibles — demande de mise à jour 2026 » = notre fiche dans leur brochure).
+  // ⚠️ @snservice.co « TTHotel Pro Login Address Update » (2026-07-15) = mail type phishing / faux
+  // changement de domaine (tthotelpro.com → .net, « Urgent », télécharger l'app). Ça se fait passer
+  // pour notre fournisseur de serrures TTHotel mais l'expéditeur n'est pas tthotelpro → corbeille.
+  // (Martin : décision de supprimer. Ne jamais suivre les liens : vérifier via un canal TTHotel connu.)
   prospectionSenders:
-    /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris/i,
+    /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris|@snservice\.co/i,
   // LoungeUp (Corniche) : porte les formulaires PRÉ-SÉJOUR remplis par le client — cf preSejour.ts.
   loungeUp: /@app(\.eu)?\.loungeup\.com/i,
   // Éditions automatiques du PMS Hotsoft, que l'hôtel s'envoie à sa propre boîte (96 % du dossier
@@ -203,6 +207,14 @@ export function classifyMail(mail: MailInput): Classification {
   //     les détruit pas ici — la purge à 4 jours s'en charge ensuite (Martin 2026-07-13).
   if (rx.rapportPms.test(subj) && rx.pmsSenders.test(from)) {
     return { category: 'rapport_pms', action: 'archive', reason: 'Édition automatique du PMS (Hotsoft)', detail: {} };
+  }
+
+  // 1j) Résa SWILE (agence voyage d'affaires, `travel@notification.swile.co`) -> contrôle résa.
+  //     Format propre à Swile (pas D-Edge) : prépayé, ne rien réclamer au voyageur, mais porte
+  //     des demandes voyageur (arrivée tardive, parking) → contrôle + réponse. Placé AVANT le
+  //     contrôle OTA générique car le parseur D-Edge ne sait pas lire le format Swile.
+  if (/swile/i.test(from)) {
+    return { category: 'resa_swile', action: 'resa_control', reason: 'Réservation Swile (voyage d’affaires, prépayée)', detail: { channel: 'swile' } };
   }
 
   // 2) Résa OTA (D-Edge / Booking) -> contrôle résa

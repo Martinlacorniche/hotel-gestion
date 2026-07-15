@@ -247,7 +247,10 @@ export function ddmm(d: string | null): string {
 // débiter et précise ce qu'elle couvre (souvent la taxe de séjour). ⚠️ On ne stocke JAMAIS
 // le n° de carte complet — seulement les 4 derniers (la réception lit la carte dans le mail).
 export type AgencyTakeover = {
-  provider: 'djoca' | 'goelett' | 'cds';
+  // 'cds_booking' = variante `bookings@cdsgroupe.com` « RAPPEL DE PAIEMENT … payée par
+  // Booking » : PAS une prise en charge par carte agence — la chambre est sur la VCC
+  // Booking, il n'y a RIEN à débiter, seule une confirmation de réception est attendue.
+  provider: 'djoca' | 'goelett' | 'cds' | 'cds_booking';
   agency: string;
   ref: string | null;
   bookingRef: string | null; // réf Booking.com (Goelett / CDS)
@@ -262,6 +265,7 @@ export type AgencyTakeover = {
   tsAmount: string | null;   // montant TS prépayé sur la carte agence (Goelett)
   roomAmount: string | null; // montant chambre couvert par l'OTA (Goelett → Booking)
   invoiceTo: string | null;  // entité à qui facturer (Goelett Sp. z o.o. / Ailleurs Business…)
+  company?: string | null;   // société donneuse d'ordre (CDS corporate, ex. PAPREC HAVAS)
 };
 
 // Bloc « taxe de séjour » de la note réception selon l'agence de prise en charge :
@@ -271,6 +275,7 @@ export type AgencyTakeover = {
 export function agencyTsBlock(t: AgencyTakeover): string {
   if (t.provider === 'goelett') return `CCV TS …${t.cardLast4 || '????'}`;
   if (t.provider === 'cds') return 'CCV TS CDS — déb. check-in';
+  if (t.provider === 'cds_booking') return 'RSP TS';   // payé par Booking, TS non couverte
   return 'TS incl. agence';
 }
 
@@ -406,6 +411,78 @@ export function parseCds(subject: string, body: string): AgencyTakeover {
   };
 }
 
+// Résa SWILE (`travel@notification.swile.co`) = agence voyage d'affaires. Format PROPRE à
+// Swile (pas D-Edge) : « réservation pour <NOM> du <date> au <date> », « Cette réservation
+// est prépayée », « Montant : €X », « Type de chambre : … », + des « Demandes spécifiques »
+// du voyageur (arrivée tardive, parking…). Prépayé → NE RIEN réclamer au voyageur pour la
+// chambre, pas de facture au client. TS = À RÉGLER SUR PLACE (Martin 2026-07-15, cité du mail :
+// « toute dépense non incluse… réglée directement sur place »). Retourne un OtaResa pour
+// réutiliser controlNote / l'enrichissement Mews (déjà venu + TS exacte).
+export function parseSwile(subject: string, body: string): OtaResa {
+  const hay = body;
+  const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  const ref = subject.match(/N[°ºo]\s*(\d{6,})/i)?.[1]
+    || fieldAfter(lines, /^R[ée]f[ée]rence fournisseur/i)?.match(/\d{6,}/)?.[0] || null;
+
+  const guestName = hay.match(/r[ée]servation pour\s+([A-Za-zÀ-ÿ'’ \-]+?)\s+du\s/i)?.[1]?.trim() || null;
+  const toks = guestName ? guestName.split(/\s+/) : [];
+  const guestFirst = toks.length ? toks[0] : null;
+  const guestLast = toks.length ? toks[toks.length - 1] : null;
+
+  const arrivalRaw = fieldAfter(lines, /^Arriv[ée]e/i);
+  const departureRaw = fieldAfter(lines, /^D[ée]part/i);
+  const roomType = fieldAfter(lines, /^Type de chambre/i);
+  const guestsRaw = fieldAfter(lines, /^Nombre de voyageurs/i);
+
+  const amountRaw = hay.match(/Montant\s*:?\s*€?\s*([\d]+[.,]\d{2})/i)?.[1] || null;
+  const amount = amountRaw ? `${amountRaw.replace('.', ',')} €` : null;
+
+  // Demandes spécifiques : les lignes à puce « - … » sous « Demandes spécifiques ».
+  const reqs = lines.filter((l) => /^[-•]\s*/.test(l)).map((l) => l.replace(/^[-•]\s*/, '').trim());
+  const specialRequests = reqs.length ? reqs.join(' ; ') : null;
+
+  return {
+    ref, source: 'Swile', kind: 'nouvelle',
+    guestName, guestFirst, guestLast, email: null, phone: null,
+    arrival: arrivalRaw, arrivalISO: frDateToISO(arrivalRaw),
+    departure: departureRaw, departureISO: frDateToISO(departureRaw),
+    bookedAtISO: null, cancelDateISO: null, freeCancelDaysBefore: null,
+    penalty: null, firstNightAmount: null,
+    nights: null, guests: guestsRaw ? parseInt(guestsRaw, 10) || null : null,
+    roomType, breakfast: true, ratePlan: null, amount, chargeAmount: null,
+    refundable: null, cancelText: null, genius: false,
+    payment: 'prepaid', vccChargeableFrom: null, specialRequests,
+  };
+}
+
+// Variante CDS `bookings@cdsgroupe.com` : « RAPPEL DE PAIEMENT … CDS GROUPE - <REF> - <Nom> »
+// avec « Mode de paiement : payée par Booking.com » → la chambre est sur la VCC Booking, il n'y
+// a RIEN à débiter côté agence. Le mail veut juste qu'on CONFIRME LA RÉCEPTION (bouton/lien),
+// sinon il revient tous les jours. ≠ Ailleurs Business (`parseCds`, carte agence à débiter).
+export function parseCdsBooking(subject: string, body: string): AgencyTakeover {
+  const hay = body;
+  const parts = subject.split(/\s+-\s+/).map((s) => s.trim());
+  const ref = hay.match(/R[ée]f\.?\s*CDS Groupe\s*:?\s*([A-Z0-9]{4,})/i)?.[1]
+    || hay.match(/r[ée]servation CDS GROUPE N[°ºo]\s*([A-Z0-9]{4,})/i)?.[1]
+    || (parts.length >= 4 ? parts[3] : null);
+  const bookingRef = hay.match(/R[ée]f\.?\s*Fournisseur\s*:?\s*Booking\.com\s*([\d][\d-]{6,})/i)?.[1]
+    || hay.match(/Booking\.com\s+([\d][\d-]{6,})/i)?.[1] || null;
+  const guestName = hay.match(/Voyageur\(s\)\s*:?\s*([A-Za-zÀ-ÿ'’ \-]{3,40}?)\s*(?:Nombre|Soci[ée]t[ée]|R[ée]f|$)/i)?.[1]?.trim()
+    || (parts.length >= 5 ? parts[4] : null);
+  const guestLast = guestName ? guestName.split(/\s+/).pop() || null : null;
+  const company = hay.match(/Soci[ée]t[ée]\s*:?\s*([A-Za-zÀ-ÿ0-9'’ &\-]{2,40}?)\s*(?:Arriv[ée]e|R[ée]f|$)/i)?.[1]?.trim() || null;
+  const arrRaw = hay.match(/Arriv[ée]e\s*:?\s*[A-Za-zÀ-ÿ,]*\s*(\d{1,2}\s+[A-Za-zÀ-ÿ]+\.?\s+\d{4})/i)?.[1] || null;
+
+  return {
+    provider: 'cds_booking', agency: 'CDS Groupe',
+    ref, bookingRef, guestName, guestLast,
+    checkInISO: frDateToISO(arrRaw), nights: null, room: null,
+    tsCovered: false, debitAtArrival: false, cardLast4: null,
+    tsAmount: null, roomAmount: null, invoiceTo: null, company,
+  };
+}
+
 // Type de chambre en CODE court réception : on garde le mot distinctif (Confort,
 // Supérieure, Deluxe, Standard, Familiale…), pas « Chambre Double ». Ex :
 //   « Chambre Double - Confort » → « confort » ; « Chambre double supérieure » → « supérieure ».
@@ -450,14 +527,16 @@ export function controlNote(
     case 'charge_card':  s.push(`DÉBIT CB${r.chargeAmount ? ` ${r.chargeAmount}` : (r.amount ? ` ${r.amount}` : '')}`); break;
     case 'hotel_collect':
     case 'on_site':      s.push('RSP'); break;
-    case 'prepaid':      s.push('PRÉPAYÉ'); break;
+    // Swile = prépayé par l'agence de voyage d'affaires → on nomme le canal (comme « OTA »).
+    case 'prepaid':      s.push(r.source === 'Swile' ? 'PRÉPAYÉ Swile' : 'PRÉPAYÉ'); break;
     case 'ota_billed':   s.push('OTA'); break;
   }
 
-  // bloc TAXE DE SÉJOUR (préfixé #). tsOverride = prise en charge agence (agencyTsBlock) qui
-  // PRIME sur le « sur place » ; sinon RSP TS + montant Mews exact quand dispo.
+  // bloc TAXE DE SÉJOUR (préfixé « # / » — le « / » sépare bien règlement chambre / règlement
+  // TS, Martin 2026-07-15). tsOverride = prise en charge agence (agencyTsBlock) qui PRIME sur
+  // le « sur place » ; sinon RSP TS + montant Mews exact quand dispo.
   const ts = tsOverride || (cityTax != null ? `RSP TS ${cityTax.toFixed(2).replace('.', ',')}€` : 'RSP TS');
-  s.push(`# ${ts}`);
+  s.push(`# / ${ts}`);
 
   // variables
   if (r.breakfast === false) s.push('SANS PDJ');

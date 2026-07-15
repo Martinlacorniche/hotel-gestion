@@ -43,7 +43,7 @@ export async function runDryRun(hotelKey: string): Promise<DryRunResult> {
       fromAddr: m.fromAddr, fromName: m.fromName, subject: m.subject,
       preview: m.preview, hasAttachments: m.hasAttachments, attachmentNames,
     });
-    const mewsEnrich = cfg.mews && c.category === 'resa_ota';
+    const mewsEnrich = cfg.mews && (c.category === 'resa_ota' || c.category === 'resa_swile');
     summary[c.category] = (summary[c.category] || 0) + 1;
 
     const { error } = await supabaseAdmin

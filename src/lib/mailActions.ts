@@ -11,7 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { moveMessage, createReplyDraft, getMessageText, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
-import { parseOtaResa, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
+import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
 import { receptionOnDuty } from '@/lib/onDuty';
@@ -132,7 +132,9 @@ async function actDraftReply(cfg: HotelMailConfig, row: LogRow): Promise<ExecOut
 // ni ne déplace : « traiter d'abord, classer ensuite »). ⚠️ Mews gated sur cfg.mews.
 async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
   const body = await getMessageText(cfg.mailbox, row.message_id);
-  const r = parseOtaResa(row.subject || '', body);
+  // Swile a son propre format (pas D-Edge) → parseur dédié ; sinon parseur D-Edge/Booking.
+  const isSwile = /swile/i.test(row.from_addr || '');
+  const r = isSwile ? parseSwile(row.subject || '', body) : parseOtaResa(row.subject || '', body);
 
   // ANNULATION : pas de « déjà venu / TS » — on vérifie s'il faut FACTURER (hors délai).
   if (r.kind === 'annulation') {
@@ -156,8 +158,8 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
     try {
       const g = await findGuest(r.guestFirst, r.guestLast);
       dejaVenu = g ? await hasPastStay(g.id) : false;   // pas de profil Mews = 1er séjour
-      // TS exacte : seulement pour les VCC (la carte virtuelle ne couvre pas la taxe).
-      if (g && r.payment === 'vcc' && r.arrivalISO) {
+      // TS exacte : VCC (la carte virtuelle ne couvre pas la taxe) OU Swile prépayé (TS sur place).
+      if (g && (r.payment === 'vcc' || r.source === 'Swile') && r.arrivalISO) {
         const resaId = await findReservation(g.id, r.arrivalISO);
         if (resaId) cityTax = (await cityTaxForReservation(resaId))?.amount ?? null;
       }
@@ -177,7 +179,13 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
   // Résas prises ensemble (mêmes dates + même canal + même horaire) → « AVEC <NOM> ».
   const linked = await findLinkedResas(cfg.mailbox, r).catch(() => []);
 
-  const note = controlNote(r, dejaVenu, cityTax, tsOverride, linked);
+  let note = controlNote(r, dejaVenu, cityTax, tsOverride, linked);
+  // Swile transmet des demandes voyageur (arrivée tardive, parking…) → à signaler à la réception,
+  // qui devra répondre (Swile relaie la réponse au voyageur). Rappel : ne rien réclamer au client.
+  if (r.source === 'Swile') {
+    note += ' · NE RIEN RÉCLAMER (chambre prépayée)';
+    if (r.specialRequests) note += ` · ⚠️ DEMANDES VOYAGEUR : ${r.specialRequests} → RÉPONDRE`;
+  }
   return {
     status: 'executed',
     result: {
@@ -440,6 +448,10 @@ async function findLinkedResas(mailbox: string, r: OtaResa): Promise<string[]> {
 // Choisit le bon parser d'après l'expéditeur/sujet (Djoca / Goelett / CDS-Ailleurs Business).
 function parseTakeover(fromAddr: string, subject: string, body: string): AgencyTakeover {
   if (/goelett/i.test(fromAddr) || /goelett/i.test(subject)) return parseGoelett(subject, body);
+  // Variante `bookings@cdsgroupe` « rappel de paiement / payé par Booking » = confirmer réception,
+  // RIEN à débiter — à distinguer d'Ailleurs Business (carte agence à débiter).
+  if (/bookings@cdsgroupe/i.test(fromAddr) && /rappel de paiement|pay[ée]e? par booking|confirmer la r[ée]ception/i.test(`${subject} ${body}`))
+    return parseCdsBooking(subject, body);
   if (/ailleursbusiness|cdsgroupe/i.test(fromAddr) || /prestations compl[ée]mentaires/i.test(subject)) return parseCds(subject, body);
   return parseAgencyTakeover(subject, body);
 }
@@ -451,12 +463,27 @@ async function actAgencyNote(cfg: HotelMailConfig, row: LogRow): Promise<ExecOut
   const t = parseTakeover(row.from_addr || '', row.subject || '', body);
 
   const parts: string[] = [];
+  // Variante CDS « payé par Booking » : rien à débiter, juste confirmer la réception (sinon
+  // relance quotidienne). On relie la réf CDS à la résa Booking et la société donneuse d'ordre.
+  if (t.provider === 'cds_booking') {
+    const bits = [`📌 CDS${t.ref ? ` ${t.ref}` : ''}`];
+    if (t.guestName) bits.push(t.guestName);
+    if (t.company) bits.push(`(${t.company})`);
+    if (t.checkInISO) bits.push(`arr ${ddmm(t.checkInISO)}`);
+    bits.push('PAYÉ PAR BOOKING — RIEN À DÉBITER');
+    if (t.bookingRef) bits.push(`résa Booking ${t.bookingRef}`);
+    bits.push('✅ confirmer la réception (lien dans le mail) sinon relance quotidienne');
+    return {
+      status: 'executed',
+      result: { kind: 'agency_note', note: bits.join(' · '), agency: t.agency, ref: t.ref, bookingRef: t.bookingRef, guest: t.guestName, company: t.company, tsCovered: false },
+    };
+  }
   if (t.provider === 'goelett' || t.provider === 'cds') {
     // Note RÉCEPTION en codes courts (Martin 2026-07-07) : la chambre est sur CCV (Booking),
     // la TS sur la carte agence (Goelett = 2e CCV last-4 ; CDS = carte derrière un lien).
     // Le tarif FLEX/NANR + GENIUS + 1er séjour vivent dans le mail résa D-Edge (pas ici) →
     // complétés au lien résa↔agence. Facturation (invoiceTo) gardée en détail, pas dans la note.
-    const note = `#${shortRoom(t.room)} CCV # ${agencyTsBlock(t)}`.replace(/\s+/g, ' ').trim();
+    const note = `#${shortRoom(t.room)} CCV # / ${agencyTsBlock(t)}`.replace(/\s+/g, ' ').trim();
     return {
       status: 'executed',
       result: { kind: 'agency_note', note, agency: t.agency, ref: t.ref, bookingRef: t.bookingRef, guest: t.guestName, cardLast4: t.cardLast4, tsCovered: true, tsAmount: t.tsAmount, invoiceTo: t.invoiceTo },
