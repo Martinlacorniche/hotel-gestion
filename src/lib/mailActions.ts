@@ -10,7 +10,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { moveMessage, createReplyDraft, getMessageText, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
+import { moveMessage, createReplyDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
 import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
@@ -445,6 +445,44 @@ async function findLinkedResas(mailbox: string, r: OtaResa): Promise<string[]> {
   return noms;
 }
 
+// CDS enveloppe ses liens dans un tracker `link-email.cdsgroupe.com/c?q=<base64url>` qui encode
+// une structure binaire contenant l'URL cible en clair (après « aHR0cHM » = "https"). On décode
+// pour retrouver l'URL directe — plus fiable que de suivre le tracker (dont le q se tronque à
+// l'extraction HTML). Renvoie null si ce n'est pas un tracker décodable.
+function decodeCdsTracker(href: string): string | null {
+  const q = href.match(/[?&]q=([^&"']+)/)?.[1];
+  if (!q) return null;
+  const i = q.indexOf('aHR0cHM');   // base64url de "https"
+  if (i < 0) return null;
+  try {
+    const dec = Buffer.from(q.slice(i), 'base64url').toString('utf8');
+    return dec.match(/https?:\/\/[^\s"']+/)?.[0] || null;
+  } catch { return null; }
+}
+
+// Confirme la réception d'une résa CDS « payé par Booking » en visitant le lien
+// « SecuriseBookingFromMail » du mail (sinon CDS relance tous les jours). AUCUN paiement n'est
+// déclenché — c'est un simple accusé de réception côté CDS. On cible précisément ce lien (pas
+// « signaler une anomalie » ni « booking issues »).
+async function confirmCdsBookingReceipt(mailbox: string, messageId: string): Promise<{ confirmed: boolean; url: string | null }> {
+  const html = await getMessageHtml(mailbox, messageId).catch(() => '');
+  const hrefs = [...html.matchAll(/href="([^"]+)"/gi)].map((m) => m[1]);
+  let target: string | null = null;
+  for (const h of hrefs) {
+    if (/SecuriseBookingFromMail/i.test(h)) { target = h; break; }
+    if (/link-email\.cdsgroupe\.com/i.test(h)) {
+      const dec = decodeCdsTracker(h);
+      if (dec && /SecuriseBookingFromMail/i.test(dec)) { target = dec; break; }
+    }
+  }
+  if (!target) return { confirmed: false, url: null };
+  try {
+    const res = await fetch(target, { redirect: 'follow' });
+    const txt = await res.text().catch(() => '');
+    return { confirmed: res.ok && /success|confirm/i.test(txt), url: target };
+  } catch { return { confirmed: false, url: target }; }
+}
+
 // Choisit le bon parser d'après l'expéditeur/sujet (Djoca / Goelett / CDS-Ailleurs Business).
 function parseTakeover(fromAddr: string, subject: string, body: string): AgencyTakeover {
   if (/goelett/i.test(fromAddr) || /goelett/i.test(subject)) return parseGoelett(subject, body);
@@ -466,16 +504,18 @@ async function actAgencyNote(cfg: HotelMailConfig, row: LogRow): Promise<ExecOut
   // Variante CDS « payé par Booking » : rien à débiter, juste confirmer la réception (sinon
   // relance quotidienne). On relie la réf CDS à la résa Booking et la société donneuse d'ordre.
   if (t.provider === 'cds_booking') {
+    // Confirme la réception côté CDS (stoppe les relances quotidiennes). Sans effet sur un paiement.
+    const conf = await confirmCdsBookingReceipt(cfg.mailbox, row.message_id).catch(() => ({ confirmed: false, url: null as string | null }));
     const bits = [`📌 CDS${t.ref ? ` ${t.ref}` : ''}`];
     if (t.guestName) bits.push(t.guestName);
     if (t.company) bits.push(`(${t.company})`);
     if (t.checkInISO) bits.push(`arr ${ddmm(t.checkInISO)}`);
     bits.push('PAYÉ PAR BOOKING — RIEN À DÉBITER');
     if (t.bookingRef) bits.push(`résa Booking ${t.bookingRef}`);
-    bits.push('✅ confirmer la réception (lien dans le mail) sinon relance quotidienne');
+    bits.push(conf.confirmed ? '✅ réception confirmée à CDS (relances stoppées)' : '⚠️ réception NON confirmée — cliquer le lien du mail');
     return {
       status: 'executed',
-      result: { kind: 'agency_note', note: bits.join(' · '), agency: t.agency, ref: t.ref, bookingRef: t.bookingRef, guest: t.guestName, company: t.company, tsCovered: false },
+      result: { kind: 'agency_note', note: bits.join(' · '), agency: t.agency, ref: t.ref, bookingRef: t.bookingRef, guest: t.guestName, company: t.company, tsCovered: false, cdsConfirmed: conf.confirmed, cdsConfirmUrl: conf.url },
     };
   }
   if (t.provider === 'goelett' || t.provider === 'cds') {

@@ -91,6 +91,13 @@ export async function getMessageText(mailbox: string, id: string): Promise<strin
     .split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
 }
 
+// HTML BRUT du corps (getMessageText efface les balises → perd les href). Nécessaire quand on
+// doit récupérer un LIEN dans le mail (ex. bouton « confirmer la réception » CDS).
+export async function getMessageHtml(mailbox: string, id: string): Promise<string> {
+  const m = await gm<{ body?: { content?: string } }>(mailbox, `/messages/${id}?$select=body`);
+  return m.body?.content || '';
+}
+
 // Déplacer un mail : destination = dossier bien connu ('deleteditems','archive','junkemail') ou id de dossier.
 export async function moveMessage(mailbox: string, id: string, destination: string): Promise<void> {
   await gm(mailbox, `/messages/${id}/move`, { method: 'POST', body: JSON.stringify({ destinationId: destination }) });
