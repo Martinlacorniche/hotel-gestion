@@ -33,6 +33,16 @@ const VOILES_ID   = "ded6e6fb-ff3c-4fa8-ad07-403ee316be53";
 const HotelCtx = createContext<string>(CORNICHE_ID);
 function useHotelId() { return useContext(HotelCtx); }
 
+// Textarea qui grandit avec son contenu — fini le scroll interne qui coupe le texte.
+function AutoTextarea({ className = "", value, ...props }: React.ComponentProps<"textarea">) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }
+  }, [value]);
+  return <textarea ref={ref} value={value} className={`resize-none overflow-hidden min-h-[76px] ${className}`} {...props} />;
+}
+
 // ─────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────
@@ -195,21 +205,35 @@ function WifiAdminContent() {
             iconClassName="bg-sky-50 text-sky-700"
           />
 
-          <Tabs defaultValue="tuiles">
-            <TabsList className="w-full mb-6">
-              <TabsTrigger value="tuiles"     className="flex-1">Tuiles</TabsTrigger>
-              {!isVoiles && <TabsTrigger value="menu" className="flex-1">Menu</TabsTrigger>}
-              {!isVoiles && <TabsTrigger value="bar" className="flex-1">Bar</TabsTrigger>}
-              {!isVoiles && <TabsTrigger value="curiosites" className="flex-1">Curiosités</TabsTrigger>}
-              <TabsTrigger value="annonce"    className="flex-1">Annonce</TabsTrigger>
-            </TabsList>
+          {isVoiles ? (
+            /* Voiles : tout sur une page, sans onglets */
+            <div className="space-y-8">
+              <AnnonceTab />
+              <section>
+                <div className="flex items-baseline gap-2 mb-3">
+                  <h2 className="text-sm font-semibold text-slate-700">Tuiles du portail</h2>
+                  <span className="text-xs text-slate-400">— ce que voit le client après l&apos;annonce</span>
+                </div>
+                <TilesTab />
+              </section>
+            </div>
+          ) : (
+            <Tabs defaultValue="tuiles">
+              <TabsList className="w-full mb-6">
+                <TabsTrigger value="tuiles"     className="flex-1">Tuiles</TabsTrigger>
+                <TabsTrigger value="menu"       className="flex-1">Menu</TabsTrigger>
+                <TabsTrigger value="bar"        className="flex-1">Bar</TabsTrigger>
+                <TabsTrigger value="curiosites" className="flex-1">Curiosités</TabsTrigger>
+                <TabsTrigger value="annonce"    className="flex-1">Annonce</TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="tuiles"><TilesTab /></TabsContent>
-            {!isVoiles && <TabsContent value="menu"><MenuTab /></TabsContent>}
-            {!isVoiles && <TabsContent value="bar"><BarTab hotelId={hotelId} /></TabsContent>}
-            {!isVoiles && <TabsContent value="curiosites"><CuriositesTab /></TabsContent>}
-            <TabsContent value="annonce"><AnnonceTab /></TabsContent>
-          </Tabs>
+              <TabsContent value="tuiles"><TilesTab /></TabsContent>
+              <TabsContent value="menu"><MenuTab /></TabsContent>
+              <TabsContent value="bar"><BarTab hotelId={hotelId} /></TabsContent>
+              <TabsContent value="curiosites"><CuriositesTab /></TabsContent>
+              <TabsContent value="annonce"><AnnonceTab /></TabsContent>
+            </Tabs>
+          )}
         </div>
       </div>
     </HotelCtx.Provider>
@@ -338,7 +362,7 @@ function TilesTab() {
 
               <button
                 onClick={(e) => { e.stopPropagation(); toggleVisible(tile); }}
-                className={`p-1.5 rounded-lg transition ${tile.visible ? "text-[#004e7c] bg-blue-50" : "text-slate-300 bg-slate-100"}`}
+                className={`p-1.5 rounded-lg transition ${tile.visible ? "text-[var(--brand)] bg-[var(--brand-bg)]" : "text-slate-300 bg-slate-100"}`}
               >
                 {tile.visible ? <Eye size={15} /> : <EyeOff size={15} />}
               </button>
@@ -396,11 +420,10 @@ function TilesTab() {
                       <div key={f.key}>
                         <label className="text-xs text-slate-500 block mb-1">{f.label}</label>
                         {f.type === "textarea" ? (
-                          <textarea
+                          <AutoTextarea
                             value={tile.config[f.key] ?? ""}
                             onChange={e => updateConfig(tile.id, f.key, e.target.value)}
-                            rows={3}
-                            className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20 resize-none"
+                            className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
                           />
                         ) : (
                           <Input value={tile.config[f.key] ?? ""} onChange={e => updateConfig(tile.id, f.key, e.target.value)} className="h-9" />
@@ -412,12 +435,11 @@ function TilesTab() {
                               <TranslateBtn source={tile.config[f.key] ?? ""} onResult={v => updateEnConfig(tile.id, f.key, v)} />
                             </div>
                             {f.type === "textarea" ? (
-                              <textarea
+                              <AutoTextarea
                                 value={tile.config?.en?.[f.key] ?? ""}
                                 onChange={e => updateEnConfig(tile.id, f.key, e.target.value)}
-                                rows={3}
                                 placeholder={tile.config[f.key] ?? ""}
-                                className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20 resize-none"
+                                className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
                               />
                             ) : (
                               <Input
@@ -475,9 +497,10 @@ function TilesTab() {
                   )}
                   <Button
                     size="sm"
+                    variant="brand"
                     onClick={() => saveTile(tile)}
                     disabled={saving === tile.id}
-                    className="bg-[#004e7c] hover:bg-[#003d61] text-white gap-2"
+                    className="gap-2"
                   >
                     {saving === tile.id ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                     Enregistrer
@@ -558,7 +581,7 @@ function AddTileForm({ onAdd, nextOrdre }: { onAdd: (t: Tile) => void; nextOrdre
       </div>
       <div className="flex gap-2 justify-end">
         <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>Annuler</Button>
-        <Button size="sm" onClick={submit} disabled={saving || !title.trim()} className="bg-[#004e7c] hover:bg-[#003d61] text-white gap-2">
+        <Button size="sm" variant="brand" onClick={submit} disabled={saving || !title.trim()} className="gap-2">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
           Créer
         </Button>
@@ -1075,77 +1098,91 @@ function AnnonceTab() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-slate-200 p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Megaphone size={16} className="text-slate-500" />
-            <span className="text-sm font-medium text-slate-800">Bandeau d&apos;annonce</span>
+    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+      {/* En-tête : titre + switch actif/inactif */}
+      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--brand-bg)] text-[var(--brand)]">
+            <Megaphone size={17} />
           </div>
-          <button
-            onClick={() => setActive(v => !v)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${active ? "bg-[#004e7c]" : "bg-slate-200"}`}
-          >
-            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${active ? "translate-x-6" : "translate-x-1"}`} />
-          </button>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Bandeau d&apos;annonce</p>
+            <p className={`text-xs mt-0.5 ${active ? "text-emerald-600 font-medium" : "text-slate-400"}`}>
+              {active ? "● Affiché en haut du portail client" : "Désactivé — pas visible par les clients"}
+            </p>
+          </div>
         </div>
-        {active
-          ? <p className="text-xs text-emerald-600 mt-2 font-medium">● Affiché sur le portail WiFi</p>
-          : <p className="text-xs text-slate-400 mt-2">Désactivé — pas visible par les clients</p>
-        }
+        <button
+          onClick={() => setActive(v => !v)}
+          aria-label={active ? "Désactiver l'annonce" : "Activer l'annonce"}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${active ? "bg-[var(--brand)]" : "bg-slate-200"}`}
+        >
+          <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${active ? "translate-x-6" : "translate-x-1"}`} />
+        </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
-        <p className="text-xs text-slate-400 uppercase tracking-widest mb-3">Type de message</p>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => setType("info")}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition ${type === "info" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
-          >
-            <span>ℹ️</span> Information
-          </button>
-          <button
-            onClick={() => setType("urgent")}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition ${type === "urgent" ? "border-red-300 bg-red-50 text-red-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
-          >
-            <span>⚠️</span> Urgent
-          </button>
+      <div className="p-5 space-y-5">
+        {/* Type de message — pills inline */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-slate-500 mr-1">Ton :</span>
+          {([
+            { k: "info" as const, emoji: "ℹ️", label: "Information", on: "border-blue-300 bg-blue-50 text-blue-700" },
+            { k: "urgent" as const, emoji: "⚠️", label: "Urgent", on: "border-red-300 bg-red-50 text-red-600" },
+          ]).map(o => (
+            <button key={o.k} onClick={() => setType(o.k)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition ${type === o.k ? o.on : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+              <span>{o.emoji}</span> {o.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Aperçu WYSIWYG : le bandeau exactement comme le client le verra */}
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-2">Aperçu du bandeau</p>
+          {message.trim() ? (
+            <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2.5 ${type === "urgent" ? "bg-red-50 border-red-200 text-red-700" : "bg-blue-50 border-blue-200 text-blue-700"}`}>
+              <span className="text-base shrink-0">{type === "urgent" ? "⚠️" : "ℹ️"}</span>
+              <p className="leading-relaxed whitespace-pre-wrap">{message}</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-400 italic">
+              Le bandeau apparaîtra ici dès que tu écris un message.
+            </div>
+          )}
+        </div>
+
+        {/* Message FR / EN côte à côte */}
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-1.5">Message (FR)</p>
+            <AutoTextarea
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              placeholder="Ex : L'ascenseur est momentanément hors service. Nous nous en excusons."
+              className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[10px] uppercase tracking-widest text-slate-400">Message (EN)</p>
+              <TranslateBtn source={message} onResult={setMessageEn} />
+            </div>
+            <AutoTextarea
+              value={messageEn}
+              onChange={e => setMessageEn(e.target.value)}
+              placeholder={message || "Ex: The elevator is temporarily out of service. We apologize."}
+              className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <Button variant="brand" onClick={save} disabled={saving || !message.trim()} className="gap-2">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {active ? "Publier l'annonce" : "Enregistrer"}
+          </Button>
         </div>
       </div>
-
-      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
-        <p className="text-xs text-slate-400 uppercase tracking-widest mb-3">Message</p>
-        <textarea
-          value={message}
-          onChange={e => setMessage(e.target.value)}
-          rows={4}
-          placeholder="Ex : L'ascenseur est momentanément hors service. Nous nous en excusons."
-          className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20"
-        />
-        <div className="flex items-center justify-between mt-3 mb-1">
-          <p className="text-[10px] text-slate-400 uppercase tracking-widest">Message EN</p>
-          <TranslateBtn source={message} onResult={setMessageEn} />
-        </div>
-        <textarea
-          value={messageEn}
-          onChange={e => setMessageEn(e.target.value)}
-          rows={4}
-          placeholder={message || "Ex: The elevator is temporarily out of service. We apologize."}
-          className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20"
-        />
-      </div>
-
-      {message.trim() && (
-        <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2.5 ${type === "urgent" ? "bg-red-50 border-red-200 text-red-700" : "bg-blue-50 border-blue-200 text-blue-700"}`}>
-          <span className="text-base shrink-0">{type === "urgent" ? "⚠️" : "ℹ️"}</span>
-          <p className="leading-relaxed">{message}</p>
-        </div>
-      )}
-
-      <Button onClick={save} disabled={saving || !message.trim()} className="w-full bg-[#004e7c] hover:bg-[#003d61] text-white gap-2">
-        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-        Enregistrer
-      </Button>
     </div>
   );
 }
