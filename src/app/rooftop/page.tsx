@@ -17,6 +17,7 @@ import { ventileAll, totauxFromBuckets, round2, type TvaType, type TvaTotaux } f
 import toast from "react-hot-toast";
 import { RooftopCarteTab, BlacklistTab, CarteLienPublic, VOILES_ID } from "@/components/rooftop/RooftopEditors";
 import { PosTab } from "@/components/rooftop/RooftopPos";
+import { FloorTab } from "@/components/rooftop/RooftopFloor";
 import { FichesTab } from "@/components/rooftop/RooftopFiches";
 
 export default function RooftopPage() {
@@ -42,6 +43,7 @@ export default function RooftopPage() {
 
         <Tabs defaultValue="resas">
           <TabsList className="w-full mb-6">
+            <TabsTrigger value="service" className="flex-1">Service</TabsTrigger>
             <TabsTrigger value="resas" className="flex-1">Réservations</TabsTrigger>
             <TabsTrigger value="pos" className="flex-1">POS</TabsTrigger>
             <TabsTrigger value="fiches" className="flex-1">Fiches</TabsTrigger>
@@ -50,6 +52,7 @@ export default function RooftopPage() {
             <TabsTrigger value="reglages" className="flex-1">Réglages</TabsTrigger>
           </TabsList>
 
+          <TabsContent value="service"><FloorTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="resas"><ResasTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="pos"><PosTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="fiches"><FichesTab hotelId={VOILES_ID} /></TabsContent>
