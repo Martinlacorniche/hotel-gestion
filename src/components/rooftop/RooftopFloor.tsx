@@ -158,8 +158,14 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
   };
 
   // ── État de chaque table (le cœur du plan-plateau) ──────────────────────────
-  const tiles: TileInfo[] = useMemo(() => tables.map(t => {
-    const tResas = resas.filter(r => r.table_id === t.id);
+  const tiles: TileInfo[] = useMemo(() => {
+    // Une résa dont l'addition a été encaissée est TERMINÉE : elle ne bloque plus
+    // la table (sinon elle resterait "arrivée" après paiement).
+    const doneResaIds = new Set(
+      orders.filter(o => o.statut === "encaissee" && o.reservation_id).map(o => o.reservation_id)
+    );
+    return tables.map(t => {
+    const tResas = resas.filter(r => r.table_id === t.id && !doneResaIds.has(r.id));
     const order = orders.find(o => o.table_id === t.id && o.statut === "ouverte") || null;
     let state: TState = "free";
     let resa: Resa | null = null;
@@ -174,7 +180,8 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
     }
     const total = order ? (orderTotals[order.id] || 0) : 0;
     return { table: t, state, order, resa, next, total };
-  }), [tables, resas, orders, orderTotals]);
+    });
+  }, [tables, resas, orders, orderTotals]);
 
   const selected = tiles.find(t => t.table.id === selId) || null;
   const totalItems = items.reduce((s, i) => s + i.prix * i.qty, 0);
@@ -586,6 +593,7 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
               onReserve={() => openReserve(selTile.table)}
               onEditResa={() => selTile.resa && openReserve(selTile.table, selTile.resa)}
               onSeat={() => selTile.resa && openFromResa(selTile.resa)}
+              onUnseat={() => selTile.resa && markPresence(selTile.resa, null)}
               onNoShow={() => selTile.resa && markNoShow(selTile.resa)}
               onCancelResa={() => selTile.resa && cancelResa(selTile.resa)}
             />
@@ -608,8 +616,8 @@ function PanelHead({ title, sub, right }: { title: string; sub: string; right?: 
   );
 }
 
-function TablePanel({ ti, onWalkin, onReserve, onEditResa, onSeat, onNoShow, onCancelResa }: {
-  ti: TileInfo; onWalkin: () => void; onReserve: () => void; onEditResa: () => void; onSeat: () => void; onNoShow: () => void; onCancelResa: () => void;
+function TablePanel({ ti, onWalkin, onReserve, onEditResa, onSeat, onUnseat, onNoShow, onCancelResa }: {
+  ti: TileInfo; onWalkin: () => void; onReserve: () => void; onEditResa: () => void; onSeat: () => void; onUnseat: () => void; onNoShow: () => void; onCancelResa: () => void;
 }) {
   const s = STATE_STYLE[ti.state];
   return (
@@ -639,7 +647,10 @@ function TablePanel({ ti, onWalkin, onReserve, onEditResa, onSeat, onNoShow, onC
         )}
         {(ti.state === "reserved" || ti.state === "arrived") && (
           <>
-            <Button variant="brand" className="w-full h-12" onClick={onSeat}><UserCheck className="w-4 h-4 mr-1.5" />Installer &amp; ouvrir la note</Button>
+            <Button variant="brand" className="w-full h-12" onClick={onSeat}><UserCheck className="w-4 h-4 mr-1.5" />{ti.state === "arrived" ? "Ouvrir la note" : "Installer & ouvrir la note"}</Button>
+            {ti.state === "arrived" && (
+              <Button className="w-full h-10 bg-slate-100 hover:bg-slate-200 text-slate-600" onClick={onUnseat}>Marquer « non arrivé »</Button>
+            )}
             <div className="flex gap-2">
               <Button className="flex-1 h-10 bg-slate-100 hover:bg-slate-200 text-slate-700" onClick={onEditResa}>Modifier la résa</Button>
               <Button className="flex-1 h-10 bg-indigo-50 hover:bg-indigo-100 text-indigo-700" onClick={onReserve}><CalendarPlus className="w-4 h-4 mr-1.5" />Autre créneau</Button>
