@@ -8,15 +8,23 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
-import { EmptyState } from "@/components/EmptyState";
 import {
-  Monitor, Send, Loader2, Clock, Check, AlertTriangle, RefreshCw,
+  Monitor, Send, Loader2, Clock, Check, AlertTriangle,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
 import toast from "react-hot-toast";
 
 const MAX_TEXT_LEN = 200;
+
+// Catalogue d'émoticônes cliquables (insérées dans le message)
+const EMOJIS = [
+  "😀","😁","😂","🤣","😅","😉","😎","😍","🥰","😘","😜","🤪","🤔","🙃","😴","🥳","😱","😭","😡","🤯",
+  "😇","🫡","🥲","😬","🤗","🤭","🙄","😏","👀","🫣",
+  "👍","👎","👏","🙌","🙏","💪","✌️","🤙","👋","🤝",
+  "❤️","🔥","⭐","✨","💯","🎉","🎊","🥂","🍾","☕",
+  "🍕","🍔","🎁","🏆","📢","🚨","⚠️","✅","❌","💩",
+];
 
 type ScreenMessage = {
   id: string;
@@ -54,7 +62,6 @@ export default function EcranPage() {
   const [duration, setDuration] = useState(10);
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<ScreenMessage[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Garde d'accès : superadmin uniquement (page discrète, hors menu).
   useEffect(() => {
@@ -65,11 +72,10 @@ export default function EcranPage() {
 
   const loadHistory = useCallback(async () => {
     const headers = await authHeaders();
-    if (!headers) { setLoading(false); return; }
+    if (!headers) return;
     const resp = await fetch("/api/screen/message", { headers });
     const result = await resp.json();
     if (resp.ok && result.ok) setMessages(result.messages as ScreenMessage[]);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -108,6 +114,7 @@ export default function EcranPage() {
 
   const last = messages[0] ?? null;
   const remaining = MAX_TEXT_LEN - text.length;
+  const addEmoji = (e: string) => setText((t) => (t + e).slice(0, MAX_TEXT_LEN));
 
   return (
     <div className="min-h-screen">
@@ -127,106 +134,88 @@ export default function EcranPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-6">
-       <div className="grid lg:grid-cols-2 gap-6 items-start">
-        {/* Colonne gauche : composer + dernier message */}
-        <div className="space-y-6">
-        {/* Composer */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
-          <div>
-            <label className="text-sm font-medium text-slate-700">Message</label>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LEN))}
-              placeholder="Texte à afficher sur l'écran…"
-              rows={3}
-              className="mt-1 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send();
-              }}
-            />
-            <div className="mt-1 flex justify-between text-xs text-slate-400">
-              <span>Cmd/Ctrl + Entrée pour envoyer</span>
-              <span className={remaining < 20 ? "text-amber-600" : ""}>{remaining}</span>
-            </div>
-          </div>
-
-          <div className="flex items-end gap-3">
+        <div className="grid lg:grid-cols-2 gap-6 items-start">
+          {/* Composer */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
             <div>
-              <label className="text-sm font-medium text-slate-700">Durée (s)</label>
-              <Input
-                type="number"
-                min={1}
-                max={3600}
-                value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
-                className="mt-1 w-28"
+              <label className="text-sm font-medium text-slate-700">Message</label>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LEN))}
+                placeholder="Texte à afficher sur l'écran…"
+                rows={3}
+                className="mt-1 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send();
+                }}
               />
+              <div className="mt-1 flex justify-between text-xs text-slate-400">
+                <span>Cmd/Ctrl + Entrée pour envoyer</span>
+                <span className={remaining < 20 ? "text-amber-600" : ""}>{remaining}</span>
+              </div>
             </div>
-            <Button
-              variant="brand"
-              onClick={send}
-              disabled={sending || !text.trim()}
-              className="ml-auto"
-            >
-              {sending ? <Loader2 size={15} className="mr-2 animate-spin" /> : <Send size={15} className="mr-2" />}
-              Envoyer
-            </Button>
-          </div>
-        </div>
 
-        {/* Dernier message */}
-        {last && (
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-400 mb-2">
-              Dernier message
+            {/* Catalogue d'émoticônes */}
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-1.5">Émoticônes</p>
+              <div className="flex flex-wrap gap-0.5 rounded-lg border border-slate-100 bg-slate-50/60 p-1.5">
+                {EMOJIS.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => addEmoji(e)}
+                    disabled={remaining <= 0}
+                    title={`Ajouter ${e}`}
+                    className="w-9 h-9 rounded-lg text-xl leading-none flex items-center justify-center hover:bg-white hover:shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="text-base text-slate-900 break-words">{last.text}</div>
-            <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-              <StatusBadge status={last.status} />
-              <span>· {last.duration_sec}s</span>
-              <span>· {format(parseISO(last.created_at), "d MMM HH:mm", { locale: fr })}</span>
-            </div>
-          </div>
-        )}
-        </div>
 
-        {/* Colonne droite : historique */}
-        {/* Historique */}
-        <div className="bg-white rounded-xl border border-slate-200">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-            <h2 className="text-sm font-semibold text-slate-700">Historique récent</h2>
-            <Button variant="ghost" size="sm" onClick={loadHistory} className="text-slate-400 hover:text-slate-700">
-              <RefreshCw size={14} />
-            </Button>
-          </div>
-          {loading ? (
-            <div className="py-8 flex justify-center text-slate-400">
-              <Loader2 className="animate-spin" size={18} />
+            <div className="flex items-end gap-3">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Durée (s)</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={3600}
+                  value={duration}
+                  onChange={(e) => setDuration(Number(e.target.value))}
+                  className="mt-1 w-28"
+                />
+              </div>
+              <Button
+                variant="brand"
+                onClick={send}
+                disabled={sending || !text.trim()}
+                className="ml-auto"
+              >
+                {sending ? <Loader2 size={15} className="mr-2 animate-spin" /> : <Send size={15} className="mr-2" />}
+                Envoyer
+              </Button>
             </div>
-          ) : messages.length === 0 ? (
-            <EmptyState icon={Monitor} title="Aucun message envoyé" subtitle="Les messages envoyés à l'écran SmallTV apparaîtront ici." />
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {messages.map((m) => (
-                <li key={m.id} className="px-4 py-3 flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-slate-900 break-words">{m.text}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-400">
-                      <span>{m.duration_sec}s</span>
-                      <span>· {format(parseISO(m.created_at), "d MMM HH:mm", { locale: fr })}</span>
-                      {m.created_by_name && <span>· {m.created_by_name}</span>}
-                      {m.status === "failed" && m.error && (
-                        <span className="text-rose-500">· {m.error}</span>
-                      )}
-                    </div>
-                  </div>
-                  <StatusBadge status={m.status} />
-                </li>
-              ))}
-            </ul>
-          )}
+          </div>
+
+          {/* Aperçu de l'écran SmallTV — WYSIWYG */}
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-2">Aperçu écran</p>
+            <div className="aspect-video w-full rounded-2xl bg-slate-900 border border-slate-800 shadow-inner flex items-center justify-center p-8 overflow-hidden">
+              {text.trim() ? (
+                <p className="text-white text-2xl md:text-3xl font-semibold text-center leading-snug break-words">{text}</p>
+              ) : (
+                <p className="text-slate-500 text-sm">L&apos;écran affichera votre message ici.</p>
+              )}
+            </div>
+            {last && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                <StatusBadge status={last.status} />
+                <span className="truncate">Dernier envoi · {format(parseISO(last.created_at), "d MMM HH:mm", { locale: fr })}</span>
+              </div>
+            )}
+          </div>
         </div>
-       </div>
       </main>
     </div>
   );
