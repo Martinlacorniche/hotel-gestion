@@ -457,15 +457,15 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
                   <button key={ti.table.id}
                     onClick={() => { setSelId(ti.table.id); setMode("none"); closeActive(); if (ti.order) reopenOrder(ti.order); }}
                     className={`text-left rounded-2xl border bg-white p-4 min-h-[116px] flex flex-col gap-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${sel ? "border-slate-900 ring-2 ring-slate-900" : s.border}`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10.5px] font-extrabold uppercase tracking-widest text-slate-400">{ti.table.nom}</span>
-                      <span className={`text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-full inline-flex items-center gap-1.5 ${s.pill}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="min-w-0 text-[10.5px] font-extrabold uppercase tracking-wide text-slate-400 leading-tight break-words">{ti.table.nom}</span>
+                      <span className={`shrink-0 whitespace-nowrap text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-full inline-flex items-center gap-1.5 ${s.pill}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />{s.label}
                       </span>
                     </div>
                     {ti.state === "open" ? (
                       <>
-                        <div className="text-[15px] font-bold text-slate-800 truncate">{ti.order?.couvert_nom || "Sur place"}</div>
+                        <div className="text-[15px] font-bold text-slate-800 leading-tight line-clamp-2 break-words">{ti.order?.couvert_nom || "Sur place"}</div>
                         <div className="mt-auto flex items-end justify-between gap-2">
                           <span className="text-xs text-slate-400 inline-flex items-center gap-1"><Users className="w-3.5 h-3.5" />{ti.table.couverts}</span>
                           <span className="text-[18px] font-extrabold tabular-nums text-slate-900">{euro(ti.total)}</span>
@@ -473,7 +473,7 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
                       </>
                     ) : ti.resa ? (
                       <>
-                        <div className="text-[15px] font-bold text-slate-800 truncate">{ti.resa.nom}</div>
+                        <div className="text-[15px] font-bold text-slate-800 leading-tight line-clamp-2 break-words">{ti.resa.nom}</div>
                         <div className="mt-auto text-xs text-slate-400 inline-flex items-center gap-1.5">
                           <Clock className="w-3.5 h-3.5" />{ti.resa.heure} · {ti.resa.couverts} couv.
                         </div>
