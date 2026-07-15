@@ -533,9 +533,6 @@ export default function CommercialDashboard() {
     document.title = `Commercial${suffix}`;
   }, [selectedHotelId, hotels]);
 
-  // Modal dédié aux dossiers "groupe" (mariages)
-  const [groupeLead, setGroupeLead] = useState<Lead | null>(null);
-
   // Lien de paiement rattaché à un dossier (modale dédiée)
   const [payFor, setPayFor] = useState<Lead | null>(null);
   const [payAmount, setPayAmount] = useState('');
@@ -577,7 +574,6 @@ export default function CommercialDashboard() {
 
   // --- MODAL ---
   const openLeadModal = async (lead?: Partial<Lead>, defaultDate?: string, defaultRoomName?: string) => {
-    if (lead && (lead as Lead).groupe_id) { setGroupeLead(lead as Lead); return; } // dossier groupe → modal dédié
     if (lead && lead.id) {
       setCurrentLead(lead);
       const { data } = await supabase.from('seminar_reservations').select('*').eq('lead_id', lead.id);
@@ -1635,6 +1631,16 @@ export default function CommercialDashboard() {
                         <Users className="w-4 h-4" /> Créer le bloc de chambres
                       </button>
                     )}
+                    {currentLead.groupe_id && (
+                      <button
+                        onClick={() => window.open(`/groupes?g=${currentLead.groupe_id}`, '_blank')}
+                        className="px-4 h-10 rounded-xl text-sm font-bold text-white inline-flex items-center gap-1.5"
+                        style={{ background: '#6366f1' }}
+                        title="Ouvrir la gestion du groupe (chambres, invités, suivi PMS)"
+                      >
+                        <Users className="w-4 h-4" /> Ouvrir la gestion du groupe
+                      </button>
+                    )}
                     {isAdmin && (
                       <button
                         onClick={() => {
@@ -1660,39 +1666,6 @@ export default function CommercialDashboard() {
                 <button onClick={handleSave} disabled={isSaving} className="px-8 h-10 rounded-xl text-sm font-black text-white bg-[var(--brand)] hover:bg-[var(--brand-hover)] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                   {isSaving ? 'Enregistrement…' : 'Enregistrer'}
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Modal dédié GROUPE */}
-        {groupeLead && (
-          <div className="fixed inset-0 flex items-center justify-center z-[100] p-4 sm:p-6" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }} onClick={e => { if (e.target === e.currentTarget) setGroupeLead(null); }}>
-            <div className="w-full max-w-md rounded-2xl overflow-hidden bg-white">
-              <div className="p-5 border-b border-gray-100 flex items-start justify-between gap-3" style={{ background: '#eef2ff' }}>
-                <div>
-                  <span className="dm text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md bg-[var(--brand-bg)] text-[var(--brand)]">👥 GROUPE</span>
-                  <h2 className="text-base font-black tracking-tight text-gray-900 mt-2">{groupeLead.titre_demande || groupeLead.nom_client}</h2>
-                  {groupeLead.date_evenement && (
-                    <p className="dm text-[11px] text-gray-500 mt-1">
-                      {format(parseISO(groupeLead.date_evenement), 'dd MMM yyyy', { locale: fr })}
-                      {groupeLead.date_fin_evenement && groupeLead.date_fin_evenement !== groupeLead.date_evenement ? ` → ${format(parseISO(groupeLead.date_fin_evenement), 'dd MMM yyyy', { locale: fr })}` : ''}
-                    </p>
-                  )}
-                </div>
-                <button onClick={() => setGroupeLead(null)} className="text-gray-400 hover:text-gray-700 shrink-0"><XCircle className="w-5 h-5" /></button>
-              </div>
-              <div className="p-5 space-y-3">
-                {groupeLead.nom_client && <div className="text-sm"><span className="text-gray-400 text-xs">Contact</span><div className="font-semibold text-gray-800">{groupeLead.nom_client}</div></div>}
-                {groupeLead.email && <a href={`mailto:${groupeLead.email}`} className="block text-sm text-[var(--brand)]">{groupeLead.email}</a>}
-                <p className="text-xs text-gray-400">Le détail des chambres, des invités et le suivi PMS se gèrent dans l’app Groupes.</p>
-                <div className="grid grid-cols-1 gap-2 pt-1">
-                  <button onClick={() => window.open(`/groupes?g=${groupeLead.groupe_id}`, '_blank')} className="h-11 rounded-xl text-sm font-black text-white inline-flex items-center justify-center gap-2" style={{ background: '#6366f1' }}><Users className="w-4 h-4" /> Ouvrir la gestion du groupe</button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => window.open(`/devis?leadId=${groupeLead.id}`, '_blank')} className="h-10 rounded-xl text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center justify-center gap-1.5"><FileText className="w-4 h-4" /> Devis</button>
-                    <button onClick={() => window.open(`/fiche?leadId=${groupeLead.id}`, '_blank')} className="h-10 rounded-xl text-sm font-bold bg-violet-50 text-violet-700 border border-violet-200 inline-flex items-center justify-center gap-1.5"><ScrollText className="w-4 h-4" /> Fiche</button>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
