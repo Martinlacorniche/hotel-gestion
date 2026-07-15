@@ -254,17 +254,19 @@ export default function GroupesPage() {
             <h1 className="text-2xl font-semibold text-slate-800">Groupes &amp; mariages</h1>
             <p className="text-sm text-slate-500">{subtitle}</p>
           </div>
-          {recapMode && isAdmin && (
+          {recapMode && (
             <div className="ml-auto flex items-center gap-2 shrink-0">
               <a href="/groupes?create=1"
                 className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 h-10 rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition shadow-sm">
                 <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Nouveau groupe</span>
               </a>
-              <a href="/groupes?config=1"
-                className="inline-flex items-center gap-1.5 text-sm font-medium px-3 h-10 rounded-lg border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition"
-                title="Chambres & types">
-                <Settings className="w-4 h-4" /> <span className="hidden sm:inline">Réglages</span>
-              </a>
+              {isAdmin && (
+                <a href="/groupes?config=1"
+                  className="inline-flex items-center gap-1.5 text-sm font-medium px-3 h-10 rounded-lg border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition"
+                  title="Chambres & types">
+                  <Settings className="w-4 h-4" /> <span className="hidden sm:inline">Réglages</span>
+                </a>
+              )}
             </div>
           )}
         </header>
@@ -287,7 +289,7 @@ export default function GroupesPage() {
             </CardContent></Card>
           )
         ) : recapMode ? (
-          <GroupesRecap groupes={recapGroupes} hotelName={hotelName} hotelsCount={hotels.length} isAdmin={isAdmin} />
+          <GroupesRecap groupes={recapGroupes} hotelName={hotelName} hotelsCount={hotels.length} />
         ) : (
           <GroupesTab
             hotels={hotels}
@@ -309,11 +311,10 @@ export default function GroupesPage() {
 // ============================================================================
 // Récap des groupes — tuiles triées chronologiquement (page d'accueil du module)
 // ============================================================================
-function GroupesRecap({ groupes, hotelName, hotelsCount, isAdmin }: {
+function GroupesRecap({ groupes, hotelName, hotelsCount }: {
   groupes: Groupe[];
   hotelName: (id: string) => string;
   hotelsCount: number;
-  isAdmin: boolean;
 }) {
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -359,9 +360,7 @@ function GroupesRecap({ groupes, hotelName, hotelsCount, isAdmin }: {
         </div>
         <p className="text-slate-600 font-medium">Aucun groupe pour le moment</p>
         <p className="text-sm text-slate-400 mt-1">
-          {isAdmin
-            ? 'Crée un bloc depuis « Nouveau groupe » ou depuis un dossier Commercial.'
-            : 'Les groupes apparaîtront ici dès qu’un bloc sera créé.'}
+          Crée un bloc depuis « Nouveau groupe » ou depuis un dossier Commercial.
         </p>
       </CardContent></Card>
     );
