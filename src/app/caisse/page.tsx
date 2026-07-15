@@ -1065,7 +1065,7 @@ function CaissePageInner() {
                       <button
                         onClick={() => setSigningShift(sType)}
                         disabled={savingShift === sType || loading}
-                        className="inline-flex items-center gap-1.5 h-8 px-3.5 text-[12px] font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-md transition disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 h-8 px-3.5 text-[12px] font-semibold text-white bg-[var(--brand)] hover:bg-[var(--brand-hover)] rounded-md transition disabled:opacity-50"
                       >
                         <Lock className="w-3.5 h-3.5" /> Valider & signer
                       </button>

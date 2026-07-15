@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { Card, CardContent } from '@/components/ui/card';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import {
@@ -290,7 +291,8 @@ export default function ClimPage() {
   if (!user) return <div className="p-8 text-center text-slate-500">Authentification requise.</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen">
+      <ThemedBackground />
       <div className="p-4 md:p-6 max-w-7xl mx-auto">
         {/* Header */}
         <PageHeader

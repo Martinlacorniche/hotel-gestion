@@ -362,7 +362,7 @@ export default function UsersPage() {
           actions={
             <Button
               onClick={() => setInviteOpen(true)}
-              className="bg-slate-900 hover:bg-slate-800 text-white shadow-sm"
+              className="shadow-sm"
             >
               <UserPlus size={15} className="mr-2" /> Inviter
             </Button>
@@ -439,7 +439,7 @@ export default function UsersPage() {
               title="Aucun utilisateur trouvé"
               subtitle="Essayez de modifier les filtres ou invitez un nouvel utilisateur."
               action={
-                <Button size="sm" onClick={() => setInviteOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white">
+                <Button size="sm" onClick={() => setInviteOpen(true)}>
                   <UserPlus size={14} className="mr-2" /> Inviter
                 </Button>
               }
@@ -593,7 +593,7 @@ export default function UsersPage() {
           </div>
           <div className="flex justify-end gap-2 mt-6">
             <Button variant="ghost" onClick={() => setInviteOpen(false)} disabled={inviting}>Annuler</Button>
-            <Button onClick={doInvite} disabled={inviting} className="bg-slate-900 hover:bg-slate-800 text-white">
+            <Button onClick={doInvite} disabled={inviting}>
               {inviting ? <><Loader2 size={14} className="animate-spin mr-2" /> Envoi…</> : <><Mail size={14} className="mr-2" /> Envoyer l&apos;invitation</>}
             </Button>
           </div>

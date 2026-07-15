@@ -120,20 +120,13 @@ export default function EcranPage() {
     <div className="min-h-screen">
       <ThemedBackground />
 
-      {/* Header sticky */}
-      <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <PageHeader
-            icon={Monitor}
-            title="Écran"
-            subtitle="Envoyer un message à l'écran SmallTV"
-            iconClassName="bg-slate-100 text-slate-700"
-            className="mb-0"
-          />
-        </div>
-      </header>
-
       <main className="max-w-7xl mx-auto px-6 py-6">
+        <PageHeader
+          icon={Monitor}
+          title="Écran"
+          subtitle="Envoyer un message à l'écran SmallTV"
+          iconClassName="bg-slate-100 text-slate-700"
+        />
         <div className="grid lg:grid-cols-2 gap-6 items-start">
           {/* Composer */}
           <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">

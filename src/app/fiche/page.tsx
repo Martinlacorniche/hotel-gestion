@@ -515,7 +515,7 @@ function FicheContent() {
               )}
             </BlobProvider>
           )}
-          <button onClick={() => handleSave()} disabled={saving} className="flex items-center gap-1.5 px-5 h-9 rounded-xl text-xs font-black bg-gray-900 text-white hover:bg-gray-800 transition-all disabled:opacity-50">
+          <button onClick={() => handleSave()} disabled={saving} className="flex items-center gap-1.5 px-5 h-9 rounded-xl text-xs font-black bg-[var(--brand)] text-white hover:bg-[var(--brand-hover)] transition-all disabled:opacity-50">
             {saved ? <CheckCircle className="w-3.5 h-3.5" /> : saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             {saved ? 'Enregistré' : saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>

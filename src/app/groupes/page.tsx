@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useSelectedHotel } from '@/context/SelectedHotelContext';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { Card, CardContent } from '@/components/ui/card';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import {
@@ -239,7 +240,8 @@ export default function GroupesPage() {
       : 'Bloc de chambres — inscription en ligne';
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen">
+      <ThemedBackground />
       <div className="p-4 md:p-6 max-w-7xl mx-auto">
         <header className="mb-6 flex items-center gap-3">
           {/* Navigation intra-module en rechargement complet : le mode est lu
