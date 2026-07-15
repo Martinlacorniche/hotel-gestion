@@ -115,7 +115,7 @@ export default function EcranPage() {
 
       {/* Header sticky */}
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
-        <div className="max-w-3xl mx-auto px-6 py-4">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <PageHeader
             icon={Monitor}
             title="Écran"
@@ -126,7 +126,10 @@ export default function EcranPage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-6 space-y-6">
+      <main className="max-w-7xl mx-auto px-6 py-6">
+       <div className="grid lg:grid-cols-2 gap-6 items-start">
+        {/* Colonne gauche : composer + dernier message */}
+        <div className="space-y-6">
         {/* Composer */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
           <div>
@@ -136,7 +139,7 @@ export default function EcranPage() {
               onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LEN))}
               placeholder="Texte à afficher sur l'écran…"
               rows={3}
-              className="mt-1 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+              className="mt-1 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send();
               }}
@@ -160,9 +163,10 @@ export default function EcranPage() {
               />
             </div>
             <Button
+              variant="brand"
               onClick={send}
               disabled={sending || !text.trim()}
-              className="ml-auto bg-slate-900 hover:bg-slate-800 text-white shadow-sm"
+              className="ml-auto"
             >
               {sending ? <Loader2 size={15} className="mr-2 animate-spin" /> : <Send size={15} className="mr-2" />}
               Envoyer
@@ -184,7 +188,9 @@ export default function EcranPage() {
             </div>
           </div>
         )}
+        </div>
 
+        {/* Colonne droite : historique */}
         {/* Historique */}
         <div className="bg-white rounded-xl border border-slate-200">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
@@ -220,6 +226,7 @@ export default function EcranPage() {
             </ul>
           )}
         </div>
+       </div>
       </main>
     </div>
   );
