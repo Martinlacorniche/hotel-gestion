@@ -193,10 +193,14 @@ export default function EcranPage() {
 
           {/* Aperçu de l'écran SmallTV — WYSIWYG */}
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-2">Aperçu écran</p>
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-2">
+              {text.trim() ? "Aperçu avant envoi" : last ? "À l'écran actuellement" : "Aperçu écran"}
+            </p>
             <div className="aspect-video w-full rounded-2xl bg-slate-900 border border-slate-800 shadow-inner flex items-center justify-center p-8 overflow-hidden">
               {text.trim() ? (
                 <p className="text-white text-2xl md:text-3xl font-semibold text-center leading-snug break-words">{text}</p>
+              ) : last ? (
+                <p className="text-white text-2xl md:text-3xl font-semibold text-center leading-snug break-words">{last.text}</p>
               ) : (
                 <p className="text-slate-500 text-sm">L&apos;écran affichera votre message ici.</p>
               )}
