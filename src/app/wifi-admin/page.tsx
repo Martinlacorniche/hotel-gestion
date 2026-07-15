@@ -695,7 +695,7 @@ function MenuTab() {
           ))}
         </div>
         <div className="flex justify-end">
-          <Button size="sm" onClick={savePrix} disabled={savingPrix} className="h-8 px-4 bg-[#004e7c] hover:bg-[#003d61] text-white gap-2">
+          <Button size="sm" onClick={savePrix} disabled={savingPrix} className="h-8 px-4 bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white gap-2">
             {savingPrix ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
             Enregistrer les prix
           </Button>
@@ -718,7 +718,7 @@ function MenuTab() {
                 return (
                   <li key={item.id} className="px-4 py-2.5 space-y-1">
                     <div className="flex items-center gap-3">
-                      <button onClick={() => toggleActif(item)} className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[#004e7c] border-[#004e7c]" : "border-slate-300"}`}>
+                      <button onClick={() => toggleActif(item)} className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition border ${item.actif ? "bg-[var(--brand)] border-[var(--brand)]" : "border-slate-300"}`}>
                         {item.actif && <Check size={10} className="text-white" />}
                       </button>
                       <Input
@@ -757,7 +757,7 @@ function MenuTab() {
                 onKeyDown={e => e.key === "Enter" && addItem(key as "base" | "garniture")}
                 className="h-8 text-sm"
               />
-              <Button size="sm" onClick={() => addItem(key as "base" | "garniture")} disabled={saving || !newNom[key].trim()} className="h-8 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
+              <Button size="sm" onClick={() => addItem(key as "base" | "garniture")} disabled={saving || !newNom[key].trim()} className="h-8 px-3 bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white">
                 <Plus size={14} />
               </Button>
             </div>
@@ -971,19 +971,18 @@ function CuriositesTab() {
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Description FR</label>
-                    <textarea value={edit.description} onChange={e => setEdit(s => ({ ...s, description: e.target.value }))} rows={3} placeholder="Décrivez l'objet en 2-3 lignes…" className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20 resize-none" />
+                    <AutoTextarea value={edit.description} onChange={e => setEdit(s => ({ ...s, description: e.target.value }))} placeholder="Décrivez l'objet en 2-3 lignes…" className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--brand)_20%,transparent)]" />
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-[10px] uppercase tracking-widest text-slate-400">Description EN</label>
                       <TranslateBtn source={edit.description} onResult={v => setEdit(s => ({ ...s, description_en: v }))} />
                     </div>
-                    <textarea
+                    <AutoTextarea
                       value={edit.description_en}
                       onChange={e => setEdit(s => ({ ...s, description_en: e.target.value }))}
-                      rows={3}
                       placeholder="Laisser vide = auto-traduit"
-                      className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20 resize-none"
+                      className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--brand)_20%,transparent)]"
                     />
                   </div>
                 </div>
@@ -992,7 +991,7 @@ function CuriositesTab() {
                   <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1">Tags</label>
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {edit.tags.map(t => (
-                      <span key={t} className="inline-flex items-center gap-1 text-xs bg-[#004e7c]/10 text-[#004e7c] rounded-full px-2.5 py-0.5">
+                      <span key={t} className="inline-flex items-center gap-1 text-xs bg-[color-mix(in_srgb,var(--brand)_10%,transparent)] text-[var(--brand)] rounded-full px-2.5 py-0.5">
                         {t}
                         <button onClick={() => removeTag(t)}><X size={11} /></button>
                       </span>
@@ -1025,7 +1024,7 @@ function CuriositesTab() {
                   <span className="text-sm text-slate-700">Disponible</span>
                   <button
                     onClick={() => setEdit(s => ({ ...s, dispo: !s.dispo }))}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${edit.dispo ? "bg-[#004e7c]" : "bg-slate-200"}`}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${edit.dispo ? "bg-[var(--brand)]" : "bg-slate-200"}`}
                   >
                     <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${edit.dispo ? "translate-x-6" : "translate-x-1"}`} />
                   </button>
@@ -1033,7 +1032,7 @@ function CuriositesTab() {
 
                 <div className="flex justify-end gap-2 pt-1">
                   <Button variant="ghost" size="sm" onClick={() => setOpenId(null)}>Annuler</Button>
-                  <Button size="sm" onClick={() => saveItem(item.id)} disabled={saving === item.id || !edit.nom.trim()} className="bg-[#004e7c] hover:bg-[#003d61] text-white gap-1.5">
+                  <Button size="sm" onClick={() => saveItem(item.id)} disabled={saving === item.id || !edit.nom.trim()} className="bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white gap-1.5">
                     {saving === item.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                     Enregistrer
                   </Button>
@@ -1049,7 +1048,7 @@ function CuriositesTab() {
         <div className="flex gap-2">
           <Input placeholder="📦" value={newEmoji} onChange={e => setNewEmoji(e.target.value)} className="w-14 text-center h-9" />
           <Input placeholder="Nom de l'objet" value={newNom} onChange={e => setNewNom(e.target.value)} onKeyDown={e => e.key === "Enter" && addItem()} className="h-9 flex-1" />
-          <Button size="sm" onClick={addItem} disabled={!newNom.trim() || addingSaving} className="h-9 px-3 bg-[#004e7c] hover:bg-[#003d61] text-white">
+          <Button size="sm" onClick={addItem} disabled={!newNom.trim() || addingSaving} className="h-9 px-3 bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white">
             {addingSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
           </Button>
         </div>

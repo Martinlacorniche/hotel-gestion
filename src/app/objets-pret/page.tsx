@@ -154,7 +154,7 @@ function Gantt() {
           className="flex-1 text-base font-semibold text-slate-900 text-center bg-transparent border-none outline-none cursor-pointer"
         />
         <button onClick={nextDay} className="p-2 hover:bg-slate-100 rounded-xl transition"><ChevronRight size={18} /></button>
-        {isToday && <span className="text-xs bg-[#004e7c]/10 text-[#004e7c] font-semibold px-3 py-1 rounded-full">Aujourd&apos;hui</span>}
+        {isToday && <span className="text-xs bg-[color-mix(in_srgb,var(--brand)_10%,transparent)] text-[var(--brand)] font-semibold px-3 py-1 rounded-full">Aujourd&apos;hui</span>}
       </div>
 
       {/* Gantt */}
@@ -224,11 +224,11 @@ function Gantt() {
                     style={{ left: `${bar.leftPct}%`, width: `${Math.max(bar.widthPct, 1.5)}%` }}
                     onClick={e => { e.stopPropagation(); setDetailResa(bar); }}
                   >
-                    <div className="absolute inset-0 bg-[#004e7c]/10 border border-[#004e7c]/25 rounded-lg" />
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#004e7c] rounded-l-lg" />
+                    <div className="absolute inset-0 bg-[color-mix(in_srgb,var(--brand)_10%,transparent)] border border-[color-mix(in_srgb,var(--brand)_25%,transparent)] rounded-lg" />
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-[var(--brand)] rounded-l-lg" />
                     <div className="relative flex items-center h-full px-2.5 pl-3 gap-1.5 overflow-hidden">
-                      <p className="text-[#004e7c] text-[11px] font-semibold truncate">{bar.client_nom}</p>
-                      <span className="text-[#004e7c]/50 text-[10px] shrink-0">· {bar.chambre}</span>
+                      <p className="text-[var(--brand)] text-[11px] font-semibold truncate">{bar.client_nom}</p>
+                      <span className="text-[color-mix(in_srgb,var(--brand)_50%,transparent)] text-[10px] shrink-0">· {bar.chambre}</span>
                     </div>
                   </div>
                 ))}
@@ -309,8 +309,8 @@ function Gantt() {
               <div>
                 <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1.5">Début</label>
                 <div className="flex gap-2">
-                  <input type="date" value={debutDate} onChange={e => { setDebutDate(e.target.value); if (!finDate || e.target.value > finDate) setFinDate(e.target.value); }} className="flex-1 h-10 text-sm border border-slate-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20" />
-                  <input type="time" value={debutHeure} onChange={e => setDebutHeure(e.target.value)} className="w-28 h-10 text-sm border border-slate-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20" />
+                  <input type="date" value={debutDate} onChange={e => { setDebutDate(e.target.value); if (!finDate || e.target.value > finDate) setFinDate(e.target.value); }} className="flex-1 h-10 text-sm border border-slate-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--brand)_20%,transparent)]" />
+                  <input type="time" value={debutHeure} onChange={e => setDebutHeure(e.target.value)} className="w-28 h-10 text-sm border border-slate-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--brand)_20%,transparent)]" />
                 </div>
               </div>
               <div>
@@ -325,7 +325,7 @@ function Gantt() {
                         setFinHeure(String(fin.getHours()).padStart(2, "0") + ":" + String(fin.getMinutes()).padStart(2, "0"));
                         setSelectedDuree(h);
                       }}
-                      className={`text-xs px-3.5 py-1.5 rounded-full border font-medium transition ${selectedDuree === h ? "bg-[#004e7c] border-[#004e7c] text-white" : "border-slate-200 text-slate-600 hover:bg-[#004e7c] hover:text-white hover:border-[#004e7c]"}`}
+                      className={`text-xs px-3.5 py-1.5 rounded-full border font-medium transition ${selectedDuree === h ? "bg-[var(--brand)] border-[var(--brand)] text-white" : "border-slate-200 text-slate-600 hover:bg-[var(--brand)] hover:text-white hover:border-[var(--brand)]"}`}
                     >
                       {h < 24 ? `${h}h` : h === 24 ? "24h" : "2 nuits"}
                     </button>
@@ -335,14 +335,14 @@ function Gantt() {
               <div>
                 <label className="text-[10px] uppercase tracking-widest text-slate-400 block mb-1.5">Fin (modifiable)</label>
                 <div className="flex gap-2">
-                  <input type="date" value={finDate} onChange={e => setFinDate(e.target.value)} className="flex-1 h-10 text-sm border border-slate-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20" />
-                  <input type="time" value={finHeure} onChange={e => { setFinHeure(e.target.value); setSelectedDuree(null); }} className="w-28 h-10 text-sm border border-slate-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-[#004e7c]/20" />
+                  <input type="date" value={finDate} onChange={e => setFinDate(e.target.value)} className="flex-1 h-10 text-sm border border-slate-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--brand)_20%,transparent)]" />
+                  <input type="time" value={finHeure} onChange={e => { setFinHeure(e.target.value); setSelectedDuree(null); }} className="w-28 h-10 text-sm border border-slate-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--brand)_20%,transparent)]" />
                 </div>
               </div>
             </div>
             <div className="flex gap-3 pt-1">
               <Button variant="ghost" className="flex-1" onClick={() => setCreateModal(null)}>Annuler</Button>
-              <Button className="flex-1 bg-[#004e7c] hover:bg-[#003d61] text-white gap-2 h-11"
+              <Button className="flex-1 bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white gap-2 h-11"
                 disabled={!nom.trim() || saving} onClick={createResa}>
                 {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
                 Confirmer
