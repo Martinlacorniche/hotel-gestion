@@ -206,7 +206,7 @@ export default function EncaissementPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="p-4 md:p-6 max-w-5xl mx-auto">
+      <div className="p-4 md:p-6 max-w-7xl mx-auto">
         <PageHeader
           icon={CreditCard}
           title="Encaissement"
