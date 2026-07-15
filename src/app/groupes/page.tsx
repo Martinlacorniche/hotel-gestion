@@ -240,7 +240,7 @@ export default function GroupesPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="p-4 md:p-6 max-w-6xl mx-auto">
+      <div className="p-4 md:p-6 max-w-7xl mx-auto">
         <header className="mb-6 flex items-center gap-3">
           {/* Navigation intra-module en rechargement complet : le mode est lu
               depuis l'URL au montage (pas de soft-nav, sinon la vue ne suit pas). */}
@@ -367,7 +367,7 @@ function GroupesRecap({ groupes, hotelName, hotelsCount }: {
   }
 
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {cards.map(({ g, st, unread, confirmed, nbChambres, hotelIds }) => {
         const dim = st.weight >= 2;
         return (
