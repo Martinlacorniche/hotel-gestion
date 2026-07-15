@@ -350,7 +350,7 @@ export default function InfosPage() {
           </div>
         ) : (composing === "process" || selected?.kind === "process") ? (
           /* ====== PROCESS ====== */
-          <div className="flex-1 flex flex-col h-full max-w-4xl mx-auto w-full bg-white shadow-xl shadow-slate-200/50 my-0 md:my-6 md:rounded-2xl border-x md:border border-slate-200 overflow-hidden">
+          <div className="flex-1 flex flex-col h-full max-w-5xl mx-auto w-full bg-white shadow-xl shadow-slate-200/50 my-0 md:my-6 md:rounded-2xl border-x md:border border-slate-200 overflow-hidden">
             <div className="h-16 border-b border-slate-100 flex items-center justify-between px-6 shrink-0 bg-white">
               <div className="flex items-center gap-4 flex-1 min-w-0">
                 <button onClick={resetSelection} className="md:hidden p-2 -ml-2 text-slate-400"><ChevronLeft className="w-6 h-6" /></button>
