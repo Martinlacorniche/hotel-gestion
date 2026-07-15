@@ -402,18 +402,27 @@ export function PosTab({ hotelId }: { hotelId: string }) {
 
   // ── Clôture de service : ferme TOUTES les tables + récap du jour ─────────────
   const openCloture = async () => {
-    // Clôturer = board à 0 : toutes les additions ouvertes sont fermées.
-    // Confirmation si certaines portent des consommations non encaissées.
-    const openIds = orders.filter(o => o.statut !== "encaissee").map(o => o.id);
+    // Sécurité : on NE clôture PAS s'il reste des additions à encaisser, et on ne
+    // supprime JAMAIS une addition non encaissée (= perte de CA). L'équipe doit
+    // encaisser (ou annuler) les tables ouvertes avant de pouvoir clôturer.
+    const openIds = orders.filter(o => o.statut === "ouverte").map(o => o.id);
     if (openIds.length) {
-      const { data: withItems } = await supabase.from("rooftop_order_items")
-        .select("order_id").in("order_id", openIds);
-      const nonEmpty = new Set(((withItems as { order_id: string }[]) || []).map(x => x.order_id));
-      const nonEmptyCount = openIds.filter(id => nonEmpty.has(id)).length;
-      if (nonEmptyCount > 0 && !(await confirmDialog(
-        `${nonEmptyCount} table(s) encore ouverte(s) avec des consommations NON encaissées.\nLa clôture va toutes les fermer (supprimées). Continuer ?`))) return;
-      await supabase.from("rooftop_orders").delete().in("id", openIds);
-      setOrders(prev => prev.filter(o => !openIds.includes(o.id)));
+      const { data: itemsOpen } = await supabase.from("rooftop_order_items")
+        .select("order_id,prix,qty").in("order_id", openIds);
+      const duByOrder = new Map<string, number>();
+      ((itemsOpen as { order_id: string; prix: number; qty: number }[]) || []).forEach(it => {
+        duByOrder.set(it.order_id, (duByOrder.get(it.order_id) || 0) + (Number(it.prix) || 0) * (it.qty || 1));
+      });
+      const aEncaisser = openIds.filter(id => (duByOrder.get(id) || 0) > 0);
+      if (aEncaisser.length) {
+        toast.error(
+          `Clôture impossible : ${aEncaisser.length} table(s) encore à encaisser. Encaisse-les (ou annule-les) d'abord — rien n'est supprimé.`,
+          { duration: 6000 },
+        );
+        return;
+      }
+      // Additions ouvertes sans aucune consommation : on les laisse telles quelles
+      // (aucune suppression), elles n'entrent pas dans le récap.
     }
 
     setShowCloture(true); setClotureLoading(true); setCloture(null);
