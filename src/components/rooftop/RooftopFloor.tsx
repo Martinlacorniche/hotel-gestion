@@ -13,12 +13,12 @@ import { supabase } from "@/lib/supabaseClient";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { VOILES_ID } from "@/components/rooftop/RooftopEditors";
+import { VOILES_ID, CarteLienPublic } from "@/components/rooftop/RooftopEditors";
 import { tvaTypeForCategorie, round2, type TvaType } from "@/lib/rooftopTva";
 import toast from "react-hot-toast";
 import {
   ChevronLeft, ChevronRight, Plus, Minus, Trash2, CreditCard, Banknote, BedDouble,
-  CalendarPlus, Users, Clock, ArrowLeft, X, Check, UserCheck, UserX,
+  CalendarPlus, Users, Clock, ArrowLeft, X, Check, UserCheck, UserX, Mail,
 } from "lucide-react";
 
 // ── Types (alignés sur PosTab / ResasTab) ─────────────────────────────────────
@@ -31,8 +31,9 @@ type Resa = {
 type Order = {
   id: string; table_id: string | null; reservation_id: string | null;
   couvert_nom: string | null; statut: string; total: number;
+  numero: string | null; client_nom: string | null; client_email: string | null;
 };
-const ORDER_COLS = "id,table_id,reservation_id,couvert_nom,statut,total";
+const ORDER_COLS = "id,table_id,reservation_id,couvert_nom,statut,total,numero,client_nom,client_email";
 type OrderRow = { id: string; source: string; ref_id: string | null; nom: string; prix: number; qty: number; tva_type: TvaType | null };
 type Payment = { id: string; method: string; amount: number; room_ref: string | null; mews_payment_id?: string | null };
 type MenuItem = { source: "plat" | "boisson"; ref_id: string | null; nom: string; prix: number; tvaType: TvaType };
@@ -85,10 +86,16 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
   const [roomRef, setRoomRef] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Formulaire réservation
+  // Formulaire réservation (création OU édition)
   const emptyForm = { nom: "", tel: "", email: "", heure: "20:00", couverts: 2, message: "" };
   const [form, setForm] = useState(emptyForm);
   const [reserveTableId, setReserveTableId] = useState<string | null>(null);
+  const [editResaId, setEditResaId] = useState<string | null>(null);
+
+  // Facture (édition + envoi mail)
+  const [clientNom, setClientNom] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [invoicing, setInvoicing] = useState(false);
 
   // ── Carte (une fois) ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -183,6 +190,7 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
     const o = data as Order;
     setOrders(prev => [...prev, o]);
     setActive(o); setItems([]); setPayments([]); setPayMethod(null); setPayAmount(""); setRoomRef("");
+    setClientNom(fields.couvert_nom ?? ""); setClientEmail("");
   };
 
   const openWalkin = (t: Table) => createOrder({ table_id: t.id, reservation_id: null, couvert_nom: null });
@@ -202,9 +210,13 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
     setItems(((data as OrderRow[]) || []).map(r => ({ ...r, prix: Number(r.prix) })));
     setPayments(((pays as Payment[]) || []).map(p => ({ ...p, amount: Number(p.amount) })));
     setActive(order); setPayMethod(null); setPayAmount(""); setRoomRef("");
+    setClientNom(order.client_nom ?? order.couvert_nom ?? ""); setClientEmail(order.client_email ?? "");
   };
 
-  const closeActive = () => { setActive(null); setItems([]); setPayments([]); setPayMethod(null); setPayAmount(""); setRoomRef(""); };
+  const closeActive = () => { setActive(null); setItems([]); setPayments([]); setPayMethod(null); setPayAmount(""); setRoomRef(""); setClientNom(""); setClientEmail(""); };
+
+  // Vente au comptoir (sans table) — plusieurs peuvent coexister.
+  const openCounter = () => { setSelId(null); setMode("none"); createOrder({ table_id: null, reservation_id: null, couvert_nom: null }); };
 
   // ── Lignes (persistées à chaque geste) ──────────────────────────────────────
   const addLine = async (mi: MenuItem) => {
@@ -321,6 +333,27 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
     closeActive(); setSelId(null); await reload();
   };
 
+  // Facture PDF réglementaire envoyée par mail (route serveur existante).
+  const sendFacture = async () => {
+    if (!active || items.length === 0) return;
+    if (!clientEmail.trim()) { toast.error("Email du client requis"); return; }
+    setInvoicing(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) { toast.error("Session expirée"); return; }
+      const res = await fetch("/api/rooftop/facture", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ orderId: active.id, clientNom, clientEmail }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) { toast.error(json.error || "Échec facture"); return; }
+      toast.success(`Facture ${json.numero} envoyée ✓`);
+      setActive(prev => prev ? { ...prev, numero: json.numero, client_nom: clientNom, client_email: clientEmail } : prev);
+      setOrders(prev => prev.map(o => o.id === active!.id ? { ...o, numero: json.numero, client_nom: clientNom, client_email: clientEmail } : o));
+    } catch { toast.error("Erreur réseau"); } finally { setInvoicing(false); }
+  };
+
   // ── Réservation (RPC forçage + email de confirmation) ───────────────────────
   const markPresence = async (r: Resa, value: "arrive" | null) => {
     setResas(prev => prev.map(x => x.id === r.id ? { ...x, presence: value } : x));
@@ -361,9 +394,12 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
     }).then(res => res.ok ? toast.success("Mail de confirmation envoyé") : toast.error("Mail non envoyé")).catch(() => toast.error("Mail non envoyé"));
   };
 
-  const openReserve = (t: Table) => {
+  const openReserve = (t: Table, resa?: Resa) => {
     setReserveTableId(t.id);
-    setForm({ ...emptyForm, couverts: t.couverts });
+    setEditResaId(resa?.id ?? null);
+    setForm(resa
+      ? { nom: resa.nom, tel: resa.telephone ?? "", email: resa.email ?? "", heure: resa.heure, couverts: resa.couverts, message: resa.message ?? "" }
+      : { ...emptyForm, couverts: t.couverts });
     setMode("reserve");
   };
 
@@ -375,6 +411,19 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
     const heure = form.heure.trim();
     if (!heure) { toast.error("Heure requise"); return; }
     const couverts = form.couverts || t.couverts;
+    // Édition d'une résa existante.
+    if (editResaId) {
+      setBusy(true);
+      const { error } = await supabase.from("rooftop_reservations").update({
+        heure, couverts, nom, telephone: form.tel.trim() || null,
+        email: form.email.trim() || null, message: form.message.trim() || null, table_id: t.id,
+      }).eq("id", editResaId);
+      setBusy(false);
+      if (error) { toast.error(error.message || "Erreur"); return; }
+      toast.success("Réservation modifiée ✓");
+      setMode("none"); setEditResaId(null); setSelId(t.id); await reload();
+      return;
+    }
     setBusy(true);
     const { error } = await supabase.from("rooftop_reservations").insert({
       hotel_id: hotelId, date_resa: date, heure, couverts, nom,
@@ -422,9 +471,13 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
 
   // ── Rendu ───────────────────────────────────────────────────────────────────
   const selTile = selected;
+  const counterOrders = orders.filter(o => o.table_id === null && o.statut === "ouverte");
+  const reserveTable = tables.find(x => x.id === reserveTableId) || null;
+  const facture = { clientNom, setClientNom, clientEmail, setClientEmail, invoicing, sendFacture };
 
   return (
     <div className="space-y-5">
+      <CarteLienPublic />
       {/* Barre service */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
@@ -457,9 +510,9 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
                   <button key={ti.table.id}
                     onClick={() => { setSelId(ti.table.id); setMode("none"); closeActive(); if (ti.order) reopenOrder(ti.order); }}
                     className={`text-left rounded-2xl border bg-white p-4 min-h-[116px] flex flex-col gap-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${sel ? "border-slate-900 ring-2 ring-slate-900" : s.border}`}>
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="min-w-0 text-[10.5px] font-extrabold uppercase tracking-wide text-slate-400 leading-tight break-words">{ti.table.nom}</span>
-                      <span className={`shrink-0 whitespace-nowrap text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-full inline-flex items-center gap-1.5 ${s.pill}`}>
+                    <div className="flex flex-col items-start gap-1.5">
+                      <span className="w-full text-[12px] font-extrabold uppercase tracking-wide text-slate-600 leading-tight">{ti.table.nom}</span>
+                      <span className={`whitespace-nowrap text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-full inline-flex items-center gap-1.5 ${s.pill}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />{s.label}
                       </span>
                     </div>
@@ -487,31 +540,57 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
               })}
             </div>
           )}
+
+          {/* Comptoir : ventes sans table, plusieurs en parallèle */}
+          <div className="mt-5">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Comptoir</span>
+              <button onClick={openCounter} className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--brand)] hover:underline">
+                <Plus className="w-4 h-4" /> Nouvelle vente
+              </button>
+            </div>
+            {counterOrders.length === 0 ? (
+              <div className="text-xs text-slate-400">Aucune vente au comptoir en cours.</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+                {counterOrders.map(o => (
+                  <button key={o.id} onClick={() => { setSelId(null); setMode("none"); reopenOrder(o); }}
+                    className={`text-left rounded-2xl border bg-white p-4 min-h-[92px] flex flex-col gap-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${active?.id === o.id ? "border-slate-900 ring-2 ring-slate-900" : "border-emerald-300"}`}>
+                    <span className="text-[12px] font-extrabold uppercase tracking-wide text-slate-600">Comptoir</span>
+                    <div className="text-[14px] font-bold text-slate-800 truncate">{o.couvert_nom || "Vente"}</div>
+                    <div className="mt-auto text-[17px] font-extrabold tabular-nums text-slate-900">{euro(orderTotals[o.id] || 0)}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Volet table */}
+        {/* Volet contextuel */}
         <aside className="rounded-2xl border border-slate-200 bg-white overflow-hidden lg:sticky lg:top-4">
-          {!selTile ? (
-            <div className="p-10 text-center text-slate-400 text-sm">Touche une table pour la piloter.</div>
-          ) : mode === "reserve" ? (
-            <ReservePanel table={selTile.table} form={form} setForm={setForm} onCancel={() => setMode("none")} onSubmit={submitReserve} busy={busy} />
-          ) : active ? (
+          {active ? (
             <OrderPanel
-              table={selTile.table} active={active} items={items} menu={menu}
+              table={selTile?.table ?? null} active={active} items={items} menu={menu}
               payments={payments} payMethod={payMethod} setPayMethod={setPayMethod}
               payAmount={payAmount} setPayAmount={setPayAmount} roomRef={roomRef} setRoomRef={setRoomRef}
-              totalItems={totalItems} paid={paid} remaining={remaining} busy={busy}
+              totalItems={totalItems} paid={paid} remaining={remaining} busy={busy} facture={facture}
               onBack={() => { closeActive(); }} addLine={addLine} changeQty={changeQty} editPrice={editPrice}
               addPayment={addPayment} removePayment={removePayment} cancelOrder={cancelOrder}
             />
-          ) : (
+          ) : mode === "reserve" && reserveTable ? (
+            <ReservePanel table={reserveTable} editing={!!editResaId} form={form} setForm={setForm}
+              onCancel={() => { setMode("none"); setEditResaId(null); }} onSubmit={submitReserve} busy={busy} />
+          ) : selTile ? (
             <TablePanel ti={selTile}
               onWalkin={() => openWalkin(selTile.table)}
               onReserve={() => openReserve(selTile.table)}
+              onEditResa={() => selTile.resa && openReserve(selTile.table, selTile.resa)}
               onSeat={() => selTile.resa && openFromResa(selTile.resa)}
               onNoShow={() => selTile.resa && markNoShow(selTile.resa)}
               onCancelResa={() => selTile.resa && cancelResa(selTile.resa)}
             />
+          ) : (
+            <div className="p-10 text-center text-slate-400 text-sm">Touche une table pour la piloter.</div>
           )}
         </aside>
       </div>
@@ -520,22 +599,22 @@ export function FloorTab({ hotelId }: { hotelId: string }) {
 }
 
 // ── Sous-panneaux ─────────────────────────────────────────────────────────────
-function PanelHead({ table, sub, right }: { table: Table; sub: string; right?: React.ReactNode }) {
+function PanelHead({ title, sub, right }: { title: string; sub: string; right?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
-      <div><div className="text-xl font-extrabold text-slate-800">{table.nom}</div><div className="text-xs text-slate-500 mt-0.5">{sub}</div></div>
+      <div><div className="text-xl font-extrabold text-slate-800">{title}</div><div className="text-xs text-slate-500 mt-0.5">{sub}</div></div>
       {right}
     </div>
   );
 }
 
-function TablePanel({ ti, onWalkin, onReserve, onSeat, onNoShow, onCancelResa }: {
-  ti: TileInfo; onWalkin: () => void; onReserve: () => void; onSeat: () => void; onNoShow: () => void; onCancelResa: () => void;
+function TablePanel({ ti, onWalkin, onReserve, onEditResa, onSeat, onNoShow, onCancelResa }: {
+  ti: TileInfo; onWalkin: () => void; onReserve: () => void; onEditResa: () => void; onSeat: () => void; onNoShow: () => void; onCancelResa: () => void;
 }) {
   const s = STATE_STYLE[ti.state];
   return (
     <div className="flex flex-col">
-      <PanelHead table={ti.table} sub={`${ti.table.couverts} couverts · ${s.label}`} />
+      <PanelHead title={ti.table.nom} sub={`${ti.table.couverts} couverts · ${s.label}`} />
       <div className="p-5 space-y-4">
         {ti.resa && (
           <div className="rounded-xl bg-slate-50 border border-slate-100 p-3.5 text-sm">
@@ -543,6 +622,11 @@ function TablePanel({ ti, onWalkin, onReserve, onSeat, onNoShow, onCancelResa }:
             <div className="text-slate-500 mt-0.5">{ti.resa.heure} · {ti.resa.couverts} couverts{ti.resa.telephone ? ` · ${ti.resa.telephone}` : ""}</div>
             {ti.resa.email && <div className="text-slate-400 text-xs mt-0.5">{ti.resa.email}</div>}
             {ti.resa.message && <div className="text-slate-500 text-xs mt-1.5 italic">« {ti.resa.message} »</div>}
+          </div>
+        )}
+        {ti.next && (
+          <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-3 text-xs text-indigo-700">
+            Prochaine réservation sur cette table à <b>{ti.next.heure}</b> — {ti.next.nom} ({ti.next.couverts})
           </div>
         )}
       </div>
@@ -555,9 +639,13 @@ function TablePanel({ ti, onWalkin, onReserve, onSeat, onNoShow, onCancelResa }:
         )}
         {(ti.state === "reserved" || ti.state === "arrived") && (
           <>
-            <Button variant="brand" className="w-full h-12" onClick={onSeat}><UserCheck className="w-4 h-4 mr-1.5" />Installer & ouvrir la note</Button>
+            <Button variant="brand" className="w-full h-12" onClick={onSeat}><UserCheck className="w-4 h-4 mr-1.5" />Installer &amp; ouvrir la note</Button>
             <div className="flex gap-2">
-              <Button className="flex-1 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600" onClick={onCancelResa}>Annuler la résa</Button>
+              <Button className="flex-1 h-10 bg-slate-100 hover:bg-slate-200 text-slate-700" onClick={onEditResa}>Modifier la résa</Button>
+              <Button className="flex-1 h-10 bg-indigo-50 hover:bg-indigo-100 text-indigo-700" onClick={onReserve}><CalendarPlus className="w-4 h-4 mr-1.5" />Autre créneau</Button>
+            </div>
+            <div className="flex gap-2">
+              <Button className="flex-1 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600" onClick={onCancelResa}>Annuler</Button>
               <Button className="flex-1 h-10 bg-rose-50 hover:bg-rose-100 text-rose-600" onClick={onNoShow}><UserX className="w-4 h-4 mr-1.5" />No-show</Button>
             </div>
           </>
@@ -568,21 +656,22 @@ function TablePanel({ ti, onWalkin, onReserve, onSeat, onNoShow, onCancelResa }:
 }
 
 function OrderPanel(props: {
-  table: Table; active: Order; items: OrderRow[]; menu: MenuItem[]; payments: Payment[];
+  table: Table | null; active: Order; items: OrderRow[]; menu: MenuItem[]; payments: Payment[];
   payMethod: PayMethod | null; setPayMethod: (m: PayMethod | null) => void;
   payAmount: string; setPayAmount: (s: string) => void; roomRef: string; setRoomRef: (s: string) => void;
   totalItems: number; paid: number; remaining: number; busy: boolean;
+  facture: { clientNom: string; setClientNom: (s: string) => void; clientEmail: string; setClientEmail: (s: string) => void; invoicing: boolean; sendFacture: () => void };
   onBack: () => void; addLine: (mi: MenuItem) => void; changeQty: (r: OrderRow, d: number) => void; editPrice: (r: OrderRow, v: string) => void;
   addPayment: () => void; removePayment: (p: Payment) => void; cancelOrder: () => void;
 }) {
-  const { table, items, menu, payments, payMethod, setPayMethod, payAmount, setPayAmount, roomRef, setRoomRef, totalItems, paid, remaining } = props;
+  const { table, active, items, menu, payments, payMethod, setPayMethod, payAmount, setPayAmount, roomRef, setRoomRef, totalItems, paid, remaining, facture } = props;
   const METHODS: { k: PayMethod; label: string; icon: typeof CreditCard }[] = [
     { k: "cb", label: "CB", icon: CreditCard }, { k: "amex", label: "Amex", icon: CreditCard },
     { k: "espece", label: "Espèces", icon: Banknote }, { k: "chambre", label: "Chambre", icon: BedDouble },
   ];
   return (
     <div className="flex flex-col max-h-[calc(100vh-120px)]">
-      <PanelHead table={table} sub={props.active.couvert_nom || "Sur place"}
+      <PanelHead title={table?.nom ?? "Comptoir"} sub={active.couvert_nom || "Vente sur place"}
         right={<button onClick={props.onBack} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><ArrowLeft className="w-4 h-4" /></button>} />
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {/* Note */}
@@ -632,6 +721,21 @@ function OrderPanel(props: {
             </div>
           </div>
         )}
+        {/* Facture par mail (PDF réglementaire) */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Facture</span>
+            {active.numero && <span className="ml-auto text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{active.numero} émise</span>}
+          </div>
+          <div className="space-y-2">
+            <Input value={facture.clientNom} onChange={e => facture.setClientNom(e.target.value)} placeholder="Nom du client" className="h-10 text-sm" />
+            <Input value={facture.clientEmail} onChange={e => facture.setClientEmail(e.target.value)} placeholder="Email du client" type="email" className="h-10 text-sm" />
+            <Button onClick={facture.sendFacture} disabled={facture.invoicing || items.length === 0 || !facture.clientEmail.trim()} variant="brand" className="w-full h-10 gap-2">
+              <Mail className="w-4 h-4" /> {active.numero ? "Renvoyer la facture" : "Éditer & envoyer la facture"}
+            </Button>
+            <p className="text-[10px] text-slate-400 text-center">TVA ventilée auto · PDF réglementaire joint au mail.</p>
+          </div>
+        </div>
       </div>
       {/* Pied encaissement */}
       <div className="border-t border-slate-100 p-4 space-y-3">
@@ -663,14 +767,14 @@ function OrderPanel(props: {
   );
 }
 
-function ReservePanel({ table, form, setForm, onCancel, onSubmit, busy }: {
-  table: Table; form: { nom: string; tel: string; email: string; heure: string; couverts: number; message: string };
+function ReservePanel({ table, editing, form, setForm, onCancel, onSubmit, busy }: {
+  table: Table; editing: boolean; form: { nom: string; tel: string; email: string; heure: string; couverts: number; message: string };
   setForm: (f: { nom: string; tel: string; email: string; heure: string; couverts: number; message: string }) => void;
   onCancel: () => void; onSubmit: () => void; busy: boolean;
 }) {
   return (
     <div className="flex flex-col">
-      <PanelHead table={table} sub="Prise de réservation"
+      <PanelHead title={table.nom} sub={editing ? "Modifier la réservation" : "Prise de réservation"}
         right={<button onClick={onCancel} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X className="w-4 h-4" /></button>} />
       <div className="p-5 space-y-3">
         <label className="block"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Nom *</span>
@@ -694,7 +798,7 @@ function ReservePanel({ table, form, setForm, onCancel, onSubmit, busy }: {
         <div className="text-[11px] text-slate-400">Un mail de confirmation part au client dès validation.</div>
       </div>
       <div className="mt-auto p-4 border-t border-slate-100 flex gap-2">
-        <Button variant="brand" className="flex-1 h-12" disabled={busy} onClick={onSubmit}>Confirmer la réservation</Button>
+        <Button variant="brand" className="flex-1 h-12" disabled={busy} onClick={onSubmit}>{editing ? "Enregistrer" : "Confirmer la réservation"}</Button>
         <Button className="h-12 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600" onClick={onCancel}>Annuler</Button>
       </div>
     </div>
