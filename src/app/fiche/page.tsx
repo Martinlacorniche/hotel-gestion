@@ -522,7 +522,7 @@ function FicheContent() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-8 py-8 space-y-6">
+      <div className="max-w-7xl mx-auto px-8 py-8 space-y-6">
 
         {/* ── Synthèse auto ── */}
         <div className="bg-white rounded-2xl border border-gray-100 p-6">

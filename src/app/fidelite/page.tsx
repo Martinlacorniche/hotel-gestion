@@ -228,7 +228,7 @@ export default function FidelitePage() {
          
          <div className="flex-1 overflow-y-auto p-4 md:p-8">
             {selectedClient ? (
-                <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-300">
+                <div className="max-w-7xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-300">
                     
                     {/* BOUTON RETOUR AU TOP 10 */}
                     <button 

@@ -1185,7 +1185,7 @@ function GroupDetail({ group, chambres, roomTypes, hotelName, onBack, onEdit, on
                         </div>
                         <div className="flex gap-2">
                           <button onClick={() => setEditId(null)} className="h-9 px-3 rounded-lg border border-slate-200 text-slate-600 text-sm">Retour</button>
-                          <button onClick={() => saveEdit(r, info.twinable, info.pax_max)} disabled={busy === r.id} className="flex-1 h-9 rounded-lg text-white text-sm font-medium inline-flex items-center justify-center gap-1" style={{ background: '#004e7c' }}>{busy === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" /> Enregistrer</>}</button>
+                          <button onClick={() => saveEdit(r, info.twinable, info.pax_max)} disabled={busy === r.id} className="flex-1 h-9 rounded-lg text-white text-sm font-medium inline-flex items-center justify-center gap-1" style={{ background: 'var(--brand)' }}>{busy === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" /> Enregistrer</>}</button>
                         </div>
                       </div>
                     )}

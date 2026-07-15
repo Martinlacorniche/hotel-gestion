@@ -45,7 +45,7 @@ export default function TechniquePage() {
     <div className="min-h-screen font-sans text-slate-900 relative">
       <ThemedBackground />
 
-      <div className="max-w-3xl mx-auto px-6 py-10">
+      <div className="max-w-7xl mx-auto px-6 py-10">
         <PageHeader
           icon={Wrench}
           title="Technique"
@@ -53,7 +53,7 @@ export default function TechniquePage() {
           iconClassName="bg-yellow-50 text-yellow-700"
         />
 
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {visible.map((t) => (
             <Link
               key={t.id}

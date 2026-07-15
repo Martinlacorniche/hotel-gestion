@@ -291,7 +291,7 @@ export default function ClimPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="p-4 md:p-6 max-w-6xl mx-auto">
+      <div className="p-4 md:p-6 max-w-7xl mx-auto">
         {/* Header */}
         <PageHeader
           icon={Wind}

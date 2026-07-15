@@ -79,7 +79,7 @@ export default function ProfilPage() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 bg-white/85 backdrop-blur border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-3">
           <Link href="/">
             <Button variant="ghost" size="sm" className="text-slate-500 hover:text-slate-800 -ml-2">
               <ArrowLeft size={16} className="mr-1" /> Retour
@@ -92,7 +92,7 @@ export default function ProfilPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
         {/* === IDENTITÉ === */}
         <Section icon={<Smile className="text-amber-500" size={18} />} title="Identité" subtitle="Apparaît à côté de votre prénom partout dans l'app.">
           <div className="space-y-5">

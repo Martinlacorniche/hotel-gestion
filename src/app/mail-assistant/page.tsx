@@ -184,7 +184,7 @@ export default function MailAssistantPage() {
   const counts = rows.reduce<Record<string, number>>((a, r) => { a[r.category] = (a[r.category] || 0) + 1; return a; }, {});
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-6">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6">
       <PageHeader
         icon={Mail}
         title="Assistant mails — journal"
@@ -202,7 +202,7 @@ export default function MailAssistantPage() {
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-3 my-4">
-            <Button onClick={runNow} disabled={running} className="h-11 gap-2 bg-[#004e7c] hover:bg-[#003d61] text-white">
+            <Button onClick={runNow} disabled={running} variant="brand" className="h-11 gap-2">
               {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               Trier maintenant
             </Button>
@@ -224,7 +224,7 @@ export default function MailAssistantPage() {
                           onClick={() => changeMode(cat, m)}
                           className={`px-2 py-1 text-xs font-medium transition ${
                             modes[cat] === m
-                              ? m === "off" ? "bg-slate-600 text-white" : m === "auto" ? "bg-amber-500 text-white" : "bg-[#004e7c] text-white"
+                              ? m === "off" ? "bg-slate-600 text-white" : m === "auto" ? "bg-amber-500 text-white" : "bg-[var(--brand)] text-white"
                               : "bg-white text-slate-500 hover:bg-slate-50"
                           }`}
                         >
@@ -318,7 +318,7 @@ export default function MailAssistantPage() {
                               <div className="inline-flex gap-1">
                                 <button
                                   onClick={() => copyNote(String(r.result?.note))}
-                                  className="inline-flex items-center gap-1 rounded-lg bg-[#004e7c] hover:bg-[#003d61] text-white px-2 py-1 text-xs font-medium"
+                                  className="inline-flex items-center gap-1 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-2 py-1 text-xs font-medium"
                                 >
                                   <Copy className="w-3 h-3" /> Copier la note
                                 </button>
@@ -337,7 +337,7 @@ export default function MailAssistantPage() {
                             <span className="inline-flex items-center gap-1 text-xs text-slate-500">
                               {summary}
                               {r.result?.webLink ? (
-                                <a href={String(r.result.webLink)} target="_blank" rel="noreferrer" className="text-[#004e7c] hover:underline inline-flex items-center gap-0.5">
+                                <a href={String(r.result.webLink)} target="_blank" rel="noreferrer" className="text-[var(--brand)] hover:underline inline-flex items-center gap-0.5">
                                   <ExternalLink className="w-3 h-3" /> Ouvrir
                                 </a>
                               ) : null}

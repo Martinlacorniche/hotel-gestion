@@ -142,7 +142,7 @@ export default function SerruresPage() {
 
   if (authLoading) {
     return (
-      <main className="min-h-screen px-6 py-10 max-w-5xl mx-auto">
+      <main className="min-h-screen px-6 py-10 max-w-7xl mx-auto">
         <p className="text-neutral-500">Chargement…</p>
       </main>
     );
@@ -168,14 +168,14 @@ export default function SerruresPage() {
   }
   if (loading && !data) {
     return (
-      <main className="min-h-screen px-6 py-10 max-w-5xl mx-auto">
+      <main className="min-h-screen px-6 py-10 max-w-7xl mx-auto">
         <p className="text-neutral-500">Chargement…</p>
       </main>
     );
   }
   if (!data || data.ok === false) {
     return (
-      <main className="min-h-screen px-6 py-10 max-w-5xl mx-auto">
+      <main className="min-h-screen px-6 py-10 max-w-7xl mx-auto">
         <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-700">
           <strong>Erreur :</strong> {data?.ok === false ? data.error : 'inconnue'}
         </div>
@@ -187,7 +187,7 @@ export default function SerruresPage() {
   const mappedLockIds = new Set(chambres.map((c) => c.tthotel_lock_id));
 
   return (
-    <main className="min-h-screen px-6 py-10 max-w-5xl mx-auto">
+    <main className="min-h-screen px-6 py-10 max-w-7xl mx-auto">
       <header className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <Lock className="w-6 h-6" />

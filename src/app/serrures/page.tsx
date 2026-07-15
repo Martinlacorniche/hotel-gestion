@@ -658,7 +658,7 @@ export default function SerruresPage() {
   }
   if (chambres.length === 0) {
     return (
-      <main className="min-h-screen bg-stone-50 px-6 py-10 max-w-3xl mx-auto">
+      <main className="min-h-screen bg-stone-50 px-6 py-10 max-w-7xl mx-auto">
         <h1 className="text-2xl font-light text-stone-800 mb-4">Aucune chambre mappée</h1>
         <Link
           href="/serrures/config"
