@@ -24,9 +24,13 @@ const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((new Date
 
 type Row = {
   id: string; booking_ref: string; email: string; nom: string; prenom: string | null;
-  date_arrivee: string; date_depart: string; groupe_id: string; payment_link_sent_at: string | null;
+  date_arrivee: string; date_depart: string; nb_personnes: number | null;
+  groupe_id: string; payment_link_sent_at: string | null;
   groupe_chambres: { hotel_id: string; tarif_nuit: number; room_units: { numero: string } | null } | null;
-  groupes: { nom: string; code_acces: string; date_envoi_paiement: string | null } | null;
+  groupes: {
+    nom: string; code_acces: string; date_envoi_paiement: string | null;
+    taxe_sejour_mode: string | null; taxe_sejour_montant: number | null;
+  } | null;
 };
 
 // Mail charte HTBM (navy + doré).
@@ -59,9 +63,9 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from('groupe_reservations')
-    .select('id, booking_ref, email, nom, prenom, date_arrivee, date_depart, groupe_id, payment_link_sent_at,' +
+    .select('id, booking_ref, email, nom, prenom, date_arrivee, date_depart, nb_personnes, groupe_id, payment_link_sent_at,' +
       ' groupe_chambres!inner ( hotel_id, tarif_nuit, room_units ( numero ) ),' +
-      ' groupes!inner ( nom, code_acces, date_envoi_paiement )')
+      ' groupes!inner ( nom, code_acces, date_envoi_paiement, taxe_sejour_mode, taxe_sejour_montant )')
     .eq('statut', 'paiement_differe');
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   const rows = (data || []) as unknown as Row[];
@@ -86,6 +90,16 @@ export async function POST(req: NextRequest) {
       const nights = nightsBetween(r.date_arrivee, r.date_depart);
       return { name: `${r.groupes?.nom} · Ch. ${r.groupe_chambres?.room_units?.numero ?? '?'} · ${nights} nuit(s)`, amount: Math.round(Number(r.groupe_chambres?.tarif_nuit) * nights * 100) };
     });
+    // Taxe de séjour : encaissée UNIQUEMENT en mode « ajoutee » — le seul où la page
+    // groupe l'annonce comprise dans le total. 'incluse' = déjà dans le tarif/nuit ;
+    // 'sur_place' = réglée à l'hôtel. Sans cette ligne, on facturait le total SANS la
+    // taxe alors que le client l'avait vue dans le sien.
+    const tsMontant = Number(first.groupes?.taxe_sejour_montant) || 0;
+    if (first.groupes?.taxe_sejour_mode === 'ajoutee' && tsMontant > 0) {
+      const nuitees = group.reduce((s, r) =>
+        s + nightsBetween(r.date_arrivee, r.date_depart) * Math.max(1, Number(r.nb_personnes) || 1), 0);
+      if (nuitees > 0) lines.push({ name: `Taxe de séjour · ${nuitees} nuitée(s) × ${tsMontant.toFixed(2)} €`, amount: Math.round(tsMontant * nuitees * 100) });
+    }
     const total = lines.reduce((s, l) => s + l.amount, 0);
     if (total <= 0 || !resend) continue;
 

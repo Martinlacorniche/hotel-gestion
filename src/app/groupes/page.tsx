@@ -95,7 +95,7 @@ interface Groupe {
   mode_vue?: 'simple' | 'pro';
   // Migration 84 : ce que l'invité voit du prix, et la place de la taxe de séjour.
   affichage_tarifs?: 'complet' | 'budget' | 'masque';
-  taxe_sejour_mode?: 'sur_place' | 'incluse' | 'ajoutee';
+  taxe_sejour_mode?: 'incluse' | 'ajoutee';
   taxe_sejour_montant?: number;
   paiement_obligatoire?: boolean;
   mode_paiement?: string | null;
@@ -490,7 +490,7 @@ function GroupesTab({
     return out;
   }, [dateArrivee, dateDepart]);
   const [affichageTarifs, setAffichageTarifs] = useState<'complet' | 'budget' | 'masque'>('complet');
-  const [taxeMode, setTaxeMode] = useState<'sur_place' | 'incluse' | 'ajoutee'>('sur_place');
+  const [taxeMode, setTaxeMode] = useState<'incluse' | 'ajoutee'>('ajoutee');
   const [taxeMontant, setTaxeMontant] = useState('');
   const [modePaiement, setModePaiement] = useState<'immediat' | 'differe' | 'optionnel' | 'aucun'>('immediat');
   const [dateEnvoiPaiement, setDateEnvoiPaiement] = useState('');
@@ -554,7 +554,7 @@ function GroupesTab({
       const hasContent = d && (d.nom || d.dateArrivee || d.dateDepart || (d.selected && Object.keys(d.selected).length));
       if (!hasContent) return;
       setNom(d.nom || ''); setDateArrivee(d.dateArrivee || ''); setDateDepart(d.dateDepart || ''); setDateLimite(d.dateLimite || '');
-      setConditions(d.conditions || ''); setPlanVisible(d.planVisible ?? true); setModeVue(d.modeVue === 'pro' ? 'pro' : 'simple'); setAffichageTarifs(d.affichageTarifs ?? 'complet'); setTaxeMode(d.taxeMode ?? 'sur_place'); setTaxeMontant(d.taxeMontant ?? '');
+      setConditions(d.conditions || ''); setPlanVisible(d.planVisible ?? true); setModeVue(d.modeVue === 'pro' ? 'pro' : 'simple'); setAffichageTarifs(d.affichageTarifs ?? 'complet'); setTaxeMode(d.taxeMode ?? 'ajoutee'); setTaxeMontant(d.taxeMontant ?? '');
       setModePaiement(d.modePaiement ?? 'immediat'); setDateEnvoiPaiement(d.dateEnvoiPaiement ?? '');
       setMessageAccueil(d.messageAccueil || ''); setContactNom(d.contactNom || ''); setContactEmail(d.contactEmail || ''); setNotes(d.notes || '');
       setSelected(d.selected || {}); setTarifByType(d.tarifByType || {});
@@ -573,7 +573,7 @@ function GroupesTab({
   function resetForm() {
     setEditing(null);
     setNom(''); setDateArrivee(''); setDateDepart(''); setDateLimite('');
-    setConditions(''); setPlanVisible(true); setExclus({}); setModeVue('simple'); setAffichageTarifs('complet'); setTaxeMode('sur_place'); setTaxeMontant(''); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
+    setConditions(''); setPlanVisible(true); setExclus({}); setModeVue('simple'); setAffichageTarifs('complet'); setTaxeMode('ajoutee'); setTaxeMontant(''); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
     setContactNom(''); setContactEmail(''); setNotes('');
     setCoverUrl(null); setCoverFile(null);
     setSelected({}); setTarifByType({});
@@ -604,7 +604,7 @@ function GroupesTab({
     setPlanVisible(g.plan_visible);
     setModeVue(g.mode_vue === 'pro' ? 'pro' : 'simple');
     setAffichageTarifs(g.affichage_tarifs ?? 'complet');
-    setTaxeMode(g.taxe_sejour_mode ?? 'sur_place');
+    setTaxeMode(g.taxe_sejour_mode ?? 'ajoutee');
     setTaxeMontant(g.taxe_sejour_montant != null ? String(g.taxe_sejour_montant) : '');
     setModePaiement((g.mode_paiement as 'immediat' | 'differe' | 'optionnel' | 'aucun') ?? (g.paiement_obligatoire ? 'immediat' : 'aucun'));
     setDateEnvoiPaiement(g.date_envoi_paiement ?? '');
@@ -1146,11 +1146,12 @@ function GroupesTab({
                     change chaque année n'a rien à faire dans le code. */}
                 <div className="rounded-lg border border-slate-200 p-3">
                   <p className="text-sm font-medium text-slate-700 mb-2">Taxe de séjour</p>
-                  <div className="grid grid-cols-3 gap-2">
+                  {/* Deux modes seulement (migration 89) : « juste la taxe sur place »
+                      n'existe pas — c'est mode_paiement qui dit où l'on règle. */}
+                  <div className="grid grid-cols-2 gap-2">
                     {([
-                      { v: 'sur_place' as const, t: 'À payer sur place', d: 'Hors prix du bloc' },
                       { v: 'incluse' as const, t: 'Incluse dans le prix', d: 'Déjà dans le tarif / nuit' },
-                      { v: 'ajoutee' as const, t: 'À rajouter au prix', d: 'S’ajoute et compte dans le budget' },
+                      { v: 'ajoutee' as const, t: 'À rajouter au prix', d: 'S’ajoute au tarif et est encaissée avec' },
                     ]).map(o => (
                       <button key={o.v} type="button" onClick={() => setTaxeMode(o.v)}
                         className={`text-left rounded-lg border p-2.5 transition ${
