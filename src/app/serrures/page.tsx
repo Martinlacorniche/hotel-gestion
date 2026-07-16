@@ -1698,8 +1698,11 @@ function messageErreurEncodage(raw: string | null): { consigne: string; brut: st
   if (code === 1003 || e.includes('indisponible') || e.includes('unavailable') || e.includes('déconnect')) {
     return { consigne: 'L’encodeur s’est déconnecté, il se reconnecte tout seul. Attends quelques secondes, puis Réessaie.', brut: raw };
   }
-  // Encodeur occupé par une autre appli.
-  if (code === 1004) {
+  // Encodeur occupé par une autre appli. ⚠️ L'agent n'écrit PAS toujours le code :
+  // il remonte parfois la phrase seule (« Encodeur tenu par une autre application
+  // (TTHotel desktop ?) », vu 2× le 2026-07-04) → tester aussi le texte, sinon ce
+  // cas tombait dans le message générique.
+  if (code === 1004 || e.includes('tenu par une autre') || e.includes('autre application')) {
     return { consigne: 'L’encodeur est occupé par un autre logiciel. Ferme les autres applis de badges, puis Réessaie.', brut: raw };
   }
   // Session encodeur expirée : refresh automatique.
