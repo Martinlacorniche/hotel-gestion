@@ -75,8 +75,10 @@ export async function POST(req: NextRequest) {
       .from("rooftop_order_payments")
       .select("method, amount, room_ref").eq("order_id", orderId).order("created_at");
     const pays = (paysData || []) as { method: string; amount: number; room_ref: string | null }[];
+    // Le libellé passe par payLabel : la caisse écrit 'cb'/'amex', qu'une liste
+    // codée en dur ici avait déjà fait tomber en « Transfert chambre ».
     const paiementLabel = pays.length
-      ? pays.map(p => `${p.method === "tpe" ? "Carte" : p.method === "espece" ? "Espèces" : `Transfert chambre ${p.room_ref ?? ""}`.trim()} ${eur(Number(p.amount))}`).join(" + ")
+      ? pays.map(p => `${payLabel(p.method, p.room_ref) ?? p.method} ${eur(Number(p.amount))}`).join(" + ")
       : payLabel(order.payment_method, order.room_ref);
 
     // Lignes + ventilation TVA.
