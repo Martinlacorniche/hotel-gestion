@@ -20,7 +20,6 @@ import {
   ChevronLeft, ChevronRight, PlusCircle, Filter,
   Save, Edit2, Trash2, CheckCircle, XCircle, Search, ExternalLink,
   MessageCircle, Send, // Conversation consignes
-  X, // Chambres libérées
   Pin, ListChecks, // en-têtes colonnes (design-system)
   DoorOpen, Car, BarChart3, Luggage, // en-têtes colonne 3 + objets trouvés
   Wallet, BedDouble, Tag, Star // icônes KPI
@@ -402,10 +401,38 @@ export default function HotelDashboard() {
     toast.success(`Chambre${rooms.length > 1 ? 's' : ''} ${rooms.join(', ')} transmise${rooms.length > 1 ? 's' : ''} aux équipes`);
   };
 
-  const deleteLiberation = async (id: string) => {
-    const { error } = await supabase.from('chambres_liberees').delete().eq('id', id);
-    if (error) { toast.error('Suppression impossible : ' + error.message); return; }
-    setLiberations((prev) => prev.filter((l) => l.id !== id));
+  // La récep saisit au fil des départs (« ils tapent 12, ça envoie 12 ») et Mews
+  // insère à chaque check-out : le schéma « 1 ligne = 1 transmission » ne tient
+  // plus, on est à ~20 lignes/jour. On agrège la journée en UNE liste de
+  // chambres dédoublonnée et triée — c'est la tournée du housekeeping, pas un
+  // journal d'envois.
+  const dayRooms = useMemo(() => (
+    [...new Set(liberations.flatMap((l) => (l.chambres ?? []) as string[]))]
+      .sort((a, b) => {
+        const na = parseInt(a, 10), nb = parseInt(b, 10);
+        if (Number.isNaN(na) && Number.isNaN(nb)) return a.localeCompare(b);
+        if (Number.isNaN(na)) return 1;   // « recouche » & co. en fin de liste
+        if (Number.isNaN(nb)) return -1;
+        return na - nb;
+      })
+  ), [liberations]);
+
+  // On retire une CHAMBRE, pas une transmission : personne ne raisonne en
+  // « l'envoi de 9h04 ». Elle peut vivre dans plusieurs lignes → on la retire
+  // de toutes, et une ligne vidée disparaît.
+  const removeRoom = async (num: string) => {
+    const rows = liberations.filter((l) => ((l.chambres ?? []) as string[]).includes(num));
+    if (!rows.length) return;
+    for (const l of rows) {
+      const rest = ((l.chambres ?? []) as string[]).filter((n) => n !== num);
+      if (rest.length) await supabase.from('chambres_liberees').update({ chambres: rest }).eq('id', l.id);
+      else await supabase.from('chambres_liberees').delete().eq('id', l.id);
+    }
+    setLiberations((prev) => prev
+      .map((l) => (rows.some((r) => r.id === l.id)
+        ? { ...l, chambres: ((l.chambres ?? []) as string[]).filter((n) => n !== num) }
+        : l))
+      .filter((l) => ((l.chambres ?? []) as string[]).length > 0));
   };
 
   const [objetsTrouves, setObjetsTrouves] = useState<any[]>([]);
@@ -1265,31 +1292,28 @@ const birthdayMessage = useMemo(() => {
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
                  <div className="flex items-center justify-between mb-3">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2"><DoorOpen className="w-4 h-4 text-slate-400" />Chambres libérées</h3>
-                    {liberations.length > 0 && (
+                    {dayRooms.length > 0 && (
                       <div className="relative group">
-                        <Pill tone="neutral" className="cursor-default">{liberations.reduce((n, l) => n + (l.chambres?.length ?? 0), 0)} auj.</Pill>
-                        <div className="absolute right-0 top-full z-20 hidden w-60 rounded-xl border border-slate-200 bg-white p-3 shadow-lg group-hover:block">
-                          <div className="space-y-2">
-                            {liberations.map((l) => (
-                              <div key={l.id} className="flex items-center gap-1.5 flex-wrap text-sm">
-                                {(l.chambres ?? []).map((num: string, i: number) => (
-                                  <span key={`${num}-${i}`} className="rounded-md bg-slate-100 border border-slate-200 px-2 py-0.5 font-bold text-slate-700">
-                                    {num}
-                                  </span>
-                                ))}
-                                <span className="text-[10px] text-slate-400">
-                                  {new Date(l.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                                <button
-                                  onClick={() => deleteLiberation(l.id)}
-                                  className="ml-auto text-slate-300 transition hover:text-red-500"
-                                  title="Retirer"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
+                        <Pill tone="neutral" className="cursor-default">{dayRooms.length} auj.</Pill>
+                        <div className="absolute right-0 top-full z-20 hidden w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-lg group-hover:block">
+                          <div className="flex flex-wrap gap-1.5">
+                            {dayRooms.map((num) => (
+                              <button
+                                key={num}
+                                onClick={() => removeRoom(num)}
+                                title="Retirer cette chambre"
+                                className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-sm font-bold text-slate-700 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                              >
+                                {num}
+                              </button>
                             ))}
                           </div>
+                          {liberations[0] && (
+                            <p className="mt-2.5 border-t border-slate-100 pt-2 text-[10px] text-slate-400">
+                              Dernière à {new Date(liberations[0].created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                              {liberations[0].auteur ? ` — ${liberations[0].auteur}` : ''} · clique une chambre pour la retirer
+                            </p>
+                          )}
                         </div>
                       </div>
                     )}
