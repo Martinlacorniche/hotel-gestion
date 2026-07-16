@@ -12,17 +12,20 @@ import { useAuth } from "@/context/AuthContext";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Martini, Plus, Trash2, CalendarX2, Users, Ban, Armchair, Check, Clock, X, ChevronLeft, ChevronRight, ChevronDown, BarChart3, CreditCard, Banknote, BedDouble } from "lucide-react";
+import { Martini, Plus, Trash2, CalendarX2, Ban, Armchair, Check, Clock, ChevronLeft, ChevronRight, ChevronDown, BarChart3, CreditCard, Banknote, BedDouble } from "lucide-react";
 import { ventileAll, totauxFromBuckets, round2, type TvaType, type TvaTotaux } from "@/lib/rooftopTva";
 import toast from "react-hot-toast";
-import { RooftopCarteTab, BlacklistTab, CarteLienPublic, VOILES_ID } from "@/components/rooftop/RooftopEditors";
-import { PosTab } from "@/components/rooftop/RooftopPos";
+import { RooftopCarteTab, BlacklistTab, VOILES_ID } from "@/components/rooftop/RooftopEditors";
 import { FloorTab } from "@/components/rooftop/RooftopFloor";
 import { FichesTab } from "@/components/rooftop/RooftopFiches";
 
 export default function RooftopPage() {
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  // Emplacement d'actions du header, rempli par l'onglet actif (Service y place
+  // sa date + sa clôture). Radix démonte l'onglet inactif → le portail se vide
+  // tout seul, pas de condition à maintenir ici.
+  const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
@@ -39,22 +42,21 @@ export default function RooftopPage() {
           title="Rooftop"
           subtitle="Les Voiles · Réservations, carte & réglages"
           iconClassName="bg-amber-50 text-amber-700"
+          actions={<div ref={setHeaderSlot} className="flex items-center gap-2" />}
         />
 
-        <Tabs defaultValue="resas">
+        {/* Service = plan de salle unifié : il a remplacé les onglets
+            Réservations et POS (résa, note et encaissement au même endroit). */}
+        <Tabs defaultValue="service">
           <TabsList className="w-full mb-6">
             <TabsTrigger value="service" className="flex-1">Service</TabsTrigger>
-            <TabsTrigger value="resas" className="flex-1">Réservations</TabsTrigger>
-            <TabsTrigger value="pos" className="flex-1">POS</TabsTrigger>
             <TabsTrigger value="fiches" className="flex-1">Fiches</TabsTrigger>
             <TabsTrigger value="carte" className="flex-1">Carte</TabsTrigger>
             <TabsTrigger value="gestion" className="flex-1">Gestion</TabsTrigger>
             <TabsTrigger value="reglages" className="flex-1">Réglages</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="service"><FloorTab hotelId={VOILES_ID} /></TabsContent>
-          <TabsContent value="resas"><ResasTab hotelId={VOILES_ID} /></TabsContent>
-          <TabsContent value="pos"><PosTab hotelId={VOILES_ID} /></TabsContent>
+          <TabsContent value="service"><FloorTab hotelId={VOILES_ID} headerSlot={headerSlot} /></TabsContent>
           <TabsContent value="fiches"><FichesTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="carte"><RooftopCarteTab hotelId={VOILES_ID} /></TabsContent>
           <TabsContent value="gestion"><GestionTab hotelId={VOILES_ID} /></TabsContent>
@@ -68,436 +70,10 @@ export default function RooftopPage() {
 // ─────────────────────────────────────────────────────────────
 // Helpers date
 // ─────────────────────────────────────────────────────────────
-function todayStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 function fmtDate(s: string): string {
   try {
     return new Date(`${s}T00:00:00`).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
   } catch { return s; }
-}
-
-// ─────────────────────────────────────────────────────────────
-// TAB RÉSERVATIONS — plan de salle (bulles) du jour
-// ─────────────────────────────────────────────────────────────
-type Resa = {
-  id: string;
-  date_resa: string;
-  heure: string;
-  couverts: number;
-  nom: string;
-  telephone: string | null;
-  email: string | null;
-  message: string | null;
-  statut: string;
-  table_id: string | null;
-  presence: string | null;
-};
-type ActiveTable = { id: string; nom: string; couverts: number; ordre: number };
-
-function ResasTab({ hotelId }: { hotelId: string }) {
-  const today = useMemo(todayStr, []);
-  const [date, setDate] = useState(today);
-  const [resas, setResas] = useState<Resa[]>([]);
-  const [tables, setTables] = useState<ActiveTable[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [openTable, setOpenTable] = useState<string | null>(null);
-  const [closedPeriods, setClosedPeriods] = useState<{ debut: string; fin: string }[]>([]);
-  const [services, setServices] = useState<string[]>([]);
-
-  // Édition de la note sur une résa existante (brouillon par résa + id en cours d'enregistrement).
-  const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
-  const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
-
-  // Création d'une résa au clic sur une table libre
-  const [bookingTable, setBookingTable] = useState<string | null>(null);
-  const emptyForm = { nom: "", couverts: "2", heure: "", tel: "", email: "", message: "" };
-  const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-
-  // Réservations + tables du jour
-  useEffect(() => {
-    setLoading(true);
-    setOpenTable(null);
-    setBookingTable(null);
-    Promise.all([
-      supabase.from("rooftop_reservations").select("*").eq("hotel_id", hotelId).eq("date_resa", date).order("heure"),
-      supabase.from("rooftop_tables").select("id,nom,couverts,ordre").eq("hotel_id", hotelId).eq("actif", true).order("ordre"),
-    ]).then(([{ data: rData }, { data: tData }]) => {
-      setResas((rData as Resa[]) || []);
-      setTables((tData as ActiveTable[]) || []);
-      setLoading(false);
-    });
-  }, [hotelId, date]);
-
-  // Jours fermés (pour la bannière) + heures de service (pour le formulaire)
-  useEffect(() => {
-    supabase.from("rooftop_closures").select("date_debut,date_fin").eq("hotel_id", hotelId)
-      .then(({ data }) => setClosedPeriods(((data as { date_debut: string; date_fin: string }[]) || []).map(c => ({ debut: c.date_debut, fin: c.date_fin }))));
-    supabase.from("rooftop_services").select("heure").eq("hotel_id", hotelId).eq("actif", true).order("ordre")
-      .then(({ data }) => setServices(((data as { heure: string | null }[]) || []).map(s => (s.heure || "").trim()).filter(Boolean)));
-  }, [hotelId]);
-
-  // Occupation : table → réservation active
-  const resaByTable = new Map<string, Resa>();
-  resas.filter(r => r.statut !== "annulee" && r.table_id).forEach(r => resaByTable.set(r.table_id as string, r));
-
-  const reservedCount = tables.filter(t => resaByTable.has(t.id)).length;
-  const couvertsReserved = tables.reduce((s, t) => s + (resaByTable.has(t.id) ? (resaByTable.get(t.id)!.couverts || 0) : 0), 0);
-  const freeTables = tables.filter(t => !resaByTable.has(t.id));
-  const aPlacer = resas.filter(r => r.statut !== "annulee" && (!r.table_id || !tables.some(t => t.id === r.table_id)));
-  const dayClosed = closedPeriods.some(p => date >= p.debut && date <= p.fin);
-  const shiftDate = (delta: number) => {
-    const d = new Date(date + "T00:00:00");
-    d.setDate(d.getDate() + delta);
-    setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
-  };
-
-  const cancelResa = async (r: Resa) => {
-    if (!(await confirmDialog(`Annuler la réservation de ${r.nom} ?`))) return;
-    setResas(prev => prev.map(x => x.id === r.id ? { ...x, statut: "annulee" } : x));
-    setOpenTable(null);
-    await supabase.from("rooftop_reservations").update({ statut: "annulee" }).eq("id", r.id);
-    toast.success("Réservation annulée");
-    // Proposer de prévenir le client par email.
-    if (r.email && await confirmDialog(`Prévenir ${r.email} de l'annulation par email ?`)) {
-      fetch("/api/rooftop/cancel-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nom: r.nom, email: r.email, date: r.date_resa, heure: r.heure, couverts: r.couverts }),
-      })
-        .then(res => res.ok ? toast.success("Client prévenu par email") : toast.error("Mail non envoyé"))
-        .catch(() => toast.error("Mail non envoyé"));
-    }
-  };
-
-  const reassignResa = async (r: Resa, tableId: string) => {
-    setResas(prev => prev.map(x => x.id === r.id ? { ...x, table_id: tableId } : x));
-    setOpenTable(tableId);
-    const { error } = await supabase.from("rooftop_reservations").update({ table_id: tableId }).eq("id", r.id);
-    if (error) { toast.error("Erreur"); return; }
-    toast.success("Table changée ✓");
-  };
-
-  // Pointe le client comme arrivé (ou annule le pointage).
-  const markPresence = async (r: Resa, value: "arrive" | null) => {
-    setResas(prev => prev.map(x => x.id === r.id ? { ...x, presence: value } : x));
-    const { error } = await supabase.from("rooftop_reservations").update({ presence: value }).eq("id", r.id);
-    if (error) { toast.error("Erreur"); return; }
-    toast.success(value === "arrive" ? "Client pointé arrivé ✓" : "Pointage retiré");
-  };
-
-  // No-show : pointe le lapin ET bascule le client en blacklist.
-  const markNoShow = async (r: Resa) => {
-    if (!(await confirmDialog(`Marquer ${r.nom} en no-show et l'ajouter à la blacklist ?`))) return;
-    setResas(prev => prev.map(x => x.id === r.id ? { ...x, presence: "no_show" } : x));
-    setOpenTable(null);
-    const { error } = await supabase.from("rooftop_reservations").update({ presence: "no_show" }).eq("id", r.id);
-    if (error) { toast.error("Erreur"); return; }
-    const { error: blErr } = await supabase.from("rooftop_blacklist").insert({
-      hotel_id: hotelId, email: r.email || null, nom: r.nom || null,
-      motif: `No-show ${fmtDate(r.date_resa)}`,
-    });
-    if (blErr) toast.error("No-show pointé, mais blacklist non enregistrée");
-    else toast.success("No-show → client blacklisté 🚫");
-  };
-
-  // Ouvre le mini-formulaire de création sur une table libre.
-  const startBooking = (t: ActiveTable) => {
-    setOpenTable(null);
-    setBookingTable(t.id);
-    setForm({ ...emptyForm, couverts: String(t.couverts), heure: (services[0] || "").slice(0, 5) });
-  };
-
-  // Ajoute / modifie la note d'une résa existante (allergie, occasion, demande spéciale…).
-  const saveNote = async (r: Resa) => {
-    const val = (noteEdits[r.id] ?? r.message ?? "").trim();
-    setSavingNoteId(r.id);
-    const { error } = await supabase
-      .from("rooftop_reservations")
-      .update({ message: val || null })
-      .eq("id", r.id);
-    setSavingNoteId(null);
-    if (error) { toast.error(error.message || "Erreur"); return; }
-    setResas(prev => prev.map(x => (x.id === r.id ? { ...x, message: val || null } : x)));
-    setNoteEdits(prev => { const n = { ...prev }; delete n[r.id]; return n; });
-    toast.success("Note enregistrée ✓");
-  };
-
-  // Crée une réservation sur la table cliquée (walk-in / téléphone).
-  const submitBooking = async (t: ActiveTable) => {
-    const nom = form.nom.trim();
-    if (!nom) { toast.error("Nom requis"); return; }
-    const heure = form.heure.trim();
-    if (!heure) { toast.error("Heure requise"); return; }
-    const couverts = parseInt(form.couverts, 10) || t.couverts;
-    setSaving(true);
-    const { data, error } = await supabase.from("rooftop_reservations").insert({
-      hotel_id: hotelId, date_resa: date, heure, couverts,
-      nom, telephone: form.tel.trim() || null, email: form.email.trim() || null,
-      message: form.message.trim() || null, statut: "confirmee", table_id: t.id,
-    }).select().single();
-    setSaving(false);
-    if (error) {
-      const bl = error.message?.toLowerCase().includes("blacklist");
-      const closed = error.message?.includes("indisponible");
-      // Blacklist / jour fermé : le staff peut FORCER, avec alerte.
-      if (bl || closed) {
-        const warn = bl
-          ? `⚠️ ${nom} est blacklisté (no-show passé). Forcer la réservation quand même ?`
-          : `⚠️ Ce jour est fermé à la réservation en ligne. Forcer quand même ?`;
-        if (!(await confirmDialog(warn))) return;
-        setSaving(true);
-        const { data: forced, error: fErr } = await supabase.rpc("rooftop_book_staff", {
-          p_hotel: hotelId, p_date: date, p_heure: heure, p_pax: couverts,
-          p_nom: nom, p_tel: form.tel.trim(), p_email: form.email.trim(),
-          p_message: form.message.trim(), p_table: t.id,
-        });
-        setSaving(false);
-        if (fErr) { toast.error(fErr.message || "Erreur"); return; }
-        setResas(prev => [...prev, forced as Resa]);
-        setBookingTable(null);
-        setOpenTable(t.id);
-        toast.success("Réservation forcée ✓");
-        return;
-      }
-      toast.error(error.message || "Erreur");
-      return;
-    }
-    setResas(prev => [...prev, data as Resa]);
-    setBookingTable(null);
-    setOpenTable(t.id);
-    toast.success("Réservation créée ✓");
-  };
-
-  return (
-    <div className="space-y-6">
-      <CarteLienPublic />
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 bg-slate-50">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Plan de salle</span>
-            <button onClick={() => shiftDate(-1)} title="Jour précédent"
-              className="h-10 w-10 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 active:scale-95 transition">
-              <ChevronLeft size={18} />
-            </button>
-            <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-10 w-44 text-sm" />
-            <button onClick={() => shiftDate(1)} title="Jour suivant"
-              className="h-10 w-10 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 active:scale-95 transition">
-              <ChevronRight size={18} />
-            </button>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-slate-600">
-            <span className="font-semibold tabular-nums">{reservedCount}</span>
-            <span className="text-slate-400">/ {tables.length} tables réservées</span>
-            <span className="text-slate-300">·</span>
-            <span className="inline-flex items-center gap-1.5">
-              <Users size={14} className="text-slate-400" />
-              <span className="font-semibold tabular-nums">{couvertsReserved}</span>
-              <span className="text-slate-400">couverts</span>
-            </span>
-          </div>
-        </div>
-
-        {dayClosed && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 text-xs font-medium border-b border-amber-100">
-            <Ban size={13} /> Vente en ligne fermée ce jour-là.
-          </div>
-        )}
-
-        {loading ? (
-          <div className="p-6 text-center text-slate-400 text-sm">Chargement…</div>
-        ) : tables.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-sm">Aucune table active — configurez-les dans l&apos;onglet « Tables ».</div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5 p-4">
-            {tables.map(t => {
-              const r = resaByTable.get(t.id);
-              if (r) {
-                const isOpen = openTable === t.id;
-                const arrived = r.presence === "arrive";
-                const noShow = r.presence === "no_show";
-                const grad = noShow ? "from-slate-500 to-slate-700"
-                  : arrived ? "from-emerald-600 to-emerald-800"
-                  : "from-[#00618f] to-[#013a5c]";
-                return (
-                  <div
-                    key={t.id}
-                    className={`rounded-2xl shadow-md transition-all duration-300 bg-gradient-to-br ${grad} text-white ${
-                      isOpen ? "col-span-2 sm:col-span-3 md:col-span-4 ring-2 ring-[#C6A972] ring-offset-2" : "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg"
-                    }`}
-                  >
-                    <button
-                      type="button" onClick={() => setOpenTable(isOpen ? null : t.id)}
-                      className="group w-full text-left p-4 flex items-start justify-between gap-2"
-                    >
-                      <div className="min-w-0">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/70">{t.nom}</span>
-                        <p className="mt-1.5 font-semibold text-[15px] leading-tight truncate">{r.nom}</p>
-                        <p className="mt-0.5 text-[12px] text-white/80 tabular-nums">{r.heure} · {r.couverts} couv.</p>
-                        {arrived && <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold bg-white/20 rounded-full px-2 py-0.5"><Check size={10} /> Arrivé</span>}
-                        {noShow && <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold bg-white/20 rounded-full px-2 py-0.5"><Ban size={10} /> No-show</span>}
-                      </div>
-                      {isOpen
-                        ? <X size={16} className="text-white/70 shrink-0" />
-                        : <Users size={14} className="text-white/70 shrink-0 transition-transform group-hover:scale-110" />}
-                    </button>
-
-                    {isOpen && (
-                      <div className="px-3 pb-3">
-                        <div className="rounded-xl bg-white p-3 text-slate-700">
-                          <div className="text-[13px] space-y-0.5">
-                            {r.telephone && <p>📞 {r.telephone}</p>}
-                            {r.email && <p>✉️ {r.email}</p>}
-                            {!r.telephone && !r.email && <p className="text-slate-400 italic">Aucun contact renseigné.</p>}
-                          </div>
-                          {(() => {
-                            const draft = noteEdits[r.id] ?? r.message ?? "";
-                            const changed = draft.trim() !== (r.message ?? "").trim();
-                            return (
-                              <div className="mt-2.5">
-                                <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Note</label>
-                                <textarea
-                                  value={draft} rows={2}
-                                  onChange={e => setNoteEdits(prev => ({ ...prev, [r.id]: e.target.value }))}
-                                  placeholder="Ajouter une note (allergie, occasion, demande…)"
-                                  className="mt-1 w-full resize-none rounded-lg border border-slate-200 px-2.5 py-2 text-[13px] text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-[#004e7c]"
-                                />
-                                {changed && (
-                                  <button
-                                    onClick={() => saveNote(r)} disabled={savingNoteId === r.id}
-                                    className="mt-1.5 inline-flex items-center gap-1.5 min-h-[38px] rounded-lg border border-[#004e7c] text-[#004e7c] hover:bg-[#004e7c]/5 px-3 py-1.5 text-[13px] font-semibold transition active:scale-[0.97] disabled:opacity-50"
-                                  >
-                                    {savingNoteId === r.id ? "Enregistrement…" : "Enregistrer la note"}
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })()}
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            {arrived ? (
-                              <button onClick={() => markPresence(r, null)}
-                                className="inline-flex items-center gap-1.5 min-h-[44px] rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 px-3.5 py-2 text-[13px] font-semibold transition active:scale-[0.97]">
-                                <Check size={15} /> Arrivé — annuler
-                              </button>
-                            ) : (
-                              <button onClick={() => markPresence(r, "arrive")}
-                                className="inline-flex items-center gap-1.5 min-h-[44px] rounded-lg border border-emerald-200 text-emerald-600 hover:bg-emerald-50 px-3.5 py-2 text-[13px] font-semibold transition active:scale-[0.97]">
-                                <Check size={15} /> Arrivé
-                              </button>
-                            )}
-                            {!noShow && (
-                              <button onClick={() => markNoShow(r)}
-                                className="inline-flex items-center gap-1.5 min-h-[44px] rounded-lg border border-red-200 text-red-500 hover:bg-red-50 px-3.5 py-2 text-[13px] font-semibold transition active:scale-[0.97]">
-                                <Ban size={15} /> No-show
-                              </button>
-                            )}
-                            {freeTables.length > 0 && (
-                              <select
-                                value="" onChange={e => { if (e.target.value) reassignResa(r, e.target.value); }}
-                                className="min-h-[44px] rounded-lg border border-slate-200 bg-white text-sm px-2.5 focus:outline-none focus:border-[#004e7c]"
-                              >
-                                <option value="">Changer de table…</option>
-                                {freeTables.map(ft => <option key={ft.id} value={ft.id}>{ft.nom} ({ft.couverts} couv.)</option>)}
-                              </select>
-                            )}
-                            <button onClick={() => cancelResa(r)}
-                              className="inline-flex items-center gap-1.5 min-h-[44px] rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50 px-3.5 py-2 text-[13px] font-semibold transition active:scale-[0.97]">
-                              <Ban size={15} /> Annuler
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-              const isBooking = bookingTable === t.id;
-              if (isBooking) {
-                return (
-                  <div key={t.id} className="col-span-2 sm:col-span-3 md:col-span-4 rounded-2xl border-2 border-[#004e7c] bg-white p-4 shadow-md">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-[#004e7c]">
-                        Nouvelle réservation · {t.nom} <span className="text-slate-400 font-normal">({t.couverts} couv. max)</span>
-                      </span>
-                      <button onClick={() => setBookingTable(null)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <Input autoFocus placeholder="Nom du client *" value={form.nom}
-                        onChange={e => setForm(f => ({ ...f, nom: e.target.value }))}
-                        onKeyDown={e => e.key === "Enter" && submitBooking(t)}
-                        className="h-11 text-sm col-span-2 sm:col-span-2" />
-                      <Input type="number" min="1" placeholder="Couv." value={form.couverts}
-                        onChange={e => setForm(f => ({ ...f, couverts: e.target.value }))}
-                        className="h-11 text-sm text-center" />
-                      {/* Staff = heure LIBRE (walk-in / téléphone à toute heure) ; les services
-                          configurés restent proposés en suggestions via datalist. */}
-                      <input type="time" value={form.heure} list="rooftop-service-slots"
-                        onChange={e => setForm(f => ({ ...f, heure: e.target.value }))}
-                        className="h-11 rounded-md border border-slate-200 bg-white text-sm px-2 text-center focus:outline-none focus:border-[#004e7c]" />
-                      {services.length > 0 && (
-                        <datalist id="rooftop-service-slots">
-                          {services.map(h => <option key={h} value={h} />)}
-                        </datalist>
-                      )}
-                      <Input placeholder="Téléphone" value={form.tel}
-                        onChange={e => setForm(f => ({ ...f, tel: e.target.value }))} className="h-11 text-sm col-span-2" />
-                      <Input placeholder="Email" value={form.email}
-                        onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="h-11 text-sm col-span-2" />
-                      <Input placeholder="Note (optionnel)" value={form.message}
-                        onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
-                        onKeyDown={e => e.key === "Enter" && submitBooking(t)}
-                        className="h-11 text-sm col-span-2 sm:col-span-3" />
-                      <Button onClick={() => submitBooking(t)} disabled={saving || !form.nom.trim()}
-                        className="h-11 col-span-2 sm:col-span-1 bg-[#004e7c] hover:bg-[#003d61] text-white gap-1 active:scale-[0.97]">
-                        <Check size={16} /> Créer
-                      </Button>
-                    </div>
-                  </div>
-                );
-              }
-              return (
-                <button
-                  key={t.id} type="button" onClick={() => startBooking(t)}
-                  title="Toucher pour réserver cette table"
-                  className="text-left rounded-2xl border border-slate-200 bg-white p-4 min-h-[104px] shadow-sm transition-transform duration-150 active:scale-[0.98] active:border-[#004e7c] hover:border-[#004e7c]/40 hover:shadow-md"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t.nom}</span>
-                    <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Libre</span>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-400">{t.couverts} couv.</p>
-                  <span className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-[#004e7c]"><Plus size={13} /> Réserver</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {aPlacer.length > 0 && (
-          <div className="border-t border-amber-100 bg-amber-50/50 p-4">
-            <p className="text-[12px] font-semibold text-amber-700 mb-2">À placer ({aPlacer.length})</p>
-            <ul className="space-y-1.5">
-              {aPlacer.map(r => (
-                <li key={r.id} className="flex items-center gap-2 text-sm">
-                  <span className="text-slate-700">{r.nom}</span>
-                  <span className="text-slate-400 text-[12px]">· {r.couverts} couv. · {r.heure}</span>
-                  {freeTables.length > 0 && (
-                    <select value="" onChange={e => { if (e.target.value) reassignResa(r, e.target.value); }}
-                      className="ml-auto h-11 rounded-lg border border-slate-200 bg-white text-sm px-2.5 focus:outline-none focus:border-[#004e7c]">
-                      <option value="">Placer à…</option>
-                      {freeTables.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}
-                    </select>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 // ─────────────────────────────────────────────────────────────
