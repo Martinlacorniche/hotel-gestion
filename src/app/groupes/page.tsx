@@ -87,6 +87,10 @@ interface Groupe {
   date_limite: string;
   conditions_annulation: string | null;
   plan_visible: boolean;
+  // Rendu de la page publique : 'simple' = cartes de chambres sur les dates du groupe
+  // (mariages) ; 'pro' = calendrier chambres × nuits, chaque invité pose SES dates
+  // (tournages, séminaires, groupes longs). Cf migration 82.
+  mode_vue?: 'simple' | 'pro';
   paiement_obligatoire?: boolean;
   mode_paiement?: string | null;
   date_envoi_paiement?: string | null;
@@ -439,6 +443,7 @@ function GroupesTab({
   const [dateLimite, setDateLimite] = useState('');
   const [conditions, setConditions] = useState('');
   const [planVisible, setPlanVisible] = useState(true);
+  const [modeVue, setModeVue] = useState<'simple' | 'pro'>('simple');
   const [modePaiement, setModePaiement] = useState<'immediat' | 'differe' | 'optionnel' | 'aucun'>('immediat');
   const [dateEnvoiPaiement, setDateEnvoiPaiement] = useState('');
   const [messageAccueil, setMessageAccueil] = useState('');
@@ -483,12 +488,12 @@ function GroupesTab({
   useEffect(() => {
     if (typeof window === 'undefined' || !showForm || editing) return;
     const draft = {
-      nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible,
+      nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible, modeVue,
       modePaiement, dateEnvoiPaiement, messageAccueil, contactNom, contactEmail, notes,
       selected, tarifByType,
     };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
-  }, [showForm, editing, nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible,
+  }, [showForm, editing, nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible, modeVue,
       modePaiement, dateEnvoiPaiement, messageAccueil, contactNom, contactEmail, notes, selected, tarifByType]);
 
   // Restaure un brouillon au montage (sauf si on arrive depuis un dossier / édition).
@@ -501,7 +506,7 @@ function GroupesTab({
       const hasContent = d && (d.nom || d.dateArrivee || d.dateDepart || (d.selected && Object.keys(d.selected).length));
       if (!hasContent) return;
       setNom(d.nom || ''); setDateArrivee(d.dateArrivee || ''); setDateDepart(d.dateDepart || ''); setDateLimite(d.dateLimite || '');
-      setConditions(d.conditions || ''); setPlanVisible(d.planVisible ?? true);
+      setConditions(d.conditions || ''); setPlanVisible(d.planVisible ?? true); setModeVue(d.modeVue === 'pro' ? 'pro' : 'simple');
       setModePaiement(d.modePaiement ?? 'immediat'); setDateEnvoiPaiement(d.dateEnvoiPaiement ?? '');
       setMessageAccueil(d.messageAccueil || ''); setContactNom(d.contactNom || ''); setContactEmail(d.contactEmail || ''); setNotes(d.notes || '');
       setSelected(d.selected || {}); setTarifByType(d.tarifByType || {});
@@ -520,7 +525,7 @@ function GroupesTab({
   function resetForm() {
     setEditing(null);
     setNom(''); setDateArrivee(''); setDateDepart(''); setDateLimite('');
-    setConditions(''); setPlanVisible(true); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
+    setConditions(''); setPlanVisible(true); setModeVue('simple'); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
     setContactNom(''); setContactEmail(''); setNotes('');
     setCoverUrl(null); setCoverFile(null);
     setSelected({}); setTarifByType({});
@@ -549,6 +554,7 @@ function GroupesTab({
     setDateLimite(g.date_limite);
     setConditions(g.conditions_annulation || '');
     setPlanVisible(g.plan_visible);
+    setModeVue(g.mode_vue === 'pro' ? 'pro' : 'simple');
     setModePaiement((g.mode_paiement as 'immediat' | 'differe' | 'optionnel' | 'aucun') ?? (g.paiement_obligatoire ? 'immediat' : 'aucun'));
     setDateEnvoiPaiement(g.date_envoi_paiement ?? '');
     setMessageAccueil(g.message_accueil || '');
@@ -627,6 +633,7 @@ function GroupesTab({
       date_limite: dateLimite,
       conditions_annulation: conditions.trim() || null,
       plan_visible: planVisible,
+      mode_vue: modeVue,
       mode_paiement: modePaiement,
       date_envoi_paiement: modePaiement === 'differe' ? (dateEnvoiPaiement || null) : null,
       paiement_obligatoire: modePaiement === 'immediat', // compat route reserve actuelle
@@ -970,6 +977,26 @@ function GroupesTab({
                     Les invités voient qui a réservé quelle chambre (plan des chambres)
                   </span>
                 </label>
+
+                {/* Mode de lecture de la page publique (migration 82). Le défaut reste
+                    'simple' : les groupes existants ne bougent pas. */}
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-sm font-medium text-slate-700 mb-2">Page vue par les invités</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { v: 'simple' as const, t: 'Simple', d: 'Cartes de chambres sur les dates du groupe. Idéal mariage : tout le monde vient aux mêmes dates.' },
+                      { v: 'pro' as const, t: 'Pro — calendrier', d: 'Calendrier chambres × nuits : chaque invité pose ses propres dates. Pour les séjours longs (tournage, séminaire).' },
+                    ]).map(o => (
+                      <button key={o.v} type="button" onClick={() => setModeVue(o.v)}
+                        className={`text-left rounded-lg border p-2.5 transition ${
+                          modeVue === o.v ? 'border-rose-600 bg-rose-50/60 ring-1 ring-rose-600' : 'border-slate-200 hover:border-slate-300'
+                        }`}>
+                        <span className={`block text-sm font-semibold ${modeVue === o.v ? 'text-rose-700' : 'text-slate-700'}`}>{o.t}</span>
+                        <span className="block text-[11px] leading-snug text-slate-500 mt-0.5">{o.d}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="rounded-lg border border-slate-200 p-3">
                   <p className="text-sm font-medium text-slate-700 mb-2">Paiement en ligne</p>
