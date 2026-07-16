@@ -73,6 +73,32 @@ export async function listInbox(mailbox: string, top = 30): Promise<InboxMessage
   });
 }
 
+// Cherche dans TOUTE la boîte (inbox, archive, dossiers de rangement) — pas seulement
+// l'inbox. Sert à retrouver le mail de RÉSERVATION INITIALE depuis une annulation : le
+// délai d'annulation n'est jamais dans le mail d'annulation (D-Edge écrit « Voir
+// conditions d'annulation Booking.com »), mais il est dans la résa d'origine.
+// ⚠️ `$search` interdit `$orderby` chez Graph → on trie côté client.
+export async function searchMessages(mailbox: string, query: string, top = 10): Promise<InboxMessage[]> {
+  const j = await gm<{ value: Record<string, unknown>[] }>(
+    mailbox,
+    `/messages?$search=${encodeURIComponent(`"${query}"`)}&$top=${top}` +
+    `&$select=id,subject,from,receivedDateTime,isRead,bodyPreview,hasAttachments`,
+  );
+  return (j.value || []).map((m) => {
+    const ea = (m.from as { emailAddress?: { address?: string; name?: string } })?.emailAddress;
+    return {
+      id: String(m.id),
+      fromAddr: ea?.address || '',
+      fromName: ea?.name || '',
+      subject: String(m.subject || ''),
+      preview: String(m.bodyPreview || ''),
+      received: String(m.receivedDateTime || ''),
+      isRead: !!m.isRead,
+      hasAttachments: !!m.hasAttachments,
+    };
+  }).sort((a, b) => b.received.localeCompare(a.received));
+}
+
 export async function listAttachmentNames(mailbox: string, id: string): Promise<string[]> {
   const j = await gm<{ value: { name?: string }[] }>(
     mailbox, `/messages/${id}/attachments?$select=name,size`,

@@ -10,7 +10,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { moveMessage, createReplyDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
+import { moveMessage, createReplyDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox, searchMessages } from '@/lib/graphMailbox';
 import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
@@ -139,15 +139,42 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
 
   // ANNULATION : pas de « déjà venu / TS » — on vérifie s'il faut FACTURER (hors délai).
   if (r.kind === 'annulation') {
-    const note = cancellationNote(r);
+    // ⚠️ LE DÉLAI N'EST JAMAIS DANS LE MAIL D'ANNULATION (vécu 2026-07-16, résa 7X6DYT) :
+    // D-Edge y écrit seulement « Conditions d'annulation : Voir conditions d'annulation
+    // Booking.com ». Sans lui, `isLateCancellation` ne tranche pas et la note disait
+    // « délai à VÉRIFIER manuellement » — autant dire que personne ne vérifiait.
+    // Or le délai EST dans le mail de RÉSERVATION INITIALE (« Le client pourra annuler
+    // gratuitement jusqu'à N jour(s) avant l'arrivée »), qui vit toujours dans la boîte.
+    // → on le retrouve par sa référence et on lui emprunte ce qui manque.
+    let rr = r;
+    if (r.freeCancelDaysBefore == null && r.ref) {
+      try {
+        const orig = (await searchMessages(cfg.mailbox, r.ref, 10)).find(
+          (m) => m.id !== row.message_id && !/annulation/i.test(m.subject || ''),
+        );
+        if (orig) {
+          const o = parseOtaResa(orig.subject || '', await getMessageText(cfg.mailbox, orig.id));
+          rr = {
+            ...r,
+            freeCancelDaysBefore: o.freeCancelDaysBefore ?? r.freeCancelDaysBefore,
+            refundable: r.refundable ?? o.refundable,
+            penalty: r.penalty ?? o.penalty,
+            firstNightAmount: r.firstNightAmount ?? o.firstNightAmount,
+          };
+        }
+      } catch { /* recherche best-effort : on retombe sur « à vérifier manuellement » */ }
+    }
+    const note = cancellationNote(rr);
     return {
       status: 'executed',
       result: {
         kind: 'resa_cancel', note,
+        // `depuisResaOrigine` dit à l'humain d'où vient le délai — utile s'il veut recouper.
+        depuisResaOrigine: rr !== r && rr.freeCancelDaysBefore != null,
         resa: {
-          ref: r.ref, source: r.source, guest: r.guestName, arrival: r.arrival,
-          cancelDate: r.cancelDateISO, freeCancelDaysBefore: r.freeCancelDaysBefore,
-          penalty: r.penalty, firstNight: r.firstNightAmount, payment: r.payment, amount: r.amount,
+          ref: rr.ref, source: rr.source, guest: rr.guestName, arrival: rr.arrival,
+          cancelDate: rr.cancelDateISO, freeCancelDaysBefore: rr.freeCancelDaysBefore,
+          penalty: rr.penalty, firstNight: rr.firstNightAmount, payment: rr.payment, amount: rr.amount,
         },
       },
     };
