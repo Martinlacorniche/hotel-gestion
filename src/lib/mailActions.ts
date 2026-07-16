@@ -11,9 +11,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { moveMessage, createReplyDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox } from '@/lib/graphMailbox';
-import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
+import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
+import { parseRooftopMail, normalizeHeure, normName } from '@/lib/rooftopMail';
 import { receptionOnDuty } from '@/lib/onDuty';
 import type { HotelMailConfig, MailCategory } from '@/lib/mailAssistant';
 
@@ -24,7 +25,7 @@ export type ActionMode = 'off' | 'suggest' | 'auto';
 // Catégories pilotables (on/off/auto) + leur mode par défaut. Tout démarre en
 // 'suggest' (human-in-the-loop) : rien ne part en auto tant que Martin ne l'a pas décidé.
 export const CATEGORY_MODES: MailCategory[] = [
-  'spam_alert', 'resa_ota', 'facture', 'facture_interne', 'candidature', 'commercial', 'client_msg',
+  'spam_alert', 'resa_ota', 'resa_rooftop', 'facture', 'facture_interne', 'candidature', 'commercial', 'client_msg',
 ];
 const DEFAULT_MODE: ActionMode = 'suggest';
 
@@ -491,6 +492,9 @@ function parseTakeover(fromAddr: string, subject: string, body: string): AgencyT
   if (/bookings@cdsgroupe/i.test(fromAddr) && /rappel de paiement|pay[ée]e? par booking|confirmer la r[ée]ception/i.test(`${subject} ${body}`))
     return parseCdsBooking(subject, body);
   if (/ailleursbusiness|cdsgroupe/i.test(fromAddr) || /prestations compl[ée]mentaires/i.test(subject)) return parseCds(subject, body);
+  // UVET GBT : parseur dédié, sinon on retomberait sur le parseur Djoca ci-dessous et la note
+  // serait fausse (erreur déjà commise sur Goelett le 2026-07-07).
+  if (/@uvetgbt\.com/i.test(fromAddr) && /confirmation nr/i.test(subject)) return parseUvet(subject, body);
   return parseAgencyTakeover(subject, body);
 }
 
@@ -527,6 +531,21 @@ async function actAgencyNote(cfg: HotelMailConfig, row: LogRow): Promise<ExecOut
     return {
       status: 'executed',
       result: { kind: 'agency_note', note, agency: t.agency, ref: t.ref, bookingRef: t.bookingRef, guest: t.guestName, cardLast4: t.cardLast4, tsCovered: true, tsAmount: t.tsAmount, invoiceTo: t.invoiceTo },
+    };
+  }
+  if (t.provider === 'uvet') {
+    // UVET : la carte n'est ni dans le corps ni derrière un lien — elle est dans une PJ PDF
+    // (`CreditCard_<réf>.pdf`) → on renvoie la réception vers la PJ, pas vers « le mail ».
+    // L'urgence est portée dans la note : la fenêtre d'accès se ferme à J+2 après le départ.
+    const bits = [`📌 PEC UVET GBT`];
+    if (t.guestName) bits.push(t.guestName);
+    if (t.checkInISO) bits.push(`arr ${ddmm(t.checkInISO)}${t.nights ? ` · ${t.nights} nuit${t.nights > 1 ? 's' : ''}` : ''}`);
+    if (t.ref) bits.push(`réf ${t.ref}${t.bookingRef ? ` (${t.bookingRef})` : ''}`);
+    bits.push('DÉBITER LA CARTE AGENCE — PDF « CreditCard_… » en PJ du mail');
+    bits.push('⚠️ carte accessible jusqu’à J+2 après le départ seulement — ne pas laisser traîner');
+    return {
+      status: 'executed',
+      result: { kind: 'agency_note', note: bits.join(' · '), agency: t.agency, ref: t.ref, bookingRef: t.bookingRef, guest: t.guestName, nights: t.nights, tsCovered: false },
     };
   }
   {
@@ -582,6 +601,60 @@ async function actPreSejour(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutc
   };
 }
 
+// rooftop_check : la vitrine notifie chaque résa Rooftop à la réception, ce qui DOUBLE le plan
+// de salle de l'onglet Service. Martin 2026-07-16 : « si la résa est dans l'app correctement
+// alors on supprime » → on réconcilie le mail avec `rooftop_reservations` AVANT de supprimer.
+//   · trouvée et concordante        -> corbeille (le mail n'apprend rien à personne)
+//   · absente, ou champs divergents -> BLOQUÉ + note : c'est le seul témoin d'une résa perdue
+// ⚠️ Pas de suppression sur le seul critère de l'expéditeur : côté vitrine l'insert en base
+// (RPC `rooftop_book`, client) et l'envoi du mail (route API) sont deux chemins indépendants —
+// le `fetch` de notification est même en `.catch(() => {})`.
+async function actRooftopCheck(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
+  const body = await getMessageText(cfg.mailbox, row.message_id);
+  const p = parseRooftopMail(row.subject || '', body);
+
+  if (!p.nom || !p.dateISO) {
+    return { status: 'blocked', error: 'Mail Rooftop illisible (nom ou date absents) — à regarder à la main.' };
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('rooftop_reservations')
+    .select('id, nom, date_resa, heure, couverts, statut, telephone')
+    .eq('hotel_id', cfg.hotelId)
+    .eq('date_resa', p.dateISO);
+  if (error) return { status: 'blocked', error: `Lecture rooftop_reservations : ${error.message}` };
+
+  const match = (data || []).find((r) => normName(r.nom) === normName(p.nom));
+  if (!match) {
+    return {
+      status: 'blocked',
+      error: `⚠️ Résa Rooftop ABSENTE de l’app : ${p.nom} · ${p.dateISO} ${p.heure ?? ''} · ${p.couverts ?? '?'} couv.` +
+        ` — à saisir dans l’onglet Service (tél. ${p.telephone ?? '—'}).`,
+    };
+  }
+
+  // Divergences : l'heure et le nombre de couverts doivent coller. La TABLE n'est pas un critère
+  // (l'équipe la réattribue légitimement depuis le plan de salle), le statut non plus (une résa
+  // annulée après coup reste « correctement dans l'app »).
+  const ecarts: string[] = [];
+  if (p.heure && normalizeHeure(match.heure) !== p.heure) ecarts.push(`heure mail ${p.heure} ≠ app ${match.heure}`);
+  if (p.couverts && match.couverts !== p.couverts) ecarts.push(`couverts mail ${p.couverts} ≠ app ${match.couverts}`);
+  if (ecarts.length) {
+    return { status: 'blocked', error: `⚠️ Résa Rooftop divergente (${p.nom}, ${p.dateISO}) : ${ecarts.join(' · ')} — à vérifier.` };
+  }
+
+  await moveMessage(cfg.mailbox, row.message_id, 'deleteditems');
+  return {
+    status: 'executed',
+    result: {
+      kind: 'rooftop_ok',
+      movedTo: 'deleteditems',
+      resaId: match.id,
+      guest: p.nom, date: p.dateISO, heure: p.heure, couverts: p.couverts, statut: match.statut,
+    },
+  };
+}
+
 // ── Dispatch ────────────────────────────────────────────────────────────────
 
 const NOT_WIRED: Record<string, string> = {
@@ -600,6 +673,7 @@ export async function executeRow(cfg: HotelMailConfig, row: LogRow): Promise<Exe
       case 'commercial_followup': return await actCommercialFollowup(cfg, row);
       case 'route_pennylane':     return await actRoutePennylane(cfg, row);
       case 'presejour_check':     return await actPreSejour(cfg, row);
+      case 'rooftop_check':       return await actRooftopCheck(cfg, row);
       default:
         return { status: 'blocked', error: NOT_WIRED[row.proposed_action] || `Action inconnue : ${row.proposed_action}` };
     }

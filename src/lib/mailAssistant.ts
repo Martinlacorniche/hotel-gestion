@@ -42,13 +42,13 @@ export type MailInput = {
 };
 
 export type MailCategory =
-  | 'spam_alert' | 'resa_ota' | 'resa_swile' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
+  | 'spam_alert' | 'resa_ota' | 'resa_swile' | 'resa_rooftop' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
   | 'commission_ota' | 'candidature' | 'commercial' | 'client_msg' | 'pre_sejour' | 'rapport_pms'
   | 'autre';
 
 export type MailAction =
   | 'delete' | 'archive' | 'resa_control' | 'agency_note' | 'route_pennylane' | 'invoice_note'
-  | 'draft_reply' | 'commercial_followup' | 'presejour_check' | 'none';
+  | 'draft_reply' | 'commercial_followup' | 'presejour_check' | 'rooftop_check' | 'none';
 
 export type Classification = {
   category: MailCategory;
@@ -71,10 +71,20 @@ const rx = {
   resaCancel: /annulation de réservation/i,
   facture: /\bfacture\b|avis d[’' ]?échéance|quittance|bon de livraison|\bBL\b/i,
   candidature: /candidature|alternance|(recherche|à la recherche).{0,25}(alternance|stage|emploi|apprentissage)|\bBTS\b.{0,20}tourisme/i,
-  commercial: /séminaire|s[ée]minaire|devis|salle de r[ée]union|journ[ée]e d['’ ]?[ée]tude|cocktail din|privatis|séjour de \d+|room ?block|bloc de chambres|groupe .{0,15}(chambres|personnes)/i,
+  // ⚠️ Élargi 2026-07-16 au TOURNAGE (production audiovisuelle) : la demande CACTUS FILMS via
+  // Madame Hotels (18 comédiens, 15→30/10/2026, ~180 nuitées) tombait en `autre/none` — aucun
+  // mot du déclencheur n'y figurait. Ce n'est pas un cas isolé : « Grands Ducs Films — Un voyage »
+  // (35 chambres demandées sur les 2 hôtels, tournage aux plages du Mourillon) est déjà passé.
+  // « single use » = occupation single, vocabulaire B2B/production systématique dans ces demandes.
+  commercial: /séminaire|s[ée]minaire|devis|salle de r[ée]union|journ[ée]e d['’ ]?[ée]tude|cocktail din|privatis|séjour de \d+|room ?block|bloc de chambres|groupe .{0,15}(chambres|personnes)|tournage|com[ée]diens?|figurants?|single use/i,
   dedge: /d-edge|d_edge|availpro/i,
   bookingGuest: /guest\.booking\.com$/i,
-  reply: /^\s*(re|rép|rép\.|tr|fwd)\s*:/i,
+  // Préfixes de réponse/transfert. ⚠️ PAS QUE LE FRANÇAIS (2026-07-16) : le fil UVET GBT (agence
+  // italienne) arrivait en « R: CONFIRMATION NR… » — « R: » = le « Re: » italien, « I: » = leur
+  // « Inoltra » (transfert). Non reconnus, ces mails d'humains échappaient à `humanThread`, donc
+  // au garde-fou qui interdit de supprimer un expéditeur listé en pub quand un humain y parle.
+  // Ajout aussi de « aw » (allemand) et « rv » (renvoi espagnol).
+  reply: /^\s*(re|rép|rép\.|r|tr|fwd|fw|i|aw|rv)\s*:/i,
   // NOS propres factures (émises par nous, pas des fournisseurs) → à classer (Archive),
   // surtout PAS routées vers Pennylane (Martin 2026-07-09).
   //  · Mews envoie les factures/folios clients depuis noreply@mews.li
@@ -89,6 +99,15 @@ const rx = {
   // à valider et payer » (.xls). Nos réservations ne sont PAS commissionnables → on répond ça
   // à chaque fois, puis on supprime (Martin 2026-07-10).
   onyxCommission: /onyxcentersource\.com/i,
+  // 🛡️ PARTENAIRES DONT LA COMMISSION EST CONTRACTUELLE — ne JAMAIS leur répondre « non
+  // commissionnable » (Martin 2026-07-16). C'est la ligne de partage laissée en suspens le
+  // 2026-07-13 (cas Travel Counsellors), tranchée ici par les faits : Madame Hotels (agence
+  // spectacle/production, Christelle Colonna) travaille avec nous à 10 % de commission ANNONCÉS
+  // D'AVANCE et inclus dans le tarif — dossier « Paname Comedy Club » (« nuit, petit déjeuner et
+  // taxe de séjour, commission 10 % : 3 chambres Confort à 191,83 € ») et dossier CONFIRMÉ
+  // « JARRY / Sud concerts ». Une facture de commission de leur part est DUE : elle ne doit
+  // jamais déclencher le brouillon « nos réservations ne sont pas commissionnables ».
+  commissionablePartners: /@madamehotels\.fr/i,
   // Pub / marketing envoyée par les OTA elles-mêmes (Expedia « Maximisez vos revenus »…).
   // ⚠️ Ces expéditeurs peuvent AUSSI porter de vraies notifications de réservation → la règle
   // ne s'applique qu'aux mails qui ne ressemblent pas à une résa (Martin 2026-07-10).
@@ -106,8 +125,22 @@ const rx = {
   // changement de domaine (tthotelpro.com → .net, « Urgent », télécharger l'app). Ça se fait passer
   // pour notre fournisseur de serrures TTHotel mais l'expéditeur n'est pas tthotelpro → corbeille.
   // (Martin : décision de supprimer. Ne jamais suivre les liens : vérifier via un canal TTHotel connu.)
+  // ⚠️ @lestoilesdularge.com (2026-07-16) = démarchage d'un fabricant de textile/décoration
+  // (« Semaine Nationale, célébrons le savoir-faire français ! ») — aucun lien commercial.
   prospectionSenders:
-    /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris|@snservice\.co/i,
+    /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris|@snservice\.co|@lestoilesdularge\.com/i,
+  // Notification de réservation Rooftop que la vitrine s'envoie à la réception des Voiles.
+  // Le mail DOUBLE le plan de salle de l'onglet Service → inutile SI la résa est bien en base
+  // (Martin 2026-07-16 : « si la résa est dans l'app correctement alors on supprime »). La
+  // vérification se fait dans l'ACTION, pas ici : le `bodyPreview` de Graph est tronqué, et
+  // surtout on ne supprime jamais sur le seul critère de l'expéditeur.
+  rooftopResaFrom: /demandes@send\.hotel-corniche\.com/i,
+  rooftopResaSubject: /r[ée]servation rooftop/i,
+  // Digest de mise en quarantaine Microsoft 365 : Outlook a retenu un message qu'il juge
+  // indésirable et propose de le passer en revue. Même doctrine que les indésirables (Martin
+  // 2026-07-10 : « on ne lit pas les indésirables ») → corbeille. Le message retenu reste
+  // récupérable 15 jours côté Microsoft si jamais un vrai client y tombait.
+  quarantineDigest: /quarantine@messaging\.microsoft\.com/i,
   // LoungeUp (Corniche) : porte les formulaires PRÉ-SÉJOUR remplis par le client — cf preSejour.ts.
   loungeUp: /@app(\.eu)?\.loungeup\.com/i,
   // Éditions automatiques du PMS Hotsoft, que l'hôtel s'envoie à sa propre boîte (96 % du dossier
@@ -169,7 +202,10 @@ export function classifyMail(mail: MailInput): Classification {
   //     ⚠️ Une facture NOMINATIVE portant sur une résa identifiable (client + dates + réf) peut
   //     être réellement due — cas Farrar 07/2026, agence ayant réservé en direct sous son code
   //     IATA. Le brouillon reste donc un brouillon : on ne l'envoie pas sans regarder la résa.
-  if (rx.onyxCommission.test(from) || (rx.commissionOta.test(from) && /commission/i.test(hay))) {
+  //     ⚠️ Jamais pour un partenaire dont la commission est contractuelle (Madame Hotels & co) :
+  //     leur commission est due, le brouillon serait faux. Ils tombent dans les règles normales.
+  if (!rx.commissionablePartners.test(from) &&
+      (rx.onyxCommission.test(from) || (rx.commissionOta.test(from) && /commission/i.test(hay)))) {
     return {
       category: 'commission_ota',
       action: 'draft_reply',
@@ -191,6 +227,24 @@ export function classifyMail(mail: MailInput): Classification {
   // 1f) Pub / prospection connue (expéditeurs déjà repérés) -> corbeille (Martin 2026-07-09).
   if (rx.prospectionSenders.test(from) && senderDeleteOk) {
     return { category: 'spam_alert', action: 'delete', reason: 'Pub / prospection (expéditeur connu)', detail: {} };
+  }
+
+  // 1f-bis) Digest « messages en quarantaine » Microsoft 365 -> corbeille (Martin 2026-07-16).
+  //     Même doctrine que les indésirables : on ne les lit pas. Contrôle du dossier Corniche le
+  //     2026-07-10 : que du démarchage/arnaque, aucun vrai client — le filtre Outlook fait son
+  //     travail. Le message retenu reste récupérable 15 j côté Microsoft.
+  if (rx.quarantineDigest.test(from) && senderDeleteOk) {
+    return { category: 'spam_alert', action: 'delete', reason: 'Digest de quarantaine Microsoft 365 (on ne lit pas les indésirables)', detail: {} };
+  }
+
+  // 1f-ter) Notification de résa Rooftop émise par la vitrine -> RÉCONCILIATION avec la base :
+  //     la résa est dans l'app → le mail dégage ; elle n'y est pas (ou ne colle pas) → l'humain
+  //     regarde (Martin 2026-07-16). ⚠️ La suppression est décidée par l'ACTION après lecture de
+  //     la base, JAMAIS ici : côté vitrine, l'insert (RPC `rooftop_book`) et l'envoi du mail sont
+  //     deux chemins indépendants → ce mail est le seul filet si la base a raté la résa.
+  //     `!humanThread` : une réponse dans le fil reste un message humain.
+  if (rx.rooftopResaFrom.test(from) && rx.rooftopResaSubject.test(subj) && !humanThread) {
+    return { category: 'resa_rooftop', action: 'rooftop_check', reason: 'Résa Rooftop (vitrine) → vérifier qu’elle est bien dans l’app', detail: {} };
   }
 
   // 1h) Formulaire PRÉ-SÉJOUR rempli par le client (LoungeUp, Corniche) -> on LIT le formulaire :
@@ -251,10 +305,21 @@ export function classifyMail(mail: MailInput): Classification {
   //   connues : Djocatravel · Goelett (partenaire paiement Booking, VCC) · CDS Groupe /
   //   Ailleurs Business (carte MasterCard agence couvrant la TS, facture à Ailleurs Business).
   //   Règle commune : NE PAS encaisser le client, débiter la carte agence (Martin 2026-07-06/07).
+  //   4e canal (2026-07-16) : UVET GBT (`hotelbookings@uvetgbt.com`, sous-licencié American Express
+  //   Global Business Travel, agence corporate italienne). Sujet « CONFIRMATION NR. <réf> - <réf
+  //   hôtel> - <n°> - MR/MRS <NOM> - CHECK-IN jj/mm/aaaa CHECK-OUT jj/mm/aaaa », voucher + carte
+  //   agence en PIÈCES JOINTES (`CreditCard_<réf>.pdf`) : « UVET GBT S.P.A. CREDIT CARD HEREBY
+  //   ATTACHED TO BE CHARGED FOR THIS BOOKING ». ⚠️ FENÊTRE COURTE : le n° de carte n'est
+  //   accessible que 5 j après la résa, puis de J-1 avant l'arrivée à J+2 après le départ — un
+  //   mail vu trop tard = carte perdue (vécu le 2026-07-16 : résa CUOZZO, la réception a dû
+  //   réclamer la carte le matin du départ). N° de carte JAMAIS stocké (4 derniers max).
+  //   `!humanThread` : dans ce canal un humain de l'agence répond dans le fil (« R: CONFIRMATION
+  //   NR… ») — ces mails-là restent à l'humain, on ne note que la confirmation automatique.
+  const isUvet = /@uvetgbt\.com/i.test(from) && /confirmation nr/i.test(subj) && !humanThread;
   const isGoelett = /goelett/i.test(from);
   const isCds = /ailleursbusiness|cdsgroupe/i.test(from) || /prestations compl[ée]mentaires/i.test(subj);
-  if (/djocatravel/i.test(from) || isGoelett || isCds || (/prise en charge/i.test(subj) && /paiement/i.test(subj))) {
-    const agency = isGoelett ? 'Goelett' : isCds ? 'CDS Groupe / Ailleurs Business' : 'Djocatravel';
+  if (/djocatravel/i.test(from) || isGoelett || isCds || isUvet || (/prise en charge/i.test(subj) && /paiement/i.test(subj))) {
+    const agency = isGoelett ? 'Goelett' : isCds ? 'CDS Groupe / Ailleurs Business' : isUvet ? 'UVET GBT' : 'Djocatravel';
     return {
       category: 'prise_en_charge',
       action: 'agency_note',

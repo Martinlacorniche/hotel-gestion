@@ -250,7 +250,7 @@ export type AgencyTakeover = {
   // 'cds_booking' = variante `bookings@cdsgroupe.com` « RAPPEL DE PAIEMENT … payée par
   // Booking » : PAS une prise en charge par carte agence — la chambre est sur la VCC
   // Booking, il n'y a RIEN à débiter, seule une confirmation de réception est attendue.
-  provider: 'djoca' | 'goelett' | 'cds' | 'cds_booking';
+  provider: 'djoca' | 'goelett' | 'cds' | 'cds_booking' | 'uvet';
   agency: string;
   ref: string | null;
   bookingRef: string | null; // réf Booking.com (Goelett / CDS)
@@ -408,6 +408,63 @@ export function parseCds(subject: string, body: string): AgencyTakeover {
     cardLast4: null,          // n° derrière un lien, absent du mail
     tsAmount: null, roomAmount: null,
     invoiceTo: 'Ailleurs Business (FACTURE@CDSGROUPE.COM)',
+  };
+}
+
+// UVET GBT (`hotelbookings@uvetgbt.com`) = agence corporate italienne, sous-licenciée American
+// Express Global Business Travel. Découvert 2026-07-16 (résa CUOZZO). Parseur DÉDIÉ : sans lui,
+// `parseTakeover` retomberait sur le parseur Djoca et produirait une note fausse (l'erreur déjà
+// faite sur Goelett le 2026-07-07).
+//
+// Tout est dans le SUJET, en 5 blocs séparés par ` - ` :
+//   « CONFIRMATION NR. 26/2839504 - H9S4KK - 724636660 - MR/MRS OLIMPIA CUOZZO
+//     - CHECK-IN 13/07/2026 CHECK-OUT 16/07/2026 »
+// Le corps ne porte QUE la consigne (« UVET GBT S.P.A. CREDIT CARD HEREBY ATTACHED TO BE CHARGED
+// FOR THIS BOOKING ») : la carte est dans une PJ `CreditCard_<réf>.pdf` → aucun last-4 lisible
+// (même situation que CDS, où le n° est derrière un lien).
+//
+// ⚠️ FENÊTRE D'ACCÈS COURTE, citée par le mail : le n° n'est accessible que 5 jours après la
+// réservation, puis de J-1 avant l'arrivée jusqu'à J+2 après le départ → un mail traité trop tard
+// = carte inaccessible. Vécu le 2026-07-16 : la réception a dû réclamer la carte le matin même du
+// départ. D'où `debitAtArrival` et l'urgence portée dans la note.
+export function parseUvet(subject: string, body: string): AgencyTakeover {
+  const parts = subject.split(/\s+-\s+/).map((s) => s.trim());
+
+  const ref = subject.match(/CONFIRMATION NR\.?\s*([\d/]+)/i)?.[1] || null;
+  // 2e bloc = notre référence hôtel (ex. H9S4KK) ; 3e = le n° de dossier UVET.
+  const bookingRef = parts[1]?.match(/^[A-Z0-9]{5,8}$/i) ? parts[1] : null;
+
+  const guestName = subject.match(/MR\/MRS\s+([A-Za-zÀ-ÿ'’\- ]{3,40}?)\s*(?:-\s*CHECK-IN|$)/i)?.[1]?.trim() || null;
+  let guestLast: string | null = null;
+  if (guestName) {
+    const toks = guestName.replace(/^(Mr|Mme|M\.|Mrs?|Ms)\.?\s+/i, '').trim().split(/\s+/);
+    guestLast = toks[toks.length - 1] || null;
+  }
+
+  const ci = subject.match(/CHECK-IN\s+(\d{2})\/(\d{2})\/(\d{4})/i);
+  const co = subject.match(/CHECK-OUT\s+(\d{2})\/(\d{2})\/(\d{4})/i);
+  const checkInISO = ci ? `${ci[3]}-${ci[2]}-${ci[1]}` : null;
+  const checkOutISO = co ? `${co[3]}-${co[2]}-${co[1]}` : null;
+
+  let nights: number | null = null;
+  if (checkInISO && checkOutISO) {
+    const d = (Date.parse(checkOutISO) - Date.parse(checkInISO)) / 86400000;
+    nights = Number.isFinite(d) && d > 0 ? d : null;
+  }
+
+  return {
+    provider: 'uvet',
+    agency: 'UVET GBT',
+    ref, bookingRef,
+    guestName, guestLast, checkInISO, nights, room: null,
+    // Le mail dit « CREDIT CARD … TO BE CHARGED FOR THIS BOOKING » sans détailler le périmètre :
+    // on n'AFFIRME donc pas que la taxe de séjour est couverte (règle maison : on n'invente pas
+    // ce que l'agence n'écrit pas).
+    tsCovered: false,
+    debitAtArrival: true,
+    cardLast4: null,           // carte en PJ (PDF) → pas de last-4 lisible dans le corps
+    tsAmount: null, roomAmount: null,
+    invoiceTo: null,
   };
 }
 
