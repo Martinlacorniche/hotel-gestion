@@ -12,7 +12,7 @@ import { confirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, Plus, Trash2, Loader2, ArrowLeft, Pencil, X, Check, Copy, Link2,
   BedDouble, ImagePlus, Eye, EyeOff, Building2, CalendarDays, Hash, ExternalLink,
-  Mail, Phone, Settings, BedSingle,
+  Mail, Phone, Settings, BedSingle, ChevronRight,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -91,6 +91,10 @@ interface Groupe {
   // (mariages) ; 'pro' = calendrier chambres × nuits, chaque invité pose SES dates
   // (tournages, séminaires, groupes longs). Cf migration 82.
   mode_vue?: 'simple' | 'pro';
+  // Migration 84 : ce que l'invité voit du prix, et la place de la taxe de séjour.
+  affichage_tarifs?: 'complet' | 'budget' | 'masque';
+  taxe_sejour_mode?: 'sur_place' | 'incluse' | 'ajoutee';
+  taxe_sejour_montant?: number;
   paiement_obligatoire?: boolean;
   mode_paiement?: string | null;
   date_envoi_paiement?: string | null;
@@ -122,6 +126,23 @@ function byNumero(a: { numero: string }, b: { numero: string }) {
 // ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
+function AutoTextarea({ value, onChange, placeholder, minRows = 2 }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; minRows?: number;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';                 // repli d'abord, sinon la hauteur ne redescend jamais
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea ref={ref} rows={minRows} value={value} placeholder={placeholder}
+      onChange={e => onChange(e.target.value)}
+      className="w-full border rounded-lg px-3 py-2 text-sm bg-white resize-none overflow-hidden leading-relaxed" />
+  );
+}
+
 function genCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans I,O,0,1 ambigus
   let out = '';
@@ -444,6 +465,12 @@ function GroupesTab({
   const [conditions, setConditions] = useState('');
   const [planVisible, setPlanVisible] = useState(true);
   const [modeVue, setModeVue] = useState<'simple' | 'pro'>('simple');
+  // Les catégories de chambres sont REPLIÉES par défaut (Martin 2026-07-16 : « ça pollue de
+  // ouf ») — le compteur « 3/5 » suffit pour savoir sans déplier.
+  const [blocOpen, setBlocOpen] = useState(false);
+  const [affichageTarifs, setAffichageTarifs] = useState<'complet' | 'budget' | 'masque'>('complet');
+  const [taxeMode, setTaxeMode] = useState<'sur_place' | 'incluse' | 'ajoutee'>('sur_place');
+  const [taxeMontant, setTaxeMontant] = useState('');
   const [modePaiement, setModePaiement] = useState<'immediat' | 'differe' | 'optionnel' | 'aucun'>('immediat');
   const [dateEnvoiPaiement, setDateEnvoiPaiement] = useState('');
   const [messageAccueil, setMessageAccueil] = useState('');
@@ -488,12 +515,12 @@ function GroupesTab({
   useEffect(() => {
     if (typeof window === 'undefined' || !showForm || editing) return;
     const draft = {
-      nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible, modeVue,
+      nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible, modeVue, affichageTarifs, taxeMode, taxeMontant,
       modePaiement, dateEnvoiPaiement, messageAccueil, contactNom, contactEmail, notes,
       selected, tarifByType,
     };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
-  }, [showForm, editing, nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible, modeVue,
+  }, [showForm, editing, nom, dateArrivee, dateDepart, dateLimite, conditions, planVisible, modeVue, affichageTarifs, taxeMode, taxeMontant,
       modePaiement, dateEnvoiPaiement, messageAccueil, contactNom, contactEmail, notes, selected, tarifByType]);
 
   // Restaure un brouillon au montage (sauf si on arrive depuis un dossier / édition).
@@ -506,7 +533,7 @@ function GroupesTab({
       const hasContent = d && (d.nom || d.dateArrivee || d.dateDepart || (d.selected && Object.keys(d.selected).length));
       if (!hasContent) return;
       setNom(d.nom || ''); setDateArrivee(d.dateArrivee || ''); setDateDepart(d.dateDepart || ''); setDateLimite(d.dateLimite || '');
-      setConditions(d.conditions || ''); setPlanVisible(d.planVisible ?? true); setModeVue(d.modeVue === 'pro' ? 'pro' : 'simple');
+      setConditions(d.conditions || ''); setPlanVisible(d.planVisible ?? true); setModeVue(d.modeVue === 'pro' ? 'pro' : 'simple'); setAffichageTarifs(d.affichageTarifs ?? 'complet'); setTaxeMode(d.taxeMode ?? 'sur_place'); setTaxeMontant(d.taxeMontant ?? '');
       setModePaiement(d.modePaiement ?? 'immediat'); setDateEnvoiPaiement(d.dateEnvoiPaiement ?? '');
       setMessageAccueil(d.messageAccueil || ''); setContactNom(d.contactNom || ''); setContactEmail(d.contactEmail || ''); setNotes(d.notes || '');
       setSelected(d.selected || {}); setTarifByType(d.tarifByType || {});
@@ -525,7 +552,7 @@ function GroupesTab({
   function resetForm() {
     setEditing(null);
     setNom(''); setDateArrivee(''); setDateDepart(''); setDateLimite('');
-    setConditions(''); setPlanVisible(true); setModeVue('simple'); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
+    setConditions(''); setPlanVisible(true); setModeVue('simple'); setAffichageTarifs('complet'); setTaxeMode('sur_place'); setTaxeMontant(''); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
     setContactNom(''); setContactEmail(''); setNotes('');
     setCoverUrl(null); setCoverFile(null);
     setSelected({}); setTarifByType({});
@@ -555,6 +582,9 @@ function GroupesTab({
     setConditions(g.conditions_annulation || '');
     setPlanVisible(g.plan_visible);
     setModeVue(g.mode_vue === 'pro' ? 'pro' : 'simple');
+    setAffichageTarifs(g.affichage_tarifs ?? 'complet');
+    setTaxeMode(g.taxe_sejour_mode ?? 'sur_place');
+    setTaxeMontant(g.taxe_sejour_montant != null ? String(g.taxe_sejour_montant) : '');
     setModePaiement((g.mode_paiement as 'immediat' | 'differe' | 'optionnel' | 'aucun') ?? (g.paiement_obligatoire ? 'immediat' : 'aucun'));
     setDateEnvoiPaiement(g.date_envoi_paiement ?? '');
     setMessageAccueil(g.message_accueil || '');
@@ -634,6 +664,9 @@ function GroupesTab({
       conditions_annulation: conditions.trim() || null,
       plan_visible: planVisible,
       mode_vue: modeVue,
+      affichage_tarifs: affichageTarifs,
+      taxe_sejour_mode: taxeMode,
+      taxe_sejour_montant: taxeMontant.trim() === '' ? 0 : parseFloat(taxeMontant.replace(',', '.')) || 0,
       mode_paiement: modePaiement,
       date_envoi_paiement: modePaiement === 'differe' ? (dateEnvoiPaiement || null) : null,
       paiement_obligatoire: modePaiement === 'immediat', // compat route reserve actuelle
@@ -863,14 +896,19 @@ function GroupesTab({
 
                 {/* Sélection des chambres du bloc — tarif par catégorie */}
                 <div className="rounded-lg border border-slate-200 p-4">
-                  <div className="flex items-center gap-2 mb-3">
+                  {/* Repli de TOUTE la section (Martin 2026-07-16 : « l'ancienne vue m'allait, il
+                      fallait juste refermer à bloc de chambres sans détails »). Replier chaque
+                      catégorie séparément cachait au contraire l'info utile. */}
+                  <button type="button" onClick={() => setBlocOpen(o => !o)} aria-expanded={blocOpen}
+                    className={`flex items-center gap-2 w-full text-left ${blocOpen ? 'mb-3' : ''}`}>
                     <span className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                      <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${blocOpen ? 'rotate-90' : ''}`} />
                       <BedDouble className="w-4 h-4 text-rose-600" /> Chambres du bloc
                       <span className="text-xs font-normal text-slate-400">({nbSelected} sélectionnée{nbSelected > 1 ? 's' : ''})</span>
                     </span>
-                  </div>
+                  </button>
 
-                  {blocGroups.length === 0 ? (
+                  {!blocOpen ? null : blocGroups.length === 0 ? (
                     <p className="text-sm text-amber-600">Aucune chambre. Crée-en d’abord dans l’onglet « Chambres &amp; types ».</p>
                   ) : (
                     <div className="space-y-4">
@@ -884,13 +922,18 @@ function GroupesTab({
                               const ids = g.rooms.map(r => r.id);
                               const allOn = ids.every(id => selected[id]);
                               const someOn = ids.some(id => selected[id]);
+                              const nbOn = ids.filter(id => selected[id]).length;
                               return (
                                 <div key={g.key} className={`rounded-lg border p-3 ${someOn ? 'border-rose-300 bg-rose-50/40' : 'border-slate-200'}`}>
                                   <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                                     <label className="flex items-center gap-2 cursor-pointer">
-                                      <input type="checkbox" checked={allOn} onChange={e => toggleType(ids, e.target.checked)} className="w-4 h-4 accent-rose-600" />
+                                      <input type="checkbox" checked={allOn}
+                                        ref={el => { if (el) el.indeterminate = someOn && !allOn; }}
+                                        onChange={e => toggleType(ids, e.target.checked)} className="w-4 h-4 accent-rose-600" />
                                       <span className="text-sm font-semibold text-slate-700">{g.name}</span>
-                                      <span className="text-[11px] text-slate-400">{g.rooms.length} chambre{g.rooms.length > 1 ? 's' : ''}</span>
+                                      <span className="text-[11px] text-slate-400">
+                                        {nbOn > 0 ? `${nbOn}/${g.rooms.length} sélectionnée${nbOn > 1 ? 's' : ''}` : `${g.rooms.length} chambre${g.rooms.length > 1 ? 's' : ''}`}
+                                      </span>
                                     </label>
                                     <div className="flex items-center gap-1.5">
                                       <span className="text-[11px] text-slate-400">Tarif / nuit</span>
@@ -947,16 +990,14 @@ function GroupesTab({
                     </div>
                   </Field>
                   <Field label="Mot d’accueil (page invité)">
-                    <textarea value={messageAccueil} onChange={e => setMessageAccueil(e.target.value)} rows={2}
-                      placeholder="Réservez votre chambre pour notre mariage…"
-                      className="w-full border rounded-lg px-3 py-2 text-sm bg-white resize-y" />
+                    <AutoTextarea value={messageAccueil} onChange={setMessageAccueil}
+                      placeholder="Réservez votre chambre pour notre mariage…" />
                   </Field>
                 </div>
 
                 <Field label="Conditions d’annulation">
-                  <textarea value={conditions} onChange={e => setConditions(e.target.value)} rows={2}
-                    placeholder="Annulation gratuite jusqu’à 30 jours avant l’arrivée…"
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white resize-y" />
+                  <AutoTextarea value={conditions} onChange={setConditions}
+                    placeholder="Annulation gratuite jusqu’à 30 jours avant l’arrivée…" />
                 </Field>
 
                 <div className="grid md:grid-cols-2 gap-4">
@@ -965,8 +1006,7 @@ function GroupesTab({
                       className="w-full border rounded-lg px-3 h-11 text-sm bg-white" />
                   </Field>
                   <Field label="Notes internes (back-office)">
-                    <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Privé — non visible des invités"
-                      className="w-full border rounded-lg px-3 h-11 text-sm bg-white" />
+                    <AutoTextarea value={notes} onChange={setNotes} placeholder="Privé — non visible des invités" />
                   </Field>
                 </div>
 
@@ -996,6 +1036,58 @@ function GroupesTab({
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Ce que l'invité voit du prix. 3 positions (Martin 2026-07-16) : sur un groupe
+                    pris en charge, afficher « 170 € / nuit » à chaque comédien n'a pas de sens —
+                    mais l'organisateur, lui, veut suivre la consommation du bloc. */}
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-sm font-medium text-slate-700 mb-2">Prix visibles par les invités</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { v: 'complet' as const, t: 'Tout', d: 'Tarif / nuit + budget du bloc' },
+                      { v: 'budget' as const, t: 'Budget seul', d: 'Pas de tarif, mais « réservé X / Y »' },
+                      { v: 'masque' as const, t: 'Rien', d: 'Ni tarif ni budget' },
+                    ]).map(o => (
+                      <button key={o.v} type="button" onClick={() => setAffichageTarifs(o.v)}
+                        className={`text-left rounded-lg border p-2.5 transition ${
+                          affichageTarifs === o.v ? 'border-rose-600 bg-rose-50/60 ring-1 ring-rose-600' : 'border-slate-200 hover:border-slate-300'
+                        }`}>
+                        <span className={`block text-sm font-semibold ${affichageTarifs === o.v ? 'text-rose-700' : 'text-slate-700'}`}>{o.t}</span>
+                        <span className="block text-[11px] leading-snug text-slate-500 mt-0.5">{o.d}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Place de la taxe de séjour dans le prix du bloc. Le montant était CODÉ EN DUR
+                    dans la vitrine (1,86 Voiles / 2,83 ailleurs) — un tarif réglementaire qui
+                    change chaque année n'a rien à faire dans le code. */}
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-sm font-medium text-slate-700 mb-2">Taxe de séjour</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { v: 'sur_place' as const, t: 'À payer sur place', d: 'Hors prix du bloc' },
+                      { v: 'incluse' as const, t: 'Incluse dans le prix', d: 'Déjà dans le tarif / nuit' },
+                      { v: 'ajoutee' as const, t: 'À rajouter au prix', d: 'S’ajoute et compte dans le budget' },
+                    ]).map(o => (
+                      <button key={o.v} type="button" onClick={() => setTaxeMode(o.v)}
+                        className={`text-left rounded-lg border p-2.5 transition ${
+                          taxeMode === o.v ? 'border-rose-600 bg-rose-50/60 ring-1 ring-rose-600' : 'border-slate-200 hover:border-slate-300'
+                        }`}>
+                        <span className={`block text-sm font-semibold ${taxeMode === o.v ? 'text-rose-700' : 'text-slate-700'}`}>{o.t}</span>
+                        <span className="block text-[11px] leading-snug text-slate-500 mt-0.5">{o.d}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {taxeMode !== 'incluse' && (
+                    <label className="flex items-center gap-2 mt-2.5">
+                      <span className="text-[11px] text-slate-400 shrink-0">Montant / nuit / personne</span>
+                      <input value={taxeMontant} onChange={e => setTaxeMontant(e.target.value)} placeholder="2,83" inputMode="decimal"
+                        className="w-24 border rounded-lg px-2 h-9 text-sm bg-white" />
+                      <span className="text-sm text-slate-400">€</span>
+                    </label>
+                  )}
                 </div>
 
                 <div className="rounded-lg border border-slate-200 p-3">
@@ -1091,6 +1183,7 @@ function GroupDetail({ group, chambres, roomTypes, hotelName, onBack, onEdit, on
     if (error) toast.error(error.message);
     await onChanged(); setBusy(null);
   }
+  const [moveId, setMoveId] = useState<string | null>(null);
   function startEdit(r: GroupeReservation) { setEditId(r.id); setDa(r.date_arrivee); setDd(r.date_depart); setLit(r.config_lit === 'twin' ? 'twin' : 'double'); setPax(r.nb_personnes || 1); }
   async function saveEdit(r: GroupeReservation, twinable: boolean, paxMax: number) {
     if (dd <= da) { toast.error('Le départ doit être après l’arrivée.'); return; }
@@ -1101,6 +1194,49 @@ function GroupDetail({ group, chambres, roomTypes, hotelName, onBack, onEdit, on
     if (error) toast.error(error.message);
     setEditId(null); await onChanged(); setBusy(null);
   }
+  // DÉPLACER une résa vers une autre chambre du bloc (Martin 2026-07-16 : « quelqu'un en
+  // chambre 18 mais elle est HS, comment je le déplace sans me retaper toute la résa ? »).
+  // Avant : impossible — le staff pouvait changer les dates, le lit, le nombre de personnes,
+  // mais PAS la chambre → il fallait annuler et refaire.
+  // Ne propose que les chambres RÉELLEMENT possibles : même bloc, capacité suffisante, et
+  // aucune résa active qui chevauche les dates. La base reste le juge (contrainte d'exclusion
+  // 23P01) : si deux staffs déplacent en même temps, c'est elle qui tranche.
+  function movableTargets(r: GroupeReservation) {
+    const cur = gcById.get(r.groupe_chambre_id);
+    return (group.groupe_chambres || []).filter(gc => {
+      if (gc.id === r.groupe_chambre_id) return false;
+      if (cur && gc.hotel_id !== cur.hotel_id) return false;          // pas de saut d'hôtel
+      const info = chInfo(gc);
+      if ((r.nb_personnes || 1) > (info.pax_max ?? 2)) return false;  // capacité
+      const conflit = (group.groupe_reservations || []).some(o =>
+        o.id !== r.id &&
+        o.groupe_chambre_id === gc.id &&
+        ['confirmee', 'en_attente_paiement', 'paiement_differe'].includes(o.statut) &&
+        r.date_arrivee < o.date_depart && o.date_arrivee < r.date_depart,   // bornes [) : un départ libère
+      );
+      return !conflit;
+    });
+  }
+
+  async function moveResa(r: GroupeReservation, targetGcId: string) {
+    setBusy(r.id);
+    const { error } = await supabase.from('groupe_reservations').update({
+      groupe_chambre_id: targetGcId,
+      derniere_action: 'modification',
+      // La chambre change → le PMS doit être remis à jour, et ça doit ressortir au back-office.
+      pms_done: false, vu_backoffice: false,
+      modified_at: new Date().toISOString(),
+    }).eq('id', r.id);
+    if (error) {
+      toast.error(error.code === '23P01' || error.code === '23505'
+        ? 'Cette chambre n’est pas libre sur ces dates.'
+        : error.message);
+    } else {
+      toast.success('Réservation déplacée. Pensez à la reporter dans le PMS.');
+    }
+    setMoveId(null); await onChanged(); setBusy(null);
+  }
+
   async function cancelResa(r: GroupeReservation) {
     const info = chInfo(gcById.get(r.groupe_chambre_id)!);
     const ok = await confirmDialog({ title: 'Annuler cette réservation ?', message: `${r.prenom || ''} ${r.nom} — chambre ${info.numero}. À retirer ensuite du PMS.`, confirmLabel: 'Annuler la résa' });
@@ -1179,6 +1315,41 @@ function GroupDetail({ group, chambres, roomTypes, hotelName, onBack, onEdit, on
                       </label>
                     </div>
 
+                    {moveId === r.id && (
+                      <div className="mt-3 border-t border-slate-100 pt-3">
+                        <p className="text-[11px] text-slate-400 mb-2">
+                          Déplacer <b className="text-slate-600">{r.prenom || ''} {r.nom}</b> vers une autre chambre du bloc,
+                          sur les mêmes dates ({format(new Date(r.date_arrivee), 'dd/MM', { locale: fr })} → {format(new Date(r.date_depart), 'dd/MM', { locale: fr })}).
+                          Seules les chambres libres et assez grandes sont proposées.
+                        </p>
+                        {movableTargets(r).length === 0 ? (
+                          <p className="text-xs text-slate-500 italic">Aucune autre chambre du bloc n’est libre sur ces dates.</p>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                            {movableTargets(r).map(gc => {
+                              const t = chInfo(gc);
+                              const ecart = Number(gc.tarif_nuit) - Number(gcById.get(r.groupe_chambre_id)?.tarif_nuit ?? 0);
+                              return (
+                                <button key={gc.id} type="button" disabled={busy === r.id} onClick={() => moveResa(r, gc.id)}
+                                  className="text-left rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50/40 px-2.5 py-2 transition disabled:opacity-50">
+                                  <span className="block text-sm font-semibold text-slate-700">{t.numero}</span>
+                                  <span className="block text-[10px] text-slate-400 truncate">{t.type}</span>
+                                  {/* Le tarif est porté par la CHAMBRE : déplacer change le prix.
+                                      On le dit avant, pas après. */}
+                                  {ecart !== 0 && (
+                                    <span className={`block text-[10px] font-medium ${ecart > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                      {ecart > 0 ? '+' : ''}{euro(ecart)} / nuit
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <button onClick={() => setMoveId(null)} className="mt-2 text-[11px] text-slate-400 hover:text-slate-600">Annuler</button>
+                      </div>
+                    )}
+
                     {!editing ? (
                       <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
                         <span className="text-xs text-slate-500 inline-flex items-center gap-3 flex-wrap">
@@ -1187,7 +1358,12 @@ function GroupDetail({ group, chambres, roomTypes, hotelName, onBack, onEdit, on
                           <span className="inline-flex items-center gap-1"><Users className="w-3 h-3" />{r.nb_personnes}</span>
                         </span>
                         <span className="flex items-center gap-1">
-                          <button onClick={() => startEdit(r)} className="text-xs px-2.5 h-8 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 inline-flex items-center gap-1"><Pencil className="w-3.5 h-3.5" /> Modifier</button>
+                          <button onClick={() => { setMoveId(moveId === r.id ? null : r.id); setEditId(null); }}
+                            className="text-xs px-2.5 h-8 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 inline-flex items-center gap-1"
+                            title="Changer de chambre sans refaire la réservation (chambre HS, surclassement…)">
+                            <BedSingle className="w-3.5 h-3.5" /> Déplacer
+                          </button>
+                          <button onClick={() => { startEdit(r); setMoveId(null); }} className="text-xs px-2.5 h-8 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 inline-flex items-center gap-1"><Pencil className="w-3.5 h-3.5" /> Modifier</button>
                           <button onClick={() => cancelResa(r)} disabled={busy === r.id} className="text-xs px-2.5 h-8 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" /> Annuler</button>
                         </span>
                       </div>
