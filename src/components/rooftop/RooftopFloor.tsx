@@ -134,6 +134,13 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
   const { user } = useAuth();
   const canReopen = user?.role === "admin" || user?.role === "superadmin";
   const today = useMemo(todayStr, []);
+  // Fenêtre de clôture = J ou J-1. Le J-1 couvre le service de nuit clôturé
+  // après minuit. Le vrai verrou est dans la RPC (migration 83) ; ici on ne
+  // fait que l'expliquer avant le clic.
+  const yesterday = useMemo(() => {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
   const [date, setDate] = useState(today);
   const barSlug = hotelId === VOILES_ID ? "rooftop" : "bar";
 
@@ -689,6 +696,8 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
       await reload(); return;
     }
     if (res.status === "refuse") { toast.error("Session expirée"); return; }
+    if (res.status === "trop_ancien") { toast.error("Ce service est trop ancien pour être clôturé (J et J-1 seulement).", { duration: 6000 }); return; }
+    if (res.status === "futur") { toast.error("On ne clôture pas un service à venir."); return; }
     setClotureRow(res.cloture ?? null);
     setRecapOpen(true);
     toast.success(res.status === "deja" ? "Service déjà clôturé" : "Service clôturé ✓");
@@ -727,6 +736,8 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
   const reserveTable = tables.find(x => x.id === reserveTableId) || null;
   const facture = { clientNom, setClientNom, clientEmail, setClientEmail, invoicing, sendFacture };
 
+  const clotureOuverte = date === today || date === yesterday;
+
   // Date + clôture : projetées dans le header de la page (au-dessus des onglets)
   // pour ne pas manger une ligne au-dessus du plan de salle. Repli en place si
   // aucun emplacement n'est fourni.
@@ -743,8 +754,12 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
         <button onClick={() => shiftDate(1)} aria-label="Jour suivant"
           className="p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"><ChevronRight className="w-4 h-4" /></button>
       </div>
-      <button onClick={doCloture} disabled={busy}
-        className={`inline-flex items-center gap-2 rounded-lg border px-3.5 h-10 text-sm font-semibold disabled:opacity-50 ${
+      <button onClick={doCloture} disabled={busy || (!closed && !clotureOuverte)}
+        title={!closed && !clotureOuverte
+          ? (date > today ? "On ne clôture pas un service à venir."
+                          : "Service trop ancien : la clôture n'est possible que le jour même ou le lendemain.")
+          : undefined}
+        className={`inline-flex items-center gap-2 rounded-lg border px-3.5 h-10 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed ${
           closed ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
         {closed ? <><Lock className="w-4 h-4" /> Service clôturé</> : <><Check className="w-4 h-4" /> Clôture du service</>}
