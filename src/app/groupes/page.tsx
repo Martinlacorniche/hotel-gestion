@@ -56,6 +56,8 @@ interface GroupeChambre {
   chambre_id: string;
   hotel_id: string;
   tarif_nuit: number;
+  // Nuits retirées de cette chambre (migration 86). Vide = toute la durée du groupe.
+  nuits_exclues?: string[] | null;
 }
 
 interface GroupeReservation {
@@ -468,6 +470,25 @@ function GroupesTab({
   // Les catégories de chambres sont REPLIÉES par défaut (Martin 2026-07-16 : « ça pollue de
   // ouf ») — le compteur « 3/5 » suffit pour savoir sans déplier.
   const [blocOpen, setBlocOpen] = useState(false);
+  // Nuits RETIRÉES par chambre (migration 86). Vide = la chambre suit toute la durée
+  // du groupe. Martin 2026-07-16 : « en cliquant sur une date ça enlève cette date ».
+  const [exclus, setExclus] = useState<Record<string, string[]>>({});
+
+  // Les nuits du séjour = les colonnes du calendrier staff. Une nuit est désignée par son
+  // jour de début : la nuit du départ n'existe pas (bornes [) partout dans ce module).
+  // ⚠️ Formatage en heure LOCALE : `toISOString()` sur une date construite en local décale
+  // d'un jour (minuit Paris = 22h UTC la veille) — piège déjà vécu côté vitrine.
+  const nuitsGroupe = useMemo<string[]>(() => {
+    if (!dateArrivee || !dateDepart || dateDepart <= dateArrivee) return [];
+    const out: string[] = [];
+    const d = new Date(dateArrivee + 'T00:00:00');
+    const end = new Date(dateDepart + 'T00:00:00');
+    while (d < end) {
+      out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  }, [dateArrivee, dateDepart]);
   const [affichageTarifs, setAffichageTarifs] = useState<'complet' | 'budget' | 'masque'>('complet');
   const [taxeMode, setTaxeMode] = useState<'sur_place' | 'incluse' | 'ajoutee'>('sur_place');
   const [taxeMontant, setTaxeMontant] = useState('');
@@ -552,7 +573,7 @@ function GroupesTab({
   function resetForm() {
     setEditing(null);
     setNom(''); setDateArrivee(''); setDateDepart(''); setDateLimite('');
-    setConditions(''); setPlanVisible(true); setModeVue('simple'); setAffichageTarifs('complet'); setTaxeMode('sur_place'); setTaxeMontant(''); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
+    setConditions(''); setPlanVisible(true); setExclus({}); setModeVue('simple'); setAffichageTarifs('complet'); setTaxeMode('sur_place'); setTaxeMontant(''); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
     setContactNom(''); setContactEmail(''); setNotes('');
     setCoverUrl(null); setCoverFile(null);
     setSelected({}); setTarifByType({});
@@ -595,13 +616,16 @@ function GroupesTab({
     setCoverFile(null);
     const sel: Record<string, RoomSel> = {};
     const tbt: Record<string, string> = {};
+    const win: Record<string, string[]> = {};
     for (const c of g.groupe_chambres || []) {
       sel[c.chambre_id] = { id: c.id };
       const ch = chambres.find(x => x.id === c.chambre_id);
       if (ch) tbt[typeKeyOf(ch)] = String(c.tarif_nuit);
+      if (c.nuits_exclues?.length) win[c.chambre_id] = c.nuits_exclues;
     }
     setSelected(sel);
     setTarifByType(tbt);
+    setExclus(win);
     setShowForm(true);
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
@@ -706,10 +730,11 @@ function GroupesTab({
           if (!ch) continue;
           const tarif = parseFloat(tarifByType[typeKeyOf(ch)] || '') || 0;
           if (sel.id) {
-            await supabase.from('groupe_chambres').update({ tarif_nuit: tarif }).eq('id', sel.id);
+            await supabase.from('groupe_chambres').update({ tarif_nuit: tarif, nuits_exclues: exclus[chambreId] || [] }).eq('id', sel.id);
           } else {
             await supabase.from('groupe_chambres').insert({
               groupe_id: groupeId, chambre_id: chambreId, hotel_id: ch.hotel_id, tarif_nuit: tarif,
+              nuits_exclues: exclus[chambreId] || [],
             });
           }
         }
@@ -746,6 +771,7 @@ function GroupesTab({
             chambre_id: chambreId,
             hotel_id: ch?.hotel_id,
             tarif_nuit: ch ? (parseFloat(tarifByType[typeKeyOf(ch)] || '') || 0) : 0,
+            nuits_exclues: exclus[chambreId] || [],
           };
         });
         const { error: chErr } = await supabase.from('groupe_chambres').insert(rows);
@@ -927,6 +953,8 @@ function GroupesTab({
                                 <div key={g.key} className={`rounded-lg border p-3 ${someOn ? 'border-rose-300 bg-rose-50/40' : 'border-slate-200'}`}>
                                   <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                                     <label className="flex items-center gap-2 cursor-pointer">
+                                      {/* Case INDÉTERMINÉE quand la sélection est partielle : « 3/7 »
+                                          avec une case vide laissait croire que rien n'était coché. */}
                                       <input type="checkbox" checked={allOn}
                                         ref={el => { if (el) el.indeterminate = someOn && !allOn; }}
                                         onChange={e => toggleType(ids, e.target.checked)} className="w-4 h-4 accent-rose-600" />
@@ -943,18 +971,71 @@ function GroupesTab({
                                       <span className="text-[11px] text-slate-400">€</span>
                                     </div>
                                   </div>
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                                    {g.rooms.map(c => {
-                                      const on = !!selected[c.id];
-                                      return (
-                                        <label key={c.id}
-                                          className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 cursor-pointer transition ${on ? 'border-rose-300 bg-white' : 'border-slate-200'}`}>
-                                          <input type="checkbox" checked={on} onChange={() => toggleRoom(c.id)} className="w-4 h-4 accent-rose-600" />
-                                          <span className="text-sm font-medium text-slate-700 truncate">{c.numero}</span>
-                                          <span className="text-[10px] text-slate-400 truncate">{c.pax_max}p{c.twinable ? '·twin' : ''}</span>
-                                        </label>
-                                      );
-                                    })}
+
+                                  {/* Calendrier chambres × nuits — le MÊME modèle mental que la page
+                                      invité (Martin 2026-07-16). On coche pour ouvrir la chambre, on
+                                      clique une nuit pour la retirer du bloc ; côté client elle
+                                      apparaît hachurée et non sélectionnable. */}
+                                  <div className="overflow-x-auto [scrollbar-width:thin]">
+                                    <table className="border-collapse text-sm">
+                                      <thead>
+                                        <tr>
+                                          <th className="sticky left-0 bg-inherit text-left pr-2 py-1 font-medium text-slate-400 text-[10px]">Chambre</th>
+                                          {nuitsGroupe.map(n => {
+                                            const d = new Date(n + 'T00:00:00');
+                                            const we = d.getDay() === 0 || d.getDay() === 6;
+                                            return (
+                                              <th key={n} className="px-0 py-1 font-medium text-[9px] min-w-[30px]"
+                                                style={{ color: we ? '#004e7c' : '#94a3b8' }}>
+                                                {String(d.getDate()).padStart(2, '0')}/{String(d.getMonth() + 1).padStart(2, '0')}
+                                              </th>
+                                            );
+                                          })}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {g.rooms.map(c => {
+                                          const on = !!selected[c.id];
+                                          const ex = exclus[c.id] || [];
+                                          return (
+                                            <tr key={c.id}>
+                                              <td className="sticky left-0 bg-inherit pr-2 py-0.5 whitespace-nowrap">
+                                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                                  <input type="checkbox" checked={on} onChange={() => toggleRoom(c.id)} className="w-4 h-4 accent-rose-600" />
+                                                  <span className={`text-sm font-medium ${on ? 'text-slate-700' : 'text-slate-400'}`}>{c.numero}</span>
+                                                  <span className="text-[9px] text-slate-400">{c.pax_max}p</span>
+                                                </label>
+                                              </td>
+                                              {nuitsGroupe.map(n => {
+                                                const retiree = ex.includes(n);
+                                                return (
+                                                  <td key={n} className="px-[1px] py-0.5">
+                                                    <button type="button" disabled={!on}
+                                                      title={!on ? 'Cochez la chambre pour l’ouvrir au groupe'
+                                                        : retiree ? 'Retirée du bloc cette nuit — cliquez pour la remettre'
+                                                        : 'Ouverte au groupe — cliquez pour retirer cette nuit'}
+                                                      onClick={() => setExclus(p => {
+                                                        const cur = p[c.id] || [];
+                                                        const next = cur.includes(n) ? cur.filter(x => x !== n) : [...cur, n].sort();
+                                                        const o = { ...p, [c.id]: next };
+                                                        if (!next.length) delete o[c.id];
+                                                        return o;
+                                                      })}
+                                                      className={`block w-full h-5 rounded-sm transition ${on ? 'cursor-pointer hover:opacity-70' : 'cursor-default'}`}
+                                                      style={{
+                                                        background: !on ? '#f1f5f9'
+                                                          : retiree ? 'repeating-linear-gradient(45deg,#fff,#fff 2px,#e2e8f0 2px,#e2e8f0 4px)'
+                                                          : 'rgba(225,29,72,.55)',
+                                                        border: '1px solid ' + (on && !retiree ? 'rgba(225,29,72,.7)' : '#e2e8f0'),
+                                                      }} />
+                                                  </td>
+                                                );
+                                              })}
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
                                   </div>
                                 </div>
                               );
