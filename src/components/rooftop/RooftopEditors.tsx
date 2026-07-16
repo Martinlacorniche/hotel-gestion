@@ -516,37 +516,23 @@ export function BarTab({ hotelId }: { hotelId: string }) {
 // Lien public de la carte du rooftop, à envoyer facilement au client depuis la réception.
 const ROOFTOP_CARTE_URL = "https://sitehtbm.netlify.app/rooftop-les-voiles";
 
-export function CarteLienPublic() {
+// `compact` : simple pense-bête en pied de page (onglet Service) — le lien ne
+// mérite pas un bandeau au-dessus du plan de salle.
+export function CarteLienCompact() {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-slate-700">🔗 Carte en ligne · à envoyer au client</p>
-        <a
-          href={ROOFTOP_CARTE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="break-all text-xs text-sky-600 hover:underline"
-        >
-          {ROOFTOP_CARTE_URL}
-        </a>
-      </div>
-      <div className="flex shrink-0 gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            navigator.clipboard.writeText(ROOFTOP_CARTE_URL);
-            toast.success("Lien de la carte copié");
-          }}
-        >
-          <Copy className="mr-1 h-4 w-4" /> Copier le lien
-        </Button>
-        <a href={ROOFTOP_CARTE_URL} target="_blank" rel="noopener noreferrer">
-          <Button size="sm">
-            <ExternalLink className="mr-1 h-4 w-4" /> Ouvrir
-          </Button>
-        </a>
-      </div>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+      <span className="inline-flex items-center gap-1.5">🔗 Carte en ligne</span>
+      <a href={ROOFTOP_CARTE_URL} target="_blank" rel="noopener noreferrer"
+        className="min-w-0 truncate text-sky-600 hover:underline">{ROOFTOP_CARTE_URL}</a>
+      <button
+        onClick={() => { navigator.clipboard.writeText(ROOFTOP_CARTE_URL); toast.success("Lien de la carte copié"); }}
+        className="inline-flex items-center gap-1 font-semibold text-slate-500 hover:text-slate-700">
+        <Copy className="h-3 w-3" /> Copier
+      </button>
+      <a href={ROOFTOP_CARTE_URL} target="_blank" rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 font-semibold text-slate-500 hover:text-slate-700">
+        <ExternalLink className="h-3 w-3" /> Ouvrir
+      </a>
     </div>
   );
 }
