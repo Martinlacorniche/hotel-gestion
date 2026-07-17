@@ -11,7 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { moveMessage, createReplyDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox, searchMessages } from '@/lib/graphMailbox';
-import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, agencyTsBlock, shortRoom, ddmm, resaDiff, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
+import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, parseConferma, agencyTsBlock, shortRoom, ddmm, resaDiff, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
 import { parseRooftopMail, normalizeHeure, normName } from '@/lib/rooftopMail';
@@ -556,6 +556,10 @@ function parseTakeover(fromAddr: string, subject: string, body: string): AgencyT
   // UVET GBT : parseur dédié, sinon on retomberait sur le parseur Djoca ci-dessous et la note
   // serait fausse (erreur déjà commise sur Goelett le 2026-07-07).
   if (/@uvetgbt\.com/i.test(fromAddr) && /confirmation nr/i.test(subject)) return parseUvet(subject, body);
+  // Conferma Connect : idem, parseur dédié OBLIGATOIRE (règle d'or maison — jamais d'agency_note
+  // sans le parseur de l'agence : le fallback Djoca ci-dessous inventerait « Djocatravel », sans
+  // montant ni plafond de préautorisation, et surtout perdrait l'avertissement « carte bloquée »).
+  if (/@conferma\.com/i.test(fromAddr)) return parseConferma(subject, body);
   return parseAgencyTakeover(subject, body);
 }
 
@@ -594,6 +598,34 @@ async function actAgencyNote(cfg: HotelMailConfig, row: LogRow): Promise<ExecOut
       result: { kind: 'agency_note', note, agency: t.agency, ref: t.ref, bookingRef: t.bookingRef, guest: t.guestName, cardLast4: t.cardLast4, tsCovered: true, tsAmount: t.tsAmount, invoiceTo: t.invoiceTo },
     };
   }
+  if (t.provider === 'conferma') {
+    // Conferma/CWT : carte virtuelle DANS le mail, le client ne l'a pas. Le piège du canal est
+    // la PRÉAUTORISATION : au-delà du plafond annoncé (1 €), la carte se BLOQUE — c'est
+    // invisible pour un réceptionniste, donc ça passe en tête de note, avant tout le reste.
+    const bits = [`📌 PEC ${t.agency}`];
+    if (t.guestName) bits.push(t.guestName);
+    if (t.checkInISO) bits.push(`arr ${ddmm(t.checkInISO)}${t.nights ? ` · ${t.nights} nuit${t.nights > 1 ? 's' : ''}` : ''}`);
+    if (t.totalAmount) bits.push(t.totalAmount);
+    // Le n° n'est pas dans le mail : on envoie la réception au bon endroit plutôt que de la
+    // laisser chercher (« Afficher dans le navigateur » ouvre la carte).
+    bits.push('DÉBITER LA CARTE AGENCE — derrière le lien « Afficher dans le navigateur » du mail (le client ne l’a pas)');
+    if (t.preAuthMaxEur != null) {
+      bits.push(`⚠️ PRÉAUTO ${t.preAuthMaxEur} € MAX et PAS de code de préauto — au-delà la carte se BLOQUE`);
+    }
+    // La carte ne couvre que la chambre : le reste (dont la taxe de séjour) est encaissé au départ.
+    bits.push('RSP TS + extras au départ');
+    // Le canal se referme sur lui-même : le mail Conferma porte AUSSI le lien de dépôt de la
+    // facture — c'est la réponse aux « CWT guest requires invoice » qui arrivent par Expedia.
+    bits.push('FACTURE À DÉPOSER via le lien « Charger la facture » du mail');
+    return {
+      status: 'executed',
+      result: {
+        kind: 'agency_note', note: bits.join(' · '), agency: t.agency, ref: t.ref,
+        guest: t.guestName, nights: t.nights, cardLast4: t.cardLast4, company: t.company,
+        preAuthMaxEur: t.preAuthMaxEur, amount: t.totalAmount, tsCovered: false,
+      },
+    };
+  }
   if (t.provider === 'uvet') {
     // UVET : la carte n'est ni dans le corps ni derrière un lien — elle est dans une PJ PDF
     // (`CreditCard_<réf>.pdf`) → on renvoie la réception vers la PJ, pas vers « le mail ».
@@ -629,8 +661,18 @@ async function actInvoiceNote(_cfg: HotelMailConfig, row: LogRow): Promise<ExecO
   const ota = (row.detail?.ota as string) || 'OTA';
   const ref = (row.detail?.ref as string)
     || (row.subject || '').match(/Ref\.?\s*([0-9][0-9A-Za-z-]{4,})/i)?.[1] || '';
-  const note = `📄 FACTURE À ENVOYER à ${ota}${ref ? ` — résa ${ref}` : ''}`;
-  return { status: 'executed', result: { kind: 'invoice_note', note, ota, ref } };
+  // Un message de voyageur Expedia ne porte NI réf de résa NI dates — seulement le nom
+  // (« CWT guest requires invoice »). Sans le nom, la note serait inexploitable.
+  const guest = (row.detail?.guest as string) || '';
+  const qui = ref ? ` — résa ${ref}` : guest ? ` — ${guest}` : '';
+  let note = `📄 FACTURE À ENVOYER à ${ota}${qui}`;
+  // Cas CWT/Conferma : le voyageur réclame la facture VIA Expedia, mais elle ne s'envoie pas
+  // par mail — elle se DÉPOSE sur le lien « Charger la facture » du mail Conferma de la même
+  // résa. Sans ce rappel, on demande à la réception d'envoyer une facture sans lui dire où.
+  if (row.detail?.cwt) {
+    note += ' · CWT → déposer via le lien « Charger la facture » du mail Conferma de cette résa';
+  }
+  return { status: 'executed', result: { kind: 'invoice_note', note, ota, ref, guest } };
 }
 
 // presejour_check : le client a rempli le formulaire pré-séjour (LoungeUp). On le LIT.

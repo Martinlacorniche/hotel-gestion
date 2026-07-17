@@ -258,7 +258,9 @@ export type AgencyTakeover = {
   // 'cds_booking' = variante `bookings@cdsgroupe.com` « RAPPEL DE PAIEMENT … payée par
   // Booking » : PAS une prise en charge par carte agence — la chambre est sur la VCC
   // Booking, il n'y a RIEN à débiter, seule une confirmation de réception est attendue.
-  provider: 'djoca' | 'goelett' | 'cds' | 'cds_booking' | 'uvet';
+  // 'conferma' = Conferma Connect (`noreply@conferma.com`), plateforme de cartes virtuelles
+  // des agences corporate (vu avec CWT, via Expedia). Le client N'A PAS la carte.
+  provider: 'djoca' | 'goelett' | 'cds' | 'cds_booking' | 'uvet' | 'conferma';
   agency: string;
   ref: string | null;
   bookingRef: string | null; // réf Booking.com (Goelett / CDS)
@@ -274,6 +276,11 @@ export type AgencyTakeover = {
   roomAmount: string | null; // montant chambre couvert par l'OTA (Goelett → Booking)
   invoiceTo: string | null;  // entité à qui facturer (Goelett Sp. z o.o. / Ailleurs Business…)
   company?: string | null;   // société donneuse d'ordre (CDS corporate, ex. PAPREC HAVAS)
+  // ⚠️ Plafond de PRÉAUTORISATION imposé par l'agence, en euros. Conferma/CWT : « ne pas
+  // effectuer de préautorisation supérieure à 1 euro […] car cela pourrait entraîner le
+  // BLOCAGE DE LA CARTE ». Un réceptionniste ne peut pas deviner ça → ça doit être dans la note.
+  preAuthMaxEur?: number | null;
+  totalAmount?: string | null; // coût total estimatif annoncé par l'agence
 };
 
 // Bloc « taxe de séjour » de la note réception selon l'agence de prise en charge :
@@ -473,6 +480,77 @@ export function parseUvet(subject: string, body: string): AgencyTakeover {
     cardLast4: null,           // carte en PJ (PDF) → pas de last-4 lisible dans le corps
     tsAmount: null, roomAmount: null,
     invoiceTo: null,
+  };
+}
+
+// CONFERMA CONNECT (`noreply@conferma.com`) — 5e canal de prise en charge (2026-07-17).
+// Plateforme de cartes virtuelles des agences corporate ; vu avec **CWT** (Carlson Wagonlit
+// Travel) sur des résas passées via Expedia. Sujet : « Réservation -<réf Expedia> ».
+// Le mail est un « Formulaire d'autorisation — Carte de crédit virtuelle tierce » :
+//   · « Cette réservation doit être débitée sur la carte virtuelle » — **le client n'a PAS la carte** ;
+//   · transaction **sans présentation de la carte** (CNP) ;
+//   · ⚠️⚠️ **« ne pas effectuer de préautorisation sur la carte supérieure à 1 euro et ne pas
+//     saisir le code de préautorisation, car cela pourrait entraîner le BLOCAGE de la carte »**
+//     → piège coûteux, invisible pour un réceptionniste : la note DOIT le porter ;
+//   · « Tout supplément non inclus dans le prix de la chambre doit être payé par le voyageur au
+//     moment du départ » → la carte ne couvre QUE la chambre ⇒ **TS sur place** (tsCovered=false) ;
+//   · « Le paiement de la commission est effectué comme d'habitude à Expedia ».
+// ⚠️ N° de carte JAMAIS stocké (4 derniers max) — cf règle maison.
+export function parseConferma(subject: string, body: string): AgencyTakeover {
+  const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
+  const hay = body;
+
+  // Réf Expedia : dans le sujet (« Réservation -2511874454 ») et dans « Numéro de confirmation ».
+  const ref = subject.match(/-\s*(\d{6,})/)?.[1]
+    || fieldAfter(lines, /^Num[ée]ro de confirmation/i)?.match(/\d{6,}/)?.[0] || null;
+
+  const guestName = fieldAfter(lines, /^Nom du client/i);
+  let guestLast: string | null = null;
+  if (guestName) {
+    // « Mr VALENTIN VELLA » → VELLA. Le nom est en capitales, le prénom aussi : on prend le
+    // DERNIER mot une fois la civilité retirée.
+    const cleaned = guestName.replace(/^(Mr|Mme|M\.|Mrs?|Ms)\.?\s+/i, '').trim();
+    const toks = cleaned.split(/\s+/).filter(Boolean);
+    guestLast = toks.length ? toks[toks.length - 1] : null;
+  }
+
+  // « mercredi, 22 juillet 2026 (22/07/2026) » → on prend la forme entre parenthèses, non ambiguë.
+  const checkInRaw = fieldAfter(lines, /^Date d[’' ]?arriv[ée]e/i) || '';
+  const dm = checkInRaw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  const checkInISO = dm ? `${dm[3]}-${dm[2]}-${dm[1]}` : null;
+
+  const nightsRaw = fieldAfter(lines, /^Nombre de nuits/i);
+  const nights = nightsRaw ? (parseInt(nightsRaw, 10) || null) : null;
+
+  const totalRaw = fieldAfter(lines, /^Co[ûu]t total/i);
+  const totalAmount = totalRaw?.match(/[\d.,]+\s*EUR|[\d.,]+\s*€/i)?.[0]?.trim() || totalRaw || null;
+
+  // Agence donneuse d'ordre : « effectuée par CWT ». Le libellé est court et en capitales.
+  const company = hay.match(/effectu[ée]e par\s*\n?\s*([A-Z][A-Za-z0-9 &.'-]{1,40})/)?.[1]?.trim() || null;
+
+  // Plafond de préautorisation (« pas de préautorisation supérieure à 1 euro »).
+  const preAuth = hay.match(/pr[ée]autorisation[^.]{0,40}?sup[ée]rieure?\s*à\s*(\d+(?:[.,]\d+)?)\s*euro/i)?.[1];
+  const preAuthMaxEur = preAuth ? parseFloat(preAuth.replace(',', '.')) : null;
+
+  return {
+    provider: 'conferma',
+    agency: company ? `Conferma / ${company}` : 'Conferma',
+    ref, bookingRef: null,
+    guestName, guestLast, checkInISO, nights, room: null,
+    // La carte ne couvre QUE la chambre : « tout supplément non inclus … payé par le voyageur
+    // au moment du départ » ⇒ la taxe de séjour reste à encaisser sur place.
+    tsCovered: false,
+    debitAtArrival: true,
+    // ⚠️ PAS DE LAST-4 POSSIBLE : le n° de carte n'est PAS dans le mail (vérifié sur le HTML
+    // brut des 4 mails du 2026-07-17 — seuls les LIBELLÉS « Numéro de carte / Visa / Mastercard
+    // / expiration » y figurent). La carte est derrière le lien `confermaconnect.com/email/
+    // booking?guid=…`. Même situation que CDS/Ailleurs Business.
+    cardLast4: null,
+    tsAmount: null, roomAmount: null,
+    invoiceTo: null,
+    company,
+    preAuthMaxEur,
+    totalAmount,
   };
 }
 

@@ -186,6 +186,10 @@ const rx = {
     /nous a envoy[ée] ce message|message re[çc]u de la part d|message d[’' ]?un (?:voyageur|client)|attend d[’' ]?[êe]tre lu/i,
   // Idem pour tout ce qui parle d'argent (facture, impayé) : jamais de suppression à l'aveugle.
   moneyHook: /\binvoice\b|impay[ée]|outstanding|relance de paiement/i,
+  // Un voyageur (ou son agence) réclame une facture. Vu en masse le 2026-07-17 : les 4 voyageurs
+  // CWT du 22/07 envoient tous, via la messagerie Expedia, le même « CWT guest requires invoice ».
+  // Ce n'est pas une question ouverte → c'est la même famille que Hotelbeds (`invoice_note`).
+  invoiceRequest: /requires? (?:an? )?invoice|need(?:s)? (?:an? )?invoice|demande.{0,15}factur|souhaite.{0,15}factur|besoin.{0,10}factur/i,
   // Signal générique de newsletter / démarchage à froid (lien de désinscription + accroche).
   prospectionHook: /se d[ée]sinscrire|unsubscribe|d[ée]couvrez nos offres|\b[àa] partir de\s?\d/i,
 };
@@ -306,6 +310,34 @@ export function classifyMail(mail: MailInput): Classification {
     return { category: 'pre_sejour', action: 'presejour_check', reason: 'Formulaire pré-séjour client (à lire)', detail: {} };
   }
 
+  // 1h-bis) MESSAGE D'UN VOYAGEUR RELAYÉ PAR EXPEDIA (2026-07-17). Trou repéré au backtest du
+  //     2026-07-13 et jamais bouché : `donotreply@expediapartnercentral.com` envoie À LA FOIS de
+  //     la pub ET la parole des voyageurs. Le garde-fou `senderDeleteOk` les sauvait de la
+  //     corbeille, mais personne ne les classait → ils dormaient en `autre/none`.
+  //     ⚠️ L'expéditeur porte un sous-domaine ALÉATOIRE (`ikxc1ex2mf@m.expediapartnercentral.com`)
+  //     → matcher le domaine, jamais la boîte.
+  //     Placé AVANT la règle pub du même expéditeur.
+  if (/expediapartnercentral\.com/i.test(from) && rx.guestMessage.test(hay)) {
+    const guest = subj.match(/voyageur Expedia\s*:\s*(.+?)\s*$/i)?.[1]?.trim() || null;
+    // Le message ne pose pas une question, il réclame une facture (« CWT guest requires
+    // invoice ») → même traitement que Hotelbeds : une note actionnable, pas un brouillon.
+    if (rx.invoiceRequest.test(hay)) {
+      return {
+        category: 'facture_ota', action: 'invoice_note',
+        reason: `Voyageur Expedia réclame une facture${guest ? ` (${guest})` : ''}`,
+        // `cwt` : le message dit « CWT guest requires invoice ». La facture ne s'envoie alors
+        // PAS par mail — elle se dépose sur le lien du mail Conferma de la même résa. Le mot
+        // n'est que dans le CORPS (le sujet ne porte que le nom du voyageur) → on le remonte ici.
+        detail: { ota: 'Expedia', guest, cwt: /\bCWT\b/.test(hay) },
+      };
+    }
+    return {
+      category: 'client_msg', action: 'draft_reply',
+      reason: 'Message d’un voyageur Expedia → brouillon de réponse',
+      detail: { channel: 'expedia', guest },
+    };
+  }
+
   // 1i) Éditions automatiques du PMS Hotsoft que l'hôtel s'envoie à lui-même (feuille de caisse,
   //     situation HT/TTC, Guests, Emergency Report…). Pièces d'exploitation : on les CLASSE, on ne
   //     les détruit pas ici — la purge à 4 jours s'en charge ensuite (Martin 2026-07-13).
@@ -365,11 +397,17 @@ export function classifyMail(mail: MailInput): Classification {
   //   réclamer la carte le matin du départ). N° de carte JAMAIS stocké (4 derniers max).
   //   `!humanThread` : dans ce canal un humain de l'agence répond dans le fil (« R: CONFIRMATION
   //   NR… ») — ces mails-là restent à l'humain, on ne note que la confirmation automatique.
+  //   5e canal (2026-07-17) : CONFERMA CONNECT (`noreply@conferma.com`), plateforme de cartes
+  //   virtuelles des agences corporate — vu avec CWT via Expedia, 4 résas d'un coup. Sujet
+  //   « Réservation -<réf Expedia> », corps « Carte de crédit virtuelle tierce / Formulaire
+  //   d'autorisation ». ⚠️ Piège propre à ce canal : **préautorisation plafonnée à 1 €**, au-delà
+  //   la carte se BLOQUE — un réceptionniste ne peut pas le deviner, `parseConferma` le remonte.
   const isUvet = /@uvetgbt\.com/i.test(from) && /confirmation nr/i.test(subj) && !humanThread;
   const isGoelett = /goelett/i.test(from);
   const isCds = /ailleursbusiness|cdsgroupe/i.test(from) || /prestations compl[ée]mentaires/i.test(subj);
-  if (/djocatravel/i.test(from) || isGoelett || isCds || isUvet || (/prise en charge/i.test(subj) && /paiement/i.test(subj))) {
-    const agency = isGoelett ? 'Goelett' : isCds ? 'CDS Groupe / Ailleurs Business' : isUvet ? 'UVET GBT' : 'Djocatravel';
+  const isConferma = /@conferma\.com/i.test(from) && !humanThread;
+  if (/djocatravel/i.test(from) || isGoelett || isCds || isUvet || isConferma || (/prise en charge/i.test(subj) && /paiement/i.test(subj))) {
+    const agency = isGoelett ? 'Goelett' : isCds ? 'CDS Groupe / Ailleurs Business' : isUvet ? 'UVET GBT' : isConferma ? 'Conferma' : 'Djocatravel';
     return {
       category: 'prise_en_charge',
       action: 'agency_note',
