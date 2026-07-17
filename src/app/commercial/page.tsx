@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { syncTeloConsignes } from '@/lib/teloConsigne';
 
 // --- TYPES ---
 interface Hotel {
@@ -675,6 +676,16 @@ export default function CommercialDashboard() {
           status: currentLead.statut === 'Confirmé' ? 'reserved' : 'option'
         }));
         await supabase.from('seminar_reservations').insert(resasToInsert);
+        // Telo Maritimo = la salle du petit-déjeuner : une résa CONFIRMÉE dessus doit poser une
+        // consigne du jour pour l'exploitation (cf teloConsigne.ts). Idempotent — on repasse ici
+        // à chaque enregistrement du dossier. Ne doit jamais faire échouer la sauvegarde.
+        try {
+          const n = await syncTeloConsignes(supabase, resasToInsert, currentLead.nom_client);
+          if (n > 0) toast.success(`Telo réservée : ${n} consigne${n > 1 ? 's' : ''} posée${n > 1 ? 's' : ''} pour la réception`);
+        } catch (e) {
+          console.error('consigne Telo', e);
+          toast.error("La consigne Telo n'a pas pu être posée — à créer à la main.");
+        }
       }
     }
     setIsSaving(false);
