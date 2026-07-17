@@ -44,6 +44,7 @@ export type MailInput = {
 export type MailCategory =
   | 'spam_alert' | 'resa_ota' | 'resa_swile' | 'resa_rooftop' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
   | 'commission_ota' | 'candidature' | 'commercial' | 'client_msg' | 'pre_sejour' | 'rapport_pms'
+  | 'litige_ota'
   | 'autre';
 
 export type MailAction =
@@ -62,7 +63,10 @@ const rx = {
   // plus disponible à la vente » ET « il ne reste plus qu'une seule chambre disponible… /
   // Ajoutez des disponibilités » (relance d'incitation à ouvrir des dispos).
   stockAlert: /n['’ ]?est plus disponible|plus disponible à la vente|ne reste plus qu.{0,15}chambre|ajoutez des disponibilit/i,
-  bookingNoise: /résumé de votre compte|identifiant de l['’ ]?hôtel|account summary/i,
+  // ⚠️ « Aperçu mensuel de votre boîte de réception » (`no-reply@properties.booking.com`) ajouté
+  // le 2026-07-17 : relance d'engagement (« consultez votre boîte de réception »), aucun contenu
+  // actionnable. Vérité terrain : l'équipe Corniche l'a jeté le matin même.
+  bookingNoise: /résumé de votre compte|identifiant de l['’ ]?hôtel|account summary|aperçu mensuel de votre boîte/i,
   // Digest quotidien des arrivées Booking → bruit (Martin 2026-07-07). Le détail actionnable
   // (facturation agence, TS Goelett) revient aussi par les mails D-Edge/Goelett individuels.
   bookingDigest: /résumé quotidien des arrivées|reservations with (?:today|tomorrow)|arrival date for/i,
@@ -76,7 +80,13 @@ const rx = {
   // mot du déclencheur n'y figurait. Ce n'est pas un cas isolé : « Grands Ducs Films — Un voyage »
   // (35 chambres demandées sur les 2 hôtels, tournage aux plages du Mourillon) est déjà passé.
   // « single use » = occupation single, vocabulaire B2B/production systématique dans ces demandes.
-  commercial: /séminaire|s[ée]minaire|devis|salle de r[ée]union|journ[ée]e d['’ ]?[ée]tude|cocktail din|privatis|séjour de \d+|room ?block|bloc de chambres|groupe .{0,15}(chambres|personnes)|tournage|com[ée]diens?|figurants?|single use/i,
+  // ⚠️ Élargi 2026-07-17 à la LOCATION DE SALLE SÈCHE (sans hébergement) : la demande récurrente
+  // de DE BAECQUE (commissaire-priseur, « journées d'expertise » en Telo Maritimo, 299 €/jour,
+  // 3 fiches déjà Confirmé) tombait en `autre/none` — il écrit « la grande salle », jamais
+  // « salle de réunion ». Une demande de salle sans le mot « séminaire » reste une demande
+  // commerciale. `salle` seul serait trop large (la salle du PDJ revient dans du courrier
+  // d'exploitation) → on exige un verbe de réservation ou un qualificatif.
+  commercial: /séminaire|s[ée]minaire|devis|salle de r[ée]union|(?:grande|petite) salle|(?:r[ée]server|louer|location de|dispo.{0,15}de) (?:la |une |votre )?salle|journ[ée]e d['’ ]?(?:[ée]tude|expertise)|cocktail din|privatis|séjour de \d+|room ?block|bloc de chambres|groupe .{0,15}(chambres|personnes)|tournage|com[ée]diens?|figurants?|single use/i,
   dedge: /d-edge|d_edge|availpro/i,
   bookingGuest: /guest\.booking\.com$/i,
   // Préfixes de réponse/transfert. ⚠️ PAS QUE LE FRANÇAIS (2026-07-16) : le fil UVET GBT (agence
@@ -129,6 +139,16 @@ const rx = {
   // (« Semaine Nationale, célébrons le savoir-faire français ! ») — aucun lien commercial.
   prospectionSenders:
     /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris|@snservice\.co|@lestoilesdularge\.com/i,
+  // Service Clients Booking : issue d'un litige/geste commercial (« <client> a accepté votre
+  // proposition d'annuler la réservation et de supprimer les frais associés »). Le dossier est
+  // clos côté Booking → à CLASSER, jamais à supprimer (Martin 2026-07-17).
+  // ⚠️ Le mail porte quand même une consigne conditionnelle — « si vous avez déjà débité le
+  // client, procédez au remboursement intégral » — donc l'archivage ne vaut PAS quittance : c'est
+  // la réception qui solde le remboursement (vécu le 2026-07-17 : Elora avait ouvert la consigne
+  // « Ilham Mansar : remboursement du FULLPAY ? » le matin même). Le `reason` le rappelle pour
+  // que le journal ne laisse pas croire que tout est fait.
+  bookingCsFrom: /cs-noreply@booking\.com/i,
+  bookingCsResolved: /a accept[ée] votre proposition|accepted your proposal/i,
   // Notification de réservation Rooftop que la vitrine s'envoie à la réception des Voiles.
   // Le mail DOUBLE le plan de salle de l'onglet Service → inutile SI la résa est bien en base
   // (Martin 2026-07-16 : « si la résa est dans l'app correctement alors on supprime »). La
@@ -143,6 +163,16 @@ const rx = {
   quarantineDigest: /quarantine@messaging\.microsoft\.com/i,
   // LoungeUp (Corniche) : porte les formulaires PRÉ-SÉJOUR remplis par le client — cf preSejour.ts.
   loungeUp: /@app(\.eu)?\.loungeup\.com/i,
+  // ⚠️ LoungeUp porte DEUX flux distincts sous le même expéditeur (2026-07-17) :
+  //   · le formulaire pré-séjour → corps « Nouvelle demande : Pré-Séjour » (parsable, preSejour.ts)
+  //   · un MESSAGE LIBRE du client écrit dans l'app → corps « Vous avez reçu un message d'un
+  //     client via l'App », suivi du texte du client. Aucun formulaire à parser.
+  // Les confondre envoyait le message libre à `parsePreSejour`, qui ne trouve aucun champ et
+  // conclut « rien d'important » → une vraie demande client passait à la trappe (vécu : Frederikke
+  // Laursen, ch. 022, demandait une place de parking pour sa voiture de location).
+  // Le sujet ne discrimine pas (c'est le 1er mot du client, ex. « Bonjour. Is it possible… ») :
+  // seul ce marqueur du corps le fait. Il est bien dans le `bodyPreview` (~255 car.), en tête.
+  loungeUpClientMsg: /re[çc]u un message d['’ ]?un client|message d['’ ]?un client via l['’ ]?app/i,
   // Éditions automatiques du PMS Hotsoft, que l'hôtel s'envoie à sa propre boîte (96 % du dossier
   // « Hotsoft », 12 353 mails). Pièces d'exploitation et de sécurité — jamais de suppression sèche.
   rapportPms:
@@ -150,8 +180,10 @@ const rx = {
   pmsSenders: /@htbm\.fr|weareplanet\.com/i,
   // Un mail qui porte la parole d'un HUMAIN d'en face (réponse dans un fil, message d'un voyageur
   // relayé par l'OTA) ne part jamais à la corbeille sur le seul critère de l'expéditeur.
+  //     (« message d'un client via l'App » = LoungeUp, cf `loungeUpClientMsg` — c'est la parole
+  //     d'un client, au même titre qu'un message de voyageur relayé par une OTA.)
   guestMessage:
-    /nous a envoy[ée] ce message|message re[çc]u de la part d|message d[’' ]?un voyageur|attend d[’' ]?[êe]tre lu/i,
+    /nous a envoy[ée] ce message|message re[çc]u de la part d|message d[’' ]?un (?:voyageur|client)|attend d[’' ]?[êe]tre lu/i,
   // Idem pour tout ce qui parle d'argent (facture, impayé) : jamais de suppression à l'aveugle.
   moneyHook: /\binvoice\b|impay[ée]|outstanding|relance de paiement/i,
   // Signal générique de newsletter / démarchage à froid (lien de désinscription + accroche).
@@ -188,6 +220,18 @@ export function classifyMail(mail: MailInput): Classification {
   // 1c) Digest quotidien des arrivées Booking -> suppression (Martin 2026-07-07).
   if (/booking\.com$/i.test(from) && rx.bookingDigest.test(hay)) {
     return { category: 'spam_alert', action: 'delete', reason: 'Digest quotidien des arrivées Booking (bruit)', detail: {} };
+  }
+
+  // 1c-bis) Service Clients Booking : le client a accepté notre proposition d'annuler sans frais
+  //     -> dossier clos côté Booking, on CLASSE (Martin 2026-07-17). Jamais `delete` : le mail
+  //     est la trace écrite de l'accord du client sur un geste commercial.
+  if (rx.bookingCsFrom.test(from) && rx.bookingCsResolved.test(hay)) {
+    return {
+      category: 'litige_ota',
+      action: 'archive',
+      reason: 'Litige Booking clos (client a accepté l’annulation sans frais) → à classer ; le remboursement éventuel se solde dans le PMS',
+      detail: { dossier: subj.match(/Dossier\s+(\d{6,})/i)?.[1] || null },
+    };
   }
 
   // 1d) NOS propres factures (folio client Mews, facture Rooftop) -> Archive. À classer,
@@ -252,6 +296,12 @@ export function classifyMail(mail: MailInput): Classification {
   //     note à la réception ; sinon le mail dégage (Martin 2026-07-13). Le tri se fait dans
   //     l'action, pas ici : le `bodyPreview` de Graph (~255 car.) ne contient pas le formulaire.
   //     ⚠️ Placé après le garde-fou : une RÉPONSE d'un client à ce mail reste un message client.
+  //     ⚠️ Le MESSAGE LIBRE d'un client via l'app passe par le même expéditeur mais n'est pas un
+  //     formulaire → brouillon de réponse, pas `presejour_check` (Martin 2026-07-17 : « pour les
+  //     retours clients met les mails en brouillon »). Testé sur le vrai mail Laursen.
+  if (rx.loungeUp.test(from) && rx.loungeUpClientMsg.test(hay)) {
+    return { category: 'client_msg', action: 'draft_reply', reason: 'Message d’un client via l’app LoungeUp → brouillon de réponse', detail: { channel: 'loungeup' } };
+  }
   if (rx.loungeUp.test(from) && !humanThread) {
     return { category: 'pre_sejour', action: 'presejour_check', reason: 'Formulaire pré-séjour client (à lire)', detail: {} };
   }

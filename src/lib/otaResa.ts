@@ -49,6 +49,10 @@ export type OtaResa = {
   payment: OtaPayment;
   vccChargeableFrom: string | null; // yyyy-mm-dd
   specialRequests: string | null;
+  // Société pour laquelle le séjour est réservé, quand l'OTA le dit dans les commentaires
+  // (« This is a corporate booking for EXAIL ROBOTICS »). Sert à annoncer une facture société
+  // à l'arrivée (Martin 2026-07-17) → rendu « SOCIÉTÉ <nom> » en fin de note.
+  company: string | null;
 };
 
 // Valeur d'un champ « Label : valeur » — inline après « : » ou sur la ligne suivante.
@@ -227,6 +231,10 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
     roomType, breakfast, ratePlan, chargeAmount,
     amount: fieldAfter(lines, /^Montant total du séjour/i),
     refundable, cancelText, genius, payment, vccChargeableFrom, specialRequests,
+    // « This is a corporate booking for EXAIL ROBOTICS » — Booking le pose dans les
+    // Commentaires ET dans « Informations Booking.com ». On s'arrête au premier point/retour
+    // de ligne, sinon on ramasse la phrase suivante (« BED PREFERENCE:… »).
+    company: (hay.match(/corporate booking for\s+([^\n.]{2,60})/i)?.[1] || '').trim() || null,
   };
 }
 
@@ -502,6 +510,9 @@ export function parseSwile(subject: string, body: string): OtaResa {
   return {
     ref, source: 'Swile', kind: 'nouvelle',
     guestName, guestFirst, guestLast, email: null, phone: null,
+    // Swile EST déjà un canal d'entreprise : le nom de la société employeuse n'est pas dans le
+    // mail, et « SOCIÉTÉ » n'apprendrait rien de plus à la réception que « PRÉPAYÉ Swile ».
+    company: null,
     arrival: arrivalRaw, arrivalISO: frDateToISO(arrivalRaw),
     departure: departureRaw, departureISO: frDateToISO(departureRaw),
     bookedAtISO: null, cancelDateISO: null, freeCancelDaysBefore: null,
@@ -597,6 +608,9 @@ export function controlNote(
 
   // variables
   if (r.breakfast === false) s.push('SANS PDJ');
+  // Séjour réservé POUR une société (Booking le dit dans les commentaires) → la réception sait
+  // qu'une facture société peut être réclamée à l'arrivée (Martin 2026-07-17).
+  if (r.company) s.push(`SOCIÉTÉ ${r.company.toUpperCase()}`);
   // Genius volontairement PAS affiché : sans intérêt pour la réception (Martin 2026-07-09).
   if (dejaVenu === true) s.push('DÉJÀ VENU');
   else if (dejaVenu === false) s.push('1ER SÉJOUR');
