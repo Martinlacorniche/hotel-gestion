@@ -28,7 +28,7 @@ import {
 // Stripe (le client qui paie n'est pas un utilisateur de l'app). Toute autre page
 // est protégée : un visiteur non connecté est renvoyé au /login (garde global).
 const PUBLIC_PREFIXES = [
-  '/login', '/register', '/forgot-password', '/update-password', '/reset-password',
+  '/login', '/forgot-password', '/update-password', '/reset-password',
   '/paiement',
 ];
 

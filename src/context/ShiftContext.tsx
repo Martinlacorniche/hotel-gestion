@@ -27,7 +27,7 @@ const ShiftContext = createContext<ShiftState>({ restricted: false, onDuty: true
 export const useShift = () => useContext(ShiftContext);
 
 // Chemins accessibles hors shift (en plus de l'accueil '/')
-const ALLOWED_PREFIXES = ['/planning', '/profil', '/login', '/register', '/forgot-password', '/update-password'];
+const ALLOWED_PREFIXES = ['/planning', '/profil', '/login', '/forgot-password', '/update-password'];
 
 function isAllowedPath(path: string): boolean {
   if (path === '/') return true;
