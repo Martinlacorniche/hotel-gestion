@@ -11,7 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { moveMessage, createReplyDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox, searchMessages } from '@/lib/graphMailbox';
-import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, agencyTsBlock, shortRoom, ddmm, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
+import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, agencyTsBlock, shortRoom, ddmm, resaDiff, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
 import { parseRooftopMail, normalizeHeure, normName } from '@/lib/rooftopMail';
@@ -180,6 +180,37 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
     };
   }
 
+  // MODIFICATION : que s'est-il réellement passé ? D-Edge/Booking republient parfois la résa
+  // À L'IDENTIQUE (vécu 2026-07-17, résa 1BI4XZ : seul l'en-tête du mail changeait). Faire
+  // recontrôler une résa qui n'a pas bougé, c'est du travail pour rien — et à force, la
+  // réception ne lit plus les modifs qui comptent vraiment.
+  // → on retrouve la résa d'origine par sa réf (même méthode que pour le délai d'annulation)
+  //   et on compare les CHAMPS PARSÉS. Diff vide ⇒ on classe sans déranger personne.
+  //   Diff non vide ⇒ note normale, mais qui DIT ce qui a changé.
+  let changed: string[] | null = null;
+  if (r.kind === 'modification' && r.ref) {
+    try {
+      const orig = (await searchMessages(cfg.mailbox, r.ref, 10)).find(
+        (m) => m.id !== row.message_id && !/modification|annulation/i.test(m.subject || ''),
+      );
+      if (orig) {
+        const before = parseOtaResa(orig.subject || '', await getMessageText(cfg.mailbox, orig.id));
+        changed = resaDiff(before, r);
+        if (changed.length === 0) {
+          await moveMessage(cfg.mailbox, row.message_id, 'archive');
+          return {
+            status: 'executed',
+            result: {
+              kind: 'resa_mod_noop', note: null,
+              message: `Modification ${r.ref} sans aucun changement (comparée à la résa d’origine) → classée, rien à recontrôler.`,
+              resa: { ref: r.ref, guest: r.guestName, arrival: r.arrival },
+            },
+          };
+        }
+      }
+    } catch { /* best-effort : si l'origine est introuvable, on produit la note normale */ }
+  }
+
   let dejaVenu: boolean | null = null;   // null = info indisponible (Corniche / Mews KO)
   let cityTax: number | null = null;     // TS exacte à encaisser sur place (VCC, Voiles)
   if (cfg.mews && r.guestLast) {
@@ -208,6 +239,9 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
   const linked = await findLinkedResas(cfg.mailbox, r).catch(() => []);
 
   let note = controlNote(r, dejaVenu, cityTax, tsOverride, linked);
+  // Vraie modification : dire CE QUI a changé, sinon la réception doit rejouer la comparaison
+  // à la main entre deux mails quasi identiques.
+  if (changed?.length) note += ` · MODIF : ${changed.join(', ')}`;
   // Swile transmet des demandes voyageur (arrivée tardive, parking…) → à signaler à la réception,
   // qui devra répondre (Swile relaie la réponse au voyageur). Rappel : ne rien réclamer au client.
   if (r.source === 'Swile') {

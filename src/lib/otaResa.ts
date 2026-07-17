@@ -625,6 +625,31 @@ export function controlNote(
   return s.join(' ');
 }
 
+// Champs d'une résa qui INTÉRESSENT la réception. Comparés entre la « Nouvelle réservation »
+// et la « Modification » de même réf D-EDGE pour savoir ce qui a réellement bougé.
+// `kind` est exclu (il diffère par construction), ainsi que les champs propres à l'annulation.
+const RESA_DIFF_FIELDS = [
+  'guestName', 'arrivalISO', 'departureISO', 'nights', 'guests', 'roomType', 'breakfast',
+  'ratePlan', 'amount', 'chargeAmount', 'refundable', 'freeCancelDaysBefore', 'genius',
+  'payment', 'vccChargeableFrom', 'specialRequests', 'company',
+] as const;
+
+const RESA_FIELD_LABELS: Record<string, string> = {
+  guestName: 'nom', arrivalISO: 'arrivée', departureISO: 'départ', nights: 'nb de nuits',
+  guests: 'nb de personnes', roomType: 'chambre', breakfast: 'petit-déjeuner', ratePlan: 'tarif',
+  amount: 'montant', chargeAmount: 'montant à débiter', refundable: 'conditions d’annulation',
+  freeCancelDaysBefore: 'délai d’annulation', genius: 'Genius', payment: 'paiement',
+  vccChargeableFrom: 'date de débit CCV', specialRequests: 'demandes', company: 'société',
+};
+
+// Ce qui a changé entre deux états d'une même résa. Liste VIDE = la « modification » ne modifie
+// rien (vécu le 2026-07-17, résa 1BI4XZ : D-Edge/Booking republie la résa à l'identique, seul
+// l'en-tête du mail change). On compare les CHAMPS PARSÉS et pas le texte brut : le texte diffère
+// toujours (« Nouvelle réservation n°X » vs « *** MODIFICATION DE RESERVATION N°X *** »).
+export function resaDiff(before: OtaResa, after: OtaResa): string[] {
+  return RESA_DIFF_FIELDS.filter((f) => before[f] !== after[f]).map((f) => RESA_FIELD_LABELS[f] || f);
+}
+
 // Annulation HORS DÉLAI ? (règle Martin 2026-07-05 : facturer si annulé hors délai).
 // true = hors délai (à facturer), false = dans les temps (sans frais), null = indéterminable.
 // Délai gratuit = arrivée − freeCancelDaysBefore ; annulé APRÈS ⇒ hors délai.
