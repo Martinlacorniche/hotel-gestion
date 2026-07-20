@@ -470,7 +470,12 @@ export default function HotelDashboard() {
   useEffect(() => {
     const fetchUsers = async () => {
       if (!hotelId) return;
-      const { data, error } = await supabase.from('users').select('*').eq('hotel_id', hotelId);
+      // Le daf est écarté à la source : il ne travaille pas dans l'hôtel et
+      // n'a donc rien à faire dans les destinataires de flash info, les
+      // assignations de consigne ni les anniversaires. Son seul outil est
+      // l'écran Tendance de l'app mobile.
+      const { data, error } = await supabase
+        .from('users').select('*').eq('hotel_id', hotelId).neq('role', 'daf');
       if (!error) setUsers(data || []);
     };
     if (hotelId) fetchUsers();

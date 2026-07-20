@@ -927,7 +927,12 @@ export default function PlanningPage() {
       return userContrats.length > 0 ? contratsHere(u).length > 0 : u.hotel_id === hotelId;
     };
 
-    const hotelUsers = usersData.filter(u => u.role !== 'superadmin' && belongsHere(u));
+    // Le daf n'a ni service ni horaires : il n'a rien à faire dans un planning.
+    // Il est rattaché à un hôtel (contrainte de la table), donc `belongsHere` le
+    // laisserait passer — c'est bien le rôle qu'il faut exclure, pas l'hôtel.
+    const hotelUsers = usersData.filter(
+      u => u.role !== 'superadmin' && u.role !== 'daf' && belongsHere(u)
+    );
 
     const usersWithOrder = hotelUsers.map(u => {
       const cfg = configData.find(c => c.user_id === u.id_auth);
