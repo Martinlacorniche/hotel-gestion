@@ -406,31 +406,57 @@ export default function HotelDashboard() {
   // plus, on est à ~20 lignes/jour. On agrège la journée en UNE liste de
   // chambres dédoublonnée et triée — c'est la tournée du housekeeping, pas un
   // journal d'envois.
-  const dayRooms = useMemo(() => (
-    [...new Set(liberations.flatMap((l) => (l.chambres ?? []) as string[]))]
-      .sort((a, b) => {
-        const na = parseInt(a, 10), nb = parseInt(b, 10);
-        if (Number.isNaN(na) && Number.isNaN(nb)) return a.localeCompare(b);
-        if (Number.isNaN(na)) return 1;   // « recouche » & co. en fin de liste
-        if (Number.isNaN(nb)) return -1;
-        return na - nb;
-      })
-  ), [liberations]);
+  // Un jeton qui ne commence pas par un chiffre ANNOTE la chambre qui le précède
+  // (la récep tape « 36 recouche ») : il reste collé à elle. Le trier comme une
+  // chambre le détacherait de son sens — « recouche » seul ne veut rien dire.
+  const dayRooms = useMemo(() => {
+    const map = new Map<string, { num: string; notes: string[] }>();
+    liberations.forEach((l) => {
+      let last: { num: string; notes: string[] } | null = null;
+      ((l.chambres ?? []) as string[]).forEach((tok) => {
+        if (/^\d/.test(tok) || !last) {
+          last = map.get(tok) ?? { num: tok, notes: [] };
+          map.set(tok, last);
+        } else if (!last.notes.includes(tok)) {
+          last.notes.push(tok);
+        }
+      });
+    });
+    return [...map.values()].sort((a, b) => {
+      const na = parseInt(a.num, 10), nb = parseInt(b.num, 10);
+      if (Number.isNaN(na) && Number.isNaN(nb)) return a.num.localeCompare(b.num);
+      if (Number.isNaN(na)) return 1;
+      if (Number.isNaN(nb)) return -1;
+      return na - nb;
+    });
+  }, [liberations]);
 
   // On retire une CHAMBRE, pas une transmission : personne ne raisonne en
   // « l'envoi de 9h04 ». Elle peut vivre dans plusieurs lignes → on la retire
   // de toutes, et une ligne vidée disparaît.
+  // Retire la chambre ET les mots qui l'annotent (« 36 recouche » part en entier :
+  // laisser « recouche » seul n'aurait plus de sens).
+  const stripRoom = (arr: string[], num: string) => {
+    const out: string[] = [];
+    let skipping = false;
+    arr.forEach((tok) => {
+      if (/^\d/.test(tok)) { skipping = tok === num; if (!skipping) out.push(tok); }
+      else if (!skipping) out.push(tok);
+    });
+    return out;
+  };
+
   const removeRoom = async (num: string) => {
     const rows = liberations.filter((l) => ((l.chambres ?? []) as string[]).includes(num));
     if (!rows.length) return;
     for (const l of rows) {
-      const rest = ((l.chambres ?? []) as string[]).filter((n) => n !== num);
+      const rest = stripRoom((l.chambres ?? []) as string[], num);
       if (rest.length) await supabase.from('chambres_liberees').update({ chambres: rest }).eq('id', l.id);
       else await supabase.from('chambres_liberees').delete().eq('id', l.id);
     }
     setLiberations((prev) => prev
       .map((l) => (rows.some((r) => r.id === l.id)
-        ? { ...l, chambres: ((l.chambres ?? []) as string[]).filter((n) => n !== num) }
+        ? { ...l, chambres: stripRoom((l.chambres ?? []) as string[], num) }
         : l))
       .filter((l) => ((l.chambres ?? []) as string[]).length > 0));
   };
@@ -1302,14 +1328,17 @@ const birthdayMessage = useMemo(() => {
                         <Pill tone="neutral" className="cursor-default">{dayRooms.length} auj.</Pill>
                         <div className="absolute right-0 top-full z-20 hidden w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-lg group-hover:block">
                           <div className="flex flex-wrap gap-1.5">
-                            {dayRooms.map((num) => (
+                            {dayRooms.map((r) => (
                               <button
-                                key={num}
-                                onClick={() => removeRoom(num)}
+                                key={r.num}
+                                onClick={() => removeRoom(r.num)}
                                 title="Retirer cette chambre"
                                 className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-sm font-bold text-slate-700 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600"
                               >
-                                {num}
+                                {r.num}
+                                {r.notes.length > 0 && (
+                                  <span className="ml-1 font-medium text-slate-400">{r.notes.join(' ')}</span>
+                                )}
                               </button>
                             ))}
                           </div>
