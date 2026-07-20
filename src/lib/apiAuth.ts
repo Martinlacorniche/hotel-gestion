@@ -8,7 +8,10 @@ import { NON_WORKED_SHIFTS, SHIFT_MARGIN_MIN } from '@/lib/shift';
 //
 // À n'utiliser QUE depuis des fichiers server (API routes / server actions).
 
-export type AppRole = 'superadmin' | 'admin' | 'user';
+// 'daf' (directeur administratif et financier) n'a AUCUN accès web : son outil
+// est l'app mobile. Il est volontairement absent de toutes les listes passées à
+// requireRole → les API le refusent (403).
+export type AppRole = 'superadmin' | 'admin' | 'daf' | 'user';
 
 export type AuthResult =
   | { ok: true; userId: string; role: AppRole; hotelId: string | null }

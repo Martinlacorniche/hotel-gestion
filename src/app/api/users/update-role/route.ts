@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireRole, type AppRole } from '@/lib/apiAuth';
 
 // POST /api/users/update-role
-// Body: { user_id: uuid (id_auth), new_role: 'admin' | 'user' }
+// Body: { user_id: uuid (id_auth), new_role: 'admin' | 'daf' | 'user' }
 //
 // Change le rôle d'un user. Réservé au superadmin.
 // Ne permet PAS de créer un autre superadmin (modèle 1 seul superadmin).
@@ -27,9 +27,9 @@ export async function POST(req: Request) {
   if (!user_id || typeof user_id !== 'string') {
     return NextResponse.json({ ok: false, error: 'user_id requis' }, { status: 400 });
   }
-  if (!new_role || !['admin', 'user'].includes(new_role)) {
+  if (!new_role || !['admin', 'daf', 'user'].includes(new_role)) {
     return NextResponse.json(
-      { ok: false, error: 'new_role requis (admin|user)' },
+      { ok: false, error: 'new_role requis (admin|daf|user)' },
       { status: 400 },
     );
   }

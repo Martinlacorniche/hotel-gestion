@@ -70,14 +70,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  // Le rôle 'daf' n'a accès à RIEN sur le web (son outil est l'app mobile). Sa
+  // seule page est /acces-mobile, qui reste protégée (pas dans PUBLIC_PREFIXES :
+  // un visiteur non connecté est toujours renvoyé au /login).
+  const isDaf = user?.role === 'daf';
+  const isAccesMobile = pathname === '/acces-mobile';
 
   // Garde global : une fois la session restaurée, un visiteur non connecté qui
   // tente une page protégée est renvoyé au /login (les pages ne sont plus de
-  // simples coquilles visibles sans compte).
+  // simples coquilles visibles sans compte). Et comme il n'y a pas de middleware
+  // (chaque page pose sa propre garde), on verrouille ici le rôle 'daf' en
+  // deny-by-default : sinon une page non gardée resterait atteignable par URL.
   useEffect(() => {
     if (isLoading) return;
-    if (!user && !isPublic) router.replace('/login');
-  }, [isLoading, user, isPublic, router]);
+    if (!user && !isPublic) { router.replace('/login'); return; }
+    if (isDaf && !isPublic && !isAccesMobile) router.replace('/acces-mobile');
+  }, [isLoading, user, isPublic, isDaf, isAccesMobile, router]);
 
   // Ordre perso du menu : chargé depuis la fiche user (comme planning_hidden_services).
   const navUid = (user as { id_auth?: string; id?: string } | null)?.id_auth
@@ -111,6 +119,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <div className="p-10 text-center text-gray-500 flex items-center justify-center min-h-screen">
         Chargement…
+      </div>
+    );
+  }
+
+  // Rôle 'daf' : jamais de sidebar ni de contenu applicatif. Sur /acces-mobile on
+  // rend la page nue ; partout ailleurs on bloque le rendu (redirection en cours),
+  // pour qu'aucun contenu ne "flashe" avant le replace.
+  if (isDaf) {
+    if (isAccesMobile) return <>{children}</>;
+    return (
+      <div className="p-10 text-center text-gray-500 flex items-center justify-center min-h-screen">
+        Redirection…
       </div>
     );
   }

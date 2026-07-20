@@ -3,13 +3,13 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/apiAuth';
 
 // POST /api/users/invite
-// Body: { email, name, role: 'admin' | 'user', hotel_id, birth_date? }
+// Body: { email, name, role: 'admin' | 'daf' | 'user', hotel_id, birth_date? }
 //
 // Envoie une invitation par email via Supabase Auth (inviteUserByEmail).
 // L'invité reçoit un mail avec un lien qui le redirige vers
 // /update-password?flow=invite pour définir son mot de passe.
 //
-// Auth : superadmin OU admin. Seul un superadmin peut créer un admin.
+// Auth : superadmin OU admin. Seul un superadmin peut créer un admin ou un daf.
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://consigneshtbm.com';
 
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   const { email, name, role, hotel_id, birth_date } = body as {
     email?: string;
     name?: string;
-    role?: 'admin' | 'user';
+    role?: 'admin' | 'daf' | 'user';
     hotel_id?: string;
     birth_date?: string;
   };
@@ -40,14 +40,17 @@ export async function POST(req: Request) {
   if (!name || typeof name !== 'string' || !name.trim()) {
     return NextResponse.json({ ok: false, error: 'name requis' }, { status: 400 });
   }
-  if (!role || !['admin', 'user'].includes(role)) {
-    return NextResponse.json({ ok: false, error: 'role requis (admin|user)' }, { status: 400 });
+  if (!role || !['admin', 'daf', 'user'].includes(role)) {
+    return NextResponse.json({ ok: false, error: 'role requis (admin|daf|user)' }, { status: 400 });
   }
   if (!hotel_id || typeof hotel_id !== 'string') {
     return NextResponse.json({ ok: false, error: 'hotel_id requis' }, { status: 400 });
   }
   if (role === 'admin' && auth.role !== 'superadmin') {
     return NextResponse.json({ ok: false, error: 'Seul un superadmin peut créer un admin' }, { status: 403 });
+  }
+  if (role === 'daf' && auth.role !== 'superadmin') {
+    return NextResponse.json({ ok: false, error: 'Seul un superadmin peut créer un daf' }, { status: 403 });
   }
 
   // Check préventif : un user existe-t-il déjà avec cet email dans public.users ?

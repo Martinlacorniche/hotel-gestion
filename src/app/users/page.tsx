@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-type AppRole = "superadmin" | "admin" | "user";
+type AppRole = "superadmin" | "admin" | "daf" | "user";
 
 type Hotel = { id: string; nom: string };
 
@@ -72,12 +72,14 @@ type ContratRow = {
 const ROLE_LABEL: Record<AppRole, string> = {
   superadmin: "Superadmin",
   admin: "Admin",
+  daf: "DAF",
   user: "Employé",
 };
 
 const ROLE_BADGE: Record<AppRole, string> = {
   superadmin: "bg-violet-50 text-violet-700 ring-violet-200",
   admin: "bg-[var(--brand-bg)] text-[var(--brand)] ring-[var(--brand)]",
+  daf: "bg-amber-50 text-amber-700 ring-amber-200",
   user: "bg-slate-100 text-slate-600 ring-slate-200",
 };
 
@@ -146,7 +148,7 @@ export default function UsersPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "user">("user");
+  const [inviteRole, setInviteRole] = useState<"admin" | "daf" | "user">("user");
   const [inviteHotel, setInviteHotel] = useState("");
   const [inviteBirth, setInviteBirth] = useState("");
   const [inviting, setInviting] = useState(false);
@@ -573,11 +575,13 @@ export default function UsersPage() {
               <Field label="Rôle">
                 <select
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as "admin" | "user")}
+                  onChange={(e) => setInviteRole(e.target.value as "admin" | "daf" | "user")}
                   className="w-full h-9 px-3 text-sm bg-white border border-slate-200 rounded-md"
                 >
                   <option value="user">Employé</option>
                   {isSuperadmin && <option value="admin">Admin</option>}
+                  {/* DAF : app mobile uniquement, création réservée au superadmin */}
+                  {isSuperadmin && <option value="daf">DAF</option>}
                 </select>
               </Field>
             </div>
