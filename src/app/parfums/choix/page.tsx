@@ -7,7 +7,7 @@
 // Design « signature olfactive Byca » — voir parfums.module.css.
 
 import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabaseClient';
 import { Loader2, Check } from 'lucide-react';
@@ -35,6 +35,7 @@ const vars = (o: Record<string, string>) => o as React.CSSProperties;
 
 function Choix() {
   const params = useSearchParams();
+  const router = useRouter();
   const diffuseurId = params.get('diffuseur') ?? '';
 
   const [loading, setLoading] = useState(true);
@@ -77,6 +78,14 @@ function Choix() {
     setFait(true);
   }
 
+  // Une fois le check-in fait, on laisse voir la confirmation puis on ramène la
+  // réception sur l'accueil (grille de toutes les chambres) — prêt pour le suivant.
+  useEffect(() => {
+    if (!fait) return;
+    const t = setTimeout(() => router.push('/parfums'), 3000);
+    return () => clearTimeout(t);
+  }, [fait, router]);
+
   if (loading) return (
     <div className={styles.wrap}><div className={styles.center}>
       <Loader2 className="w-6 h-6 animate-spin" /></div></div>
@@ -111,7 +120,7 @@ function Choix() {
             <p className={styles.doneP}>Diffusion jusqu&apos;au départ {dep.replace(' 12 h 00', ' 12 h')} — matin et soir, en douceur.</p>
             <div className={styles.tag}>Bouffée d&apos;accueil envoyée</div>
             <div style={{ marginTop: 24 }}>
-              <button className={`${styles.btn} ${styles.ghost}`} onClick={() => { setFait(false); }}>Nouvelle sélection</button>
+              <button className={`${styles.btn} ${styles.ghost}`} onClick={() => router.push('/parfums')}>Retour aux chambres</button>
             </div>
           </div>
         ) : (
