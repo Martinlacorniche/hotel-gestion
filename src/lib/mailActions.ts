@@ -455,6 +455,77 @@ async function actRoutePennylane(cfg: HotelMailConfig, row: LogRow): Promise<Exe
   return { status: 'executed', result: { kind: 'pennylane', entity, address, attachment: pdf.name } };
 }
 
+// livraison_consigne : lit le bon de commande Cuisine Solutions (PDF) pour en extraire la DATE
+// DE LIVRAISON + le contenu, et crée une consigne datée du jour de livraison (contrôle réception,
+// chaîne du froid). Écriture DB uniquement (aucun envoi sortant) ; pattern hérité de teloConsigne.
+type Livraison = { date: string | null; surgele: boolean; produits: string; total: string | null; commande: string | null };
+
+async function extractLivraison(pdfBase64: string): Promise<Livraison> {
+  const client = new Anthropic();
+  const msg = await client.messages.create({
+    model: LLM_MODEL, max_tokens: 500,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text:
+          `Bon de commande / livraison fournisseur. Renvoie UNIQUEMENT un JSON compact, sans texte autour : ` +
+          `{"date":"AAAA-MM-JJ","surgele":true,"produits":["<désignation> ×<qté colis>"],"total_ht":"<montant €>","commande":"<n°>"}. ` +
+          `"date" = la DATE DE LIVRAISON (« Livré le »), PAS la date de commande ; null si absente. ` +
+          `"surgele" = true si le bon mentionne surgelé / STEF / -20°C / froid négatif. ` +
+          `"produits" = liste courte des articles (désignation + nb de colis). Aucune autre clé.` },
+      ],
+    }],
+  });
+  const t = msg.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
+  try {
+    const j = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+    return {
+      date: /^\d{4}-\d{2}-\d{2}$/.test(j.date || '') ? j.date : null,
+      surgele: !!j.surgele,
+      produits: Array.isArray(j.produits) ? j.produits.slice(0, 12).join(' · ') : '',
+      total: typeof j.total_ht === 'string' && j.total_ht.trim() ? j.total_ht.trim() : null,
+      commande: j.commande ? String(j.commande) : null,
+    };
+  } catch {
+    return { date: null, surgele: false, produits: '', total: null, commande: null };
+  }
+}
+
+function livraisonConsigneText(l: Livraison): string {
+  const lignes = [
+    `🧊 LIVRAISON CUISINE SOLUTIONS${l.commande ? ` — cmd n°${l.commande}` : ''}${l.surgele ? ' (surgelé -20°C)' : ''}. À réceptionner ce jour.`,
+    l.surgele ? '⚠️ Contrôler la chaîne du froid (produits -20°C) et ranger au congélateur sans attendre.' : null,
+    l.produits ? `Contenu : ${l.produits}.` : null,
+    l.total ? `Total ${l.total}.` : null,
+    'Vérifier quantités & températures contre le bon de commande.',
+  ].filter(Boolean);
+  return lignes.join('\n');
+}
+
+async function actLivraisonConsigne(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
+  if (!process.env.ANTHROPIC_API_KEY) return { status: 'blocked', error: 'Clé Anthropic absente (lecture du bon de commande impossible).' };
+  const atts = await listFileAttachments(cfg.mailbox, row.message_id);
+  const pdf = atts.find((a) => /pdf/i.test(a.contentType) || /\.pdf$/i.test(a.name));
+  if (!pdf || !pdf.contentBytes) return { status: 'blocked', error: 'Aucun bon de commande PDF exploitable en pièce jointe.' };
+
+  const info = await extractLivraison(pdf.contentBytes);
+  if (!info.date) return { status: 'blocked', error: 'Date de livraison non lue dans le bon — consigne à créer à la main.' };
+
+  // Anti-doublon : une seule consigne de livraison par jour × hôtel (le mail peut être rejoué,
+  // ou relayé par plusieurs personnes). Même garde-fou que teloConsigne.
+  const { data: existantes } = await supabaseAdmin
+    .from('consignes').select('id, texte').eq('hotel_id', cfg.hotelId).eq('date_creation', info.date);
+  const doublon = (existantes || []).find((c: { texte: string | null }) => /cuisine solutions|livraison/i.test(c.texte || ''));
+  if (doublon) return { status: 'executed', result: { kind: 'livraison', mode: 'doublon', date: info.date } };
+
+  const { data: ins, error } = await supabaseAdmin.from('consignes').insert({
+    texte: livraisonConsigneText(info), auteur: 'Junior', date_creation: info.date, hotel_id: cfg.hotelId, valide: false,
+  }).select('id').single();
+  if (error) return { status: 'blocked', error: `Insert consigne: ${error.message}` };
+  return { status: 'executed', result: { kind: 'livraison', mode: 'created', id: ins?.id, date: info.date, surgele: info.surgele, fournisseur: 'Cuisine Solutions' } };
+}
+
 // Cherche une prise en charge agence (Djoca) dans la boîte, pour le client + l'arrivée
 // d'une résa. Sert à corriger la TS de la note résa (agence couvre la TS).
 async function findAgencyTakeover(
@@ -777,6 +848,7 @@ export async function executeRow(cfg: HotelMailConfig, row: LogRow): Promise<Exe
       case 'route_pennylane':     return await actRoutePennylane(cfg, row);
       case 'presejour_check':     return await actPreSejour(cfg, row);
       case 'rooftop_check':       return await actRooftopCheck(cfg, row);
+      case 'livraison_consigne':  return await actLivraisonConsigne(cfg, row);
       default:
         return { status: 'blocked', error: NOT_WIRED[row.proposed_action] || `Action inconnue : ${row.proposed_action}` };
     }

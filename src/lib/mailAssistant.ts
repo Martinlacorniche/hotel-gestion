@@ -44,12 +44,12 @@ export type MailInput = {
 export type MailCategory =
   | 'spam_alert' | 'resa_ota' | 'resa_swile' | 'resa_rooftop' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
   | 'commission_ota' | 'candidature' | 'commercial' | 'client_msg' | 'pre_sejour' | 'rapport_pms'
-  | 'litige_ota'
+  | 'litige_ota' | 'livraison'
   | 'autre';
 
 export type MailAction =
   | 'delete' | 'archive' | 'resa_control' | 'agency_note' | 'route_pennylane' | 'invoice_note'
-  | 'draft_reply' | 'commercial_followup' | 'presejour_check' | 'rooftop_check' | 'none';
+  | 'draft_reply' | 'commercial_followup' | 'presejour_check' | 'rooftop_check' | 'livraison_consigne' | 'none';
 
 export type Classification = {
   category: MailCategory;
@@ -137,8 +137,28 @@ const rx = {
   // (Martin : décision de supprimer. Ne jamais suivre les liens : vérifier via un canal TTHotel connu.)
   // ⚠️ @lestoilesdularge.com (2026-07-16) = démarchage d'un fabricant de textile/décoration
   // (« Semaine Nationale, célébrons le savoir-faire français ! ») — aucun lien commercial.
+  // ⚠️ @cndt-fr.fr (2026-07-22) = « Centre national du droit du travail — Nouveaux Affichages
+  // Obligatoires 2026 » : ARNAQUE classique (usurpe un air officiel pour vendre des panneaux
+  // d'affichage obligatoires, suivie d'une facturation agressive). Adressé « HOTEL LES VOILES »
+  // mais tombé dans la boîte Corniche (envoi en masse). Le vrai droit du travail ne démarche pas.
   prospectionSenders:
-    /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris|@snservice\.co|@lestoilesdularge\.com/i,
+    /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris|@snservice\.co|@lestoilesdularge\.com|@cndt-fr\.fr/i,
+  // Cuisine Solutions (fournisseur de plats surgelés du Rooftop des Voiles) envoie des
+  // CONFIRMATIONS DE COMMANDE (`envoifacturescse@cuisinesolutions.com`, progiciel VIF) avec le
+  // bon en PJ PDF — souvent RELAYÉES par Nina « à imprimer » (l'expéditeur devient alors interne
+  // htbm, d'où le match sur le CORPS aussi). Le bon porte une DATE DE LIVRAISON future (surgelé
+  // STEF -20°C) → pattern « consigne datée du jour de livraison pour contrôle réception »
+  // (Martin 2026-07-22, déjà fait à la main les 04/07 & 22/07). ⚠️ Ce n'est PAS une facture
+  // (Pennylane) : c'est un bon de commande/livraison → catégorie `livraison`.
+  cuisineSolutions: /cuisinesolutions/i,
+  livraisonHook: /confirmation de (?:la )?commande|bon de livraison|\bBL\b|livraison au? \d/i,
+  // Monsieur Cocktail (Gaëtan Dupuis, SARL MC Entreprises, `gaetan@monsieurcocktail.com` /
+  // `dupuisgaetan@orange.fr`) = PARTENAIRE traiteur/animation cocktail récurrent (Martin
+  // 2026-07-22). La réception lui transfère les demandes BW pour vérifier sa dispo, il répond
+  // « Compte sur moi :) » → dans les fiches `suivi_commercial` ça s'écrit « G dispo ». Ses
+  // réponses ne doivent JAMAIS déclencher un brouillon (le fallback `client_msg` le voulait) :
+  // c'est un partenaire sur un dossier existant, la réception note « G dispo » et classe.
+  monsieurCocktail: /@monsieurcocktail\.com|dupuisgaetan@orange\.fr/i,
   // Service Clients Booking : issue d'un litige/geste commercial (« <client> a accepté votre
   // proposition d'annuler la réservation et de supprimer les frais associés »). Le dossier est
   // clos côté Booking → à CLASSER, jamais à supprimer (Martin 2026-07-17).
@@ -353,6 +373,16 @@ export function classifyMail(mail: MailInput): Classification {
     return { category: 'resa_swile', action: 'resa_control', reason: 'Réservation Swile (voyage d’affaires, prépayée)', detail: { channel: 'swile' } };
   }
 
+  // 1k) Confirmation de commande / livraison Cuisine Solutions (surgelé) -> consigne datée du
+  //     jour de LIVRAISON pour contrôle réception (Martin 2026-07-22). Détecté par l'expéditeur
+  //     OU par le corps (Nina relaie souvent « à imprimer », l'expéditeur devient interne).
+  //     ⚠️ DOIT passer AVANT la règle 3 « facture fournisseur en PJ » : le PDF du bon s'appelle
+  //     « 00053663.pdf » → `looksLikeFacturePdf` (`\d{5,}`) l'enverrait à tort vers Pennylane.
+  //     `hasAttachments` exigé : la date de livraison + le contenu se lisent dans le PDF (action).
+  if ((rx.cuisineSolutions.test(from) || rx.cuisineSolutions.test(hay)) && rx.livraisonHook.test(hay) && mail.hasAttachments) {
+    return { category: 'livraison', action: 'livraison_consigne', reason: 'Livraison Cuisine Solutions (surgelé) → consigne de contrôle réception', detail: { fournisseur: 'Cuisine Solutions' } };
+  }
+
   // 2) Résa OTA (D-Edge / Booking) -> contrôle résa
   if (rx.resaNew.test(subj) || rx.resaMod.test(subj) || rx.resaCancel.test(subj)) {
     const kind = rx.resaCancel.test(subj) ? 'annulation' : rx.resaMod.test(subj) ? 'modification' : 'nouvelle';
@@ -425,6 +455,14 @@ export function classifyMail(mail: MailInput): Classification {
   // 4) Candidature / alternance -> brouillon « effectifs complets »
   if (rx.candidature.test(hay)) {
     return { category: 'candidature', action: 'draft_reply', reason: 'Candidature spontanée / alternance', detail: { template: 'effectifs_complets' } };
+  }
+
+  // 4b) Monsieur Cocktail (Gaëtan) = partenaire traiteur cocktail -> fil commercial, à la
+  //     réception. Placé AVANT le fallback `client_msg` (rule 6) qui voulait un brouillon de
+  //     réponse sur ses « Re: » (Martin 2026-07-22). Action `none` : il répond sur un dossier
+  //     existant, la réception note « G dispo » sur la fiche — rien à envoyer automatiquement.
+  if (rx.monsieurCocktail.test(from)) {
+    return { category: 'commercial', action: 'none', reason: 'Monsieur Cocktail (partenaire traiteur cocktail) → fil commercial, à noter par la réception', detail: { partner: 'Monsieur Cocktail' } };
   }
 
   // 5) Demande commerciale (séminaire / devis / groupe pro) -> suivi_commercial
