@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { getStripe, getWebhookSecrets, senderFor } from '@/lib/stripe';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { pushPaymentToMews } from '@/lib/mews';
+import { pushGroupeResaToMews } from '@/lib/mewsGroupResaPush';
 
 // Base publique du site invité (Site-BW) pour le lien « gérer ma réservation ».
 const SITE_BW_BASE = process.env.NEXT_PUBLIC_SITE_BW_URL || 'https://sitehtbm.netlify.app';
@@ -109,6 +110,18 @@ export async function POST(req: Request) {
         const { data: confirmed } = await supabaseAdmin.from('groupe_reservations')
           .update({ statut: 'confirmee', derniere_action: 'creation', modified_at: new Date().toISOString() })
           .eq('stripe_checkout_id', s.id).in('statut', ['en_attente_paiement', 'paiement_differe']).select('id');
+        // Réservations d'invités de groupe → Mews, posées SUR L'ALLOTEMENT du groupe.
+        // Sans ça elles restaient dans notre base avec leur case « PMS fait » à
+        // cocher à la main. Best-effort et une par une : l'échec de l'une ne doit
+        // ni faire échouer le webhook (Stripe rejouerait tout) ni bloquer les autres.
+        for (const gr of confirmed ?? []) {
+          try {
+            const out = await pushGroupeResaToMews(gr.id);
+            if (out.skipped) console.warn('Mews: résa groupe non poussée —', out.skipped, gr.id);
+          } catch (e) {
+            console.error('Mews: push résa groupe échoué', gr.id, e instanceof Error ? e.message : e);
+          }
+        }
         // Email de confirmation au client (uniquement si on vient bien de confirmer une résa invité).
         if (confirmed && confirmed.length > 0) {
           try { await sendGuestConfirmation(s.id, pay?.hotel_id); } catch (e) { console.warn('Email confirmation invité:', e instanceof Error ? e.message : e); }

@@ -85,8 +85,12 @@ export async function setBlockRooms(
   arrivee: string, derniereNuit: string,
   parCategorie: { categoryId: string; chambres: number }[],
 ): Promise<void> {
+  // On n'écarte PAS les zéros : remettre une catégorie à 0 est justement ce qui
+  // libère les chambres d'une catégorie retirée du bloc. Les filtrer laisserait
+  // l'ancienne quantité en place — des chambres retenues pour un groupe qui n'en
+  // veut plus, donc invendables et invisibles.
   const updates = parCategorie
-    .filter((c) => c.chambres > 0)
+    .filter((c) => c.chambres >= 0)
     .map((c) => ({
       FirstTimeUnitStartUtc: minuitParis(arrivee),
       LastTimeUnitStartUtc: minuitParis(derniereNuit),

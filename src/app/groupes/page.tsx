@@ -87,7 +87,7 @@ function MewsAllotement({ group, onDone }: { group: Groupe; onDone: () => void }
   const [busy, setBusy] = useState(false);
   const pose = !!group.mews_block_id;
 
-  const appel = async (method: 'POST' | 'DELETE') => {
+  const appel = async (method: 'POST' | 'DELETE' | 'PUT') => {
     if (method === 'DELETE' && !(await confirmDialog(
       'Retirer l’allotement ? Les chambres non réservées redeviendront vendables dans Mews et sur les canaux.'))) return;
     setBusy(true);
@@ -100,8 +100,9 @@ function MewsAllotement({ group, onDone }: { group: Groupe; onDone: () => void }
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || 'Erreur');
-      toast.success(method === 'POST'
-        ? `Allotement créé — ${json.retirees} chambre(s) retirées de la vente (${json.vendablesAvant} → ${json.vendablesApres})`
+      toast.success(
+        method === 'POST' ? `Allotement créé — ${json.retirees} chambre(s) retirées de la vente (${json.vendablesAvant} → ${json.vendablesApres})`
+        : method === 'PUT' ? `Allotement resynchronisé — ${json.chambres} chambre(s) retenues (dispo ${json.vendablesAvant} → ${json.vendablesApres})`
         : `Allotement retiré — ${json.vendablesApres} chambre(s) de nouveau vendables`);
       onDone();
     } catch (e) {
@@ -109,12 +110,27 @@ function MewsAllotement({ group, onDone }: { group: Groupe; onDone: () => void }
     } finally { setBusy(false); }
   };
 
+  // Le bloc a-t-il bougé chez nous depuis la dernière synchro ? Si oui le PMS
+  // retient encore l'ancienne quantité : deux vérités divergent, et la page invité
+  // ne propose plus ce que Mews réserve.
+  const desync = pose && !!group.mews_sync_at && !!group.updated_at
+    && new Date(group.updated_at) > new Date(group.mews_sync_at);
+
   return pose ? (
-    <button onClick={() => appel('DELETE')} disabled={busy}
-      className="inline-flex items-center gap-1 text-xs px-2.5 h-8 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-      title="Les chambres sont retirées de la vente dans Mews. Cliquer pour retirer l’allotement.">
-      {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Allotement Mews
-    </button>
+    <div className="inline-flex items-center gap-1.5">
+      {desync && (
+        <button onClick={() => appel('PUT')} disabled={busy}
+          className="inline-flex items-center gap-1 text-xs px-2.5 h-8 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+          title="Le bloc a été modifié depuis la dernière synchronisation : Mews retient encore l’ancienne quantité de chambres.">
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />} Resynchroniser Mews
+        </button>
+      )}
+      <button onClick={() => appel('DELETE')} disabled={busy}
+        className="inline-flex items-center gap-1 text-xs px-2.5 h-8 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+        title="Les chambres sont retirées de la vente dans Mews. Cliquer pour retirer l’allotement.">
+        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Allotement Mews
+      </button>
+    </div>
   ) : (
     <button onClick={() => appel('POST')} disabled={busy}
       className="inline-flex items-center gap-1 text-xs px-2.5 h-8 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
@@ -132,6 +148,7 @@ interface Groupe {
   // chez nous, et ses chambres restent vendables par Booking & co.
   mews_block_id?: string | null;
   mews_sync_at?: string | null;
+  updated_at?: string | null;
   code_acces: string;
   date_arrivee: string;
   date_depart: string;
