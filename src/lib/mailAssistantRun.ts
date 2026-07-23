@@ -68,6 +68,22 @@ export async function runDryRun(hotelKey: string): Promise<DryRunResult> {
     // VUS, pas les nouveaux — l'écran annonçait « 1 mail classé » sans qu'aucune
     // ligne n'apparaisse. Seules les lignes réellement insérées comptent.
     if (!error && ins?.length) logged += ins.length;
+
+    // 🔁 RECLASSEMENT DES LIGNES EN ATTENTE. `ignoreDuplicates` protège les lignes
+    // déjà décidées, mais il figeait AUSSI le verdict des lignes encore en attente :
+    // corriger une règle ne changeait rien à l'écran tant qu'on n'avait pas supprimé
+    // la ligne à la main. Or c'est précisément quand une règle vient d'être corrigée
+    // qu'on veut voir le nouveau verdict. On ne touche QUE le statut `proposed` :
+    // une ligne validée ou ignorée garde sa trace, c'est de l'historique.
+    if (!ins?.length) {
+      await supabaseAdmin
+        .from('assistant_mail_log')
+        .update({
+          category: c.category, proposed_action: c.action, reason: c.reason,
+          detail: { ...c.detail, attachmentNames, hotel: cfg.key, mewsEnrich },
+        })
+        .eq('mailbox', cfg.mailbox).eq('message_id', m.id).eq('status', 'proposed');
+    }
   }
 
   return { hotel: cfg.key, mailbox: cfg.mailbox, mews: cfg.mews, logged, reconciled: stale.length, summary };

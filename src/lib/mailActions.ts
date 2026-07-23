@@ -10,7 +10,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { moveMessage, createReplyDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox, searchMessages } from '@/lib/graphMailbox';
+import { moveMessage, createReplyDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox, searchMessages, dossierThread, existingReplyDraft } from '@/lib/graphMailbox';
+import { signatureHtml, signatureAttachment } from '@/lib/mailSignature';
 import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, parseConferma, agencyTsBlock, shortRoom, ddmm, resaDiff, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
@@ -387,8 +388,12 @@ async function handleRefus(
   let draft: { draftId: string; webLink: string } | null = null;
   if (lead.draft_html) {
     const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
-    const sig = `<br/><p>Bien à vous,<br/>${duty?.name || 'La Réception'}<br/>Hôtel ${cfg.nom}</p>`;
-    draft = await createReplyDraft(cfg.mailbox, row.message_id, `${lead.draft_html}${sig}`).catch(() => null);
+    draft = await createReplyDraft(
+      cfg.mailbox, row.message_id,
+      `${lead.draft_html}<p>Bien à vous,</p>` +
+      signatureHtml(duty?.name || 'La Réception', `Réception — Hôtel ${cfg.nom}`),
+      [signatureAttachment()],
+    ).catch(() => null);
   }
   return {
     status: 'executed',
@@ -396,8 +401,188 @@ async function handleRefus(
   };
 }
 
+// ── SUIVI D'UN DOSSIER EXISTANT ────────────────────────────────────────────────
+//
+// Une relance sur un dossier ouvert n'est PAS une nouvelle demande, et la traiter comme
+// telle produit exactement ce qu'il ne faut pas envoyer. Vécu le 2026-07-23 sur BY-1881460 :
+// la centrale demandait « auriez-vous une salle commune ou extérieure pour 3 h le 1er octobre
+// au matin ? » ; l'assistant a répondu en redemandant le nombre de participants (10, écrits
+// dans la demande du matin), le budget (« pas encore déterminé », dit le matin), le type de
+// prestation (« Réunion, vidéoprojecteur ») et la restauration (chiffrée jour par jour) —
+// sans répondre à la question posée, et quatre minutes après que Léna y avait répondu à la main.
+//
+// Sur un suivi, donc, trois différences de fond :
+//   · la MÉMOIRE : tout le fil du dossier, nos réponses comprises, pas le seul dernier mail ;
+//   · les FAITS : l'occupation réelle de nos salles, pour répondre au lieu de demander ;
+//   · le SILENCE : si un collègue a déjà répondu après ce mail, on n'écrit rien.
+type OccupationSalles = { salles: string[]; occupation: string[] };
+
+async function sallesEtOccupation(hotelId: string, fil: string): Promise<OccupationSalles> {
+  const { data: salles } = await supabaseAdmin
+    .from('seminar_rooms').select('name, capacity, surface')
+    .eq('hotel_id', hotelId).order('capacity', { ascending: false });
+  const liste = (salles || []).map((s) => {
+    const d = [s.capacity ? `${s.capacity} pers.` : null, s.surface ? `${s.surface} m²` : null].filter(Boolean);
+    return `${s.name}${d.length ? ` (${d.join(', ')})` : ''}`;
+  });
+
+  // Les dates utiles sont celles que le fil mentionne — inutile de faire deviner au LLM la
+  // fenêtre à consulter, elle est écrite dans les mails.
+  const dates = [...new Set(
+    Array.from(fil.matchAll(/\b(\d{2})\/(\d{2})\/(20\d{2})\b/g)).map((m) => `${m[3]}-${m[2]}-${m[1]}`),
+  )].sort();
+  if (!dates.length) return { salles: liste, occupation: [] };
+
+  // La vue écarte déjà les options mortes (refus, annulations) : ce qu'elle renvoie bloque
+  // vraiment la salle.
+  const { data: occ } = await supabaseAdmin
+    .from('view_planning_seminaires')
+    .select('room_name, start_date, end_date, start_time, end_time')
+    .eq('hotel_id', hotelId)
+    .lte('start_date', dates[dates.length - 1]).gte('end_date', dates[0]);
+
+  // ⚠️ Le NOM du client qui occupe la salle ne sort pas d'ici : ce texte part dans un
+  // brouillon destiné à un tiers, et le planning contient des dossiers concurrents.
+  const occupation = (occ || []).map((o) => {
+    const jour = String(o.start_date).split('-').reverse().join('/');
+    const h = o.start_time && o.end_time
+      ? ` de ${String(o.start_time).slice(0, 5)} à ${String(o.end_time).slice(0, 5)}`
+      : ' sur la journée';
+    return `${jour} — ${o.room_name} OCCUPÉE${h} (autre client)`;
+  }).sort();
+
+  return { salles: liste, occupation };
+}
+
+type Suivi = { resume: string; draft_html: string; incertitudes?: string[] };
+
+async function redigeSuivi(
+  hotelName: string, ref: string, fil: string, salles: OccupationSalles, prenom: string | null,
+): Promise<Suivi> {
+  const client = new Anthropic();
+  const msg = await client.messages.create({
+    model: LLM_MODEL, max_tokens: 1400,
+    messages: [{
+      role: 'user',
+      content:
+        `Tu écris à la place de la réception de l'Hôtel ${hotelName}. Voici l'INTÉGRALITÉ du fil ` +
+        `du dossier ${ref}, du plus ancien au plus récent, nos réponses comprises.\n\n${fil.slice(0, 14000)}\n\n` +
+        `NOS SALLES : ${salles.salles.join(' · ') || 'non renseignées'}\n` +
+        `OCCUPATION RÉELLE sur la période (source : notre planning) :\n` +
+        `${salles.occupation.length ? salles.occupation.join('\n') : 'aucune salle occupée sur ces dates'}\n` +
+        `Toute salle non citée ci-dessus est LIBRE.\n\n` +
+        `Rédige la réponse au DERNIER message reçu. Réponds en JSON STRICT (rien autour), clés :\n` +
+        `- resume : une phrase pour la fiche CRM (où en est le dossier)\n` +
+        `- incertitudes : ce dont tu n'es pas sûr et qu'un humain doit vérifier avant envoi (liste, souvent vide)\n` +
+        `- draft_html : le brouillon de réponse en français.\n\n` +
+        `RÈGLES ABSOLUES :\n` +
+        `1. NE REDEMANDE JAMAIS une information déjà présente dans le fil (participants, dates, ` +
+        `budget, prestations, restauration, équipement). Relis-le avant d'écrire.\n` +
+        `2. RÉPONDS à la question posée dans le dernier message, en t'appuyant sur l'occupation ` +
+        `ci-dessus : une salle libre se propose par son nom, une salle occupée s'annonce comme ` +
+        `indisponible et on propose l'alternative libre. Ne dis JAMAIS qui occupe la salle.\n` +
+        `3. N'INVENTE aucun tarif, aucun horaire, aucune prestation qui ne soit pas dans le fil ` +
+        `ou dans les données ci-dessus. Si le prix est nécessaire, annonce qu'il suit dans le devis.\n` +
+        `4. Ne reviens pas sur ce qui est déjà acté dans le fil, ne le renégocie pas.\n` +
+        `5. Commence par « Bonjour ${prenom || 'Madame, Monsieur'}, ». PAS de signature ni de ` +
+        `formule finale de type « Bien à vous » : elles sont ajoutées après. ` +
+        `Balises <p>/<ul>/<li>/<strong> uniquement.`,
+    }],
+  });
+  const text = msg.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
+  try { return JSON.parse(text.replace(/```json|```/g, '').trim()) as Suivi; }
+  catch { return { resume: text.slice(0, 300), draft_html: '' }; }
+}
+
+async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string): Promise<ExecOutcome> {
+  if (!process.env.ANTHROPIC_API_KEY) return { status: 'blocked', error: 'Clé Anthropic absente (rédaction impossible).' };
+
+  const fil = await dossierThread(cfg.mailbox, ref);
+  if (!fil.length) return { status: 'blocked', error: `Aucun mail retrouvé pour le dossier ${ref}.` };
+
+  // Un collègue a-t-il déjà répondu APRÈS ce mail ? La réception est plus rapide que le tri :
+  // Léna avait répondu 4 minutes avant que l'assistant ne rédige (2026-07-23). Poser un second
+  // brouillon derrière une réponse humaine, c'est au mieux du bruit, au pire un doublon envoyé.
+  const ceMail = fil.find((m) => m.id === row.message_id);
+  const dateRef = ceMail?.date || '';
+  const repondu = fil.find((m) => m.deNous && m.date > dateRef);
+  if (repondu) {
+    return {
+      status: 'executed',
+      result: {
+        kind: 'commercial', mode: 'deja_repondu', ref,
+        message: `La réception a déjà répondu le ${repondu.date.slice(8, 10)}/${repondu.date.slice(5, 7)} à ${repondu.date.slice(11, 16)} — je n'ajoute rien.`,
+      },
+    };
+  }
+
+  const texteFil = fil.map((m) =>
+    `--- ${m.date.slice(0, 16).replace('T', ' ')} · ${m.deNous ? 'NOUS' : m.fromName || m.fromAddr}\n${m.text}`,
+  ).join('\n\n');
+
+  const salles = await sallesEtOccupation(cfg.hotelId, texteFil);
+  const prenom = (row.from_name || '').split(/\s+/)[0] || null;
+  const suivi = await redigeSuivi(cfg.nom, ref, texteFil, salles, prenom);
+
+  // Quelqu'un rédige déjà (ou Junior est déjà passé) : on ne pose pas un second brouillon.
+  const dejaEnCours = await existingReplyDraft(cfg.mailbox, row.message_id).catch(() => null);
+
+  let draft: { draftId: string; webLink: string } | null = null;
+  if (suivi.draft_html && !dejaEnCours) {
+    const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
+    draft = await createReplyDraft(
+      cfg.mailbox, row.message_id,
+      `${suivi.draft_html}<p>Bien à vous,</p>${signatureHtml(duty?.name || 'La Réception', `Réception — Hôtel ${cfg.nom}`)}`,
+      [signatureAttachment()],
+    ).catch(() => null);
+  }
+
+  // La fiche se retrouve par la RÉFÉRENCE, jamais par l'e-mail : un chargé de compte de la
+  // centrale porte plusieurs dossiers sans rapport. Le 2026-07-23, faute de fiche pour
+  // BY-1881460, le repli « même e-mail » a écrit la note dans le dossier BY-1789654 (une
+  // excursion de mai 2027, classée en refus) et lui a reprogrammé une relance. Pas de fiche
+  // pour la référence ⇒ on ne touche à RIEN et on le dit.
+  const today = new Date().toISOString().slice(0, 10);
+  const note = `${today.slice(8, 10)}/${today.slice(5, 7)} ${suivi.resume || row.subject || ''} - Junior`.slice(0, 600);
+  const { data } = await supabaseAdmin
+    .from('suivi_commercial').select('id, commentaires').eq('hotel_id', cfg.hotelId)
+    .or(`nom_client.ilike.%${ref}%,titre_demande.ilike.%${ref}%,commentaires.ilike.%${ref}%`)
+    .limit(1);
+
+  if (!data?.length) {
+    return {
+      status: 'executed',
+      result: {
+        kind: 'commercial', mode: 'sans_fiche', ref, ...(draft || {}),
+        incertitudes: suivi.incertitudes || [], resume: suivi.resume,
+        message: `Aucune fiche ne porte ${ref} — je n'en ouvre pas une au nom de la centrale.`
+          + (dejaEnCours ? ' Un brouillon existe déjà sur ce fil, je n’en ajoute pas un second.' : ' Le brouillon est prêt.'),
+      },
+    };
+  }
+
+  // Récent en haut : l'équipe lit les commentaires du plus récent au plus ancien.
+  const merged = [note, data[0].commentaires].filter(Boolean).join('\n').slice(0, 4000);
+  await supabaseAdmin.from('suivi_commercial')
+    .update({ commentaires: merged, date_relance: new Date(Date.now() + RELANCE_DAYS * 864e5).toISOString().slice(0, 10) })
+    .eq('id', data[0].id);
+  return {
+    status: 'executed',
+    result: {
+      kind: 'commercial', mode: 'rattache', ref, id: data[0].id, ...(draft || {}),
+      incertitudes: suivi.incertitudes || [], resume: suivi.resume,
+    },
+  };
+}
+
 async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
   if (!process.env.ANTHROPIC_API_KEY) return { status: 'blocked', error: 'Clé Anthropic absente (qualification impossible).' };
+
+  // Suivi d'un dossier identifié → chemin dédié (mémoire du fil + occupation des salles).
+  const detail = (row.detail || {}) as { suivi?: boolean; ref?: string };
+  const refSuivi = String(detail.ref || '').toUpperCase();
+  if (detail.suivi && refSuivi) return await actCommercialSuivi(cfg, row, refSuivi);
+
   const body = await getMessageText(cfg.mailbox, row.message_id);
   const lead = await qualifyLead(row.subject || '', body, cfg.nom);
   const email = row.from_addr || null;
@@ -421,10 +606,12 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
   let draft: { draftId: string; webLink: string } | null = null;
   if (missing.length && lead.draft_html) {
     const enPoste = await receptionOnDuty(cfg.hotelId).catch(() => null);
-    const sig = enPoste
-      ? `<br/><p>Bien à vous,<br/>${enPoste.name}<br/>Réception — Hôtel ${cfg.nom}</p>`
-      : `<br/><p>Bien à vous,<br/>Service commercial — Hôtel ${cfg.nom}</p>`;
-    draft = await createReplyDraft(cfg.mailbox, row.message_id, `${lead.draft_html}${sig}`).catch(() => null);
+    draft = await createReplyDraft(
+      cfg.mailbox, row.message_id,
+      `${lead.draft_html}<p>Bien à vous,</p>` +
+      signatureHtml(enPoste?.name || 'La Réception', `Réception — Hôtel ${cfg.nom}`),
+      [signatureAttachment()],
+    ).catch(() => null);
   }
 
   // Canal Best Western : la réf `BY-xxxxxxx` identifie LE DOSSIER ; l'expéditeur,
@@ -441,7 +628,7 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
       .or(`nom_client.ilike.%${bwRef}%,titre_demande.ilike.%${bwRef}%,commentaires.ilike.%${bwRef}%`)
       .limit(1);
     if (data && data.length) {
-      const merged = [data[0].commentaires, stampedNote].filter(Boolean).join('\n');
+      const merged = [stampedNote, data[0].commentaires].filter(Boolean).join('\n');
       await supabaseAdmin.from('suivi_commercial')
         .update({ commentaires: merged, date_relance: relance }).eq('id', data[0].id);
       return {
@@ -449,6 +636,17 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
         result: { kind: 'commercial', mode: 'rattache', ref: bwRef, id: data[0].id, missing, ...(draft || {}), lead },
       };
     }
+    // ⚠️ Référence connue mais aucune fiche : ON S'ARRÊTE LÀ. Surtout pas de repli sur
+    // l'e-mail — l'expéditeur est un chargé de compte de la centrale, pas un client, et il
+    // porte plusieurs dossiers sans rapport. Le repli a écrit la note du dossier BY-1881460
+    // dans la fiche BY-1789654 (2026-07-23).
+    return {
+      status: 'executed',
+      result: {
+        kind: 'commercial', mode: 'sans_fiche', ref: bwRef, missing, ...(draft || {}), lead,
+        message: `Aucune fiche ne porte ${bwRef} — je n'en ouvre pas une au nom de la centrale.`,
+      },
+    };
   }
 
   // Fiche existante ? (même email, même hôtel) → on complète + reprogramme la relance.
@@ -456,7 +654,7 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
     const { data } = await supabaseAdmin
       .from('suivi_commercial').select('id, commentaires').eq('hotel_id', cfg.hotelId).ilike('email', email).limit(1);
     if (data && data.length) {
-      const merged = [data[0].commentaires, stampedNote].filter(Boolean).join('\n');
+      const merged = [stampedNote, data[0].commentaires].filter(Boolean).join('\n');
       await supabaseAdmin.from('suivi_commercial')
         .update({ commentaires: merged, date_relance: relance }).eq('id', data[0].id);
       return { status: 'executed', result: { kind: 'commercial', mode: 'updated', id: data[0].id, missing, ...(draft || {}), lead } };

@@ -146,7 +146,12 @@ function resultSummary(r: Row): string | null {
     if (res.note) return res.classe ? "Note écrite dans Mews · classé" : "Note écrite dans Mews";
     if (res.movedTo === "deleteditems") return "Mis à la corbeille";
     if (res.movedTo === "archive") return "Classé";
-    if (res.kind === "commercial") return res.mode === "created" ? "Fiche créée" : "Fiche complétée";
+    if (res.kind === "commercial") {
+      if (res.mode === "deja_repondu") return "Un collègue avait déjà répondu";
+      if (res.mode === "sans_fiche") return res.draftId ? "Brouillon prêt · pas de fiche" : "Pas de fiche pour ce dossier";
+      if (res.mode === "rattache") return "Rattaché au dossier";
+      return res.mode === "created" ? "Fiche créée" : "Fiche complétée";
+    }
     if (res.kind === "pennylane") return `Envoyé à Pennylane (${String(res.entity)})`;
     if (res.draftId) return "Brouillon créé";
     return "Fait";
@@ -575,9 +580,24 @@ export default function MailAssistantPage() {
                             <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/40 px-3 py-2 space-y-1.5">
                               <p className="text-xs text-emerald-800 flex items-center gap-1.5">
                                 <Check className="w-3.5 h-3.5" />
-                                Fiche {r.result.mode === "rattache" ? "rattachée au dossier" : r.result.mode === "updated" ? "complétée" : "créée"}
+                                {r.result.mode === "deja_repondu" ? "Un collègue avait déjà répondu — je n’ai rien ajouté"
+                                  : r.result.mode === "sans_fiche" ? "Aucune fiche ne porte ce dossier"
+                                  : `Fiche ${r.result.mode === "rattache" ? "rattachée au dossier" : r.result.mode === "updated" ? "complétée" : "créée"}`}
                                 {r.result.ref ? <span className="text-emerald-600">· {String(r.result.ref)}</span> : null}
                               </p>
+                              {r.result.message ? (
+                                <p className="text-xs text-emerald-700/80">{String(r.result.message)}</p>
+                              ) : null}
+                              {/* Ce dont Junior n'est pas sûr. Un brouillon qui a l'air net mais
+                                  repose sur une hypothèse est plus dangereux qu'un brouillon
+                                  visiblement incomplet : on affiche le doute avant l'envoi. */}
+                              {Array.isArray(r.result.incertitudes) && r.result.incertitudes.length ? (
+                                <ul className="text-xs text-amber-700 list-disc pl-4 space-y-0.5">
+                                  {(r.result.incertitudes as unknown[]).map((x, i) => (
+                                    <li key={i}>À vérifier : {String(x)}</li>
+                                  ))}
+                                </ul>
+                              ) : null}
                               <div className="flex flex-wrap items-center gap-2">
                                 {r.result.id ? (
                                   <a

@@ -138,6 +138,82 @@ export async function getMessageHtml(mailbox: string, id: string): Promise<strin
   return m.body?.content || '';
 }
 
+// LE FIL D'UN DOSSIER, pas d'une conversation.
+//
+// Sur le canal Best Western, chaque mail de la centrale ouvre une NOUVELLE conversation
+// Outlook (objets successifs : « Nouvelle demande pour… », puis « Dossier du 29/09 au
+// 01/10 »). Se fier au `conversationId` ne rendrait donc que le dernier maillon, et
+// l'assistant redemanderait des informations déjà données la veille — vécu le 2026-07-23
+// sur BY-1881460 : il a redemandé le nombre de participants, le budget et le type de
+// prestation, tous écrits noir sur blanc dans la demande du matin, et déjà répondus par
+// deux collègues. Ce qui fait le fil, c'est la RÉFÉRENCE DU DOSSIER, présente dans tous
+// les mails, les nôtres comme les leurs.
+//
+// On ramène donc l'intégralité des mails portant la référence, envoyés compris (le
+// `$search` de Graph balaie toute la boîte, Éléments envoyés inclus), triés du plus
+// ancien au plus récent. Les BROUILLONS sont exclus : un brouillon non envoyé n'est pas
+// une parole tenue, et le compter ferait croire que la réception a déjà répondu.
+export type ThreadMessage = {
+  id: string;
+  date: string;
+  fromAddr: string;
+  fromName: string;
+  subject: string;
+  text: string;
+  deNous: boolean;
+};
+
+export async function dossierThread(mailbox: string, ref: string, top = 15): Promise<ThreadMessage[]> {
+  const j = await gm<{ value: Record<string, unknown>[] }>(
+    mailbox,
+    `/messages?$search=${encodeURIComponent(`"${ref}"`)}&$top=${top}` +
+    `&$select=id,subject,from,receivedDateTime,sentDateTime,isDraft,body`,
+  );
+  const moi = mailbox.trim().toLowerCase();
+  return (j.value || [])
+    .filter((m) => !m.isDraft)
+    .map((m) => {
+      const ea = (m.from as { emailAddress?: { address?: string; name?: string } })?.emailAddress;
+      const body = m.body as { content?: string } | undefined;
+      const addr = (ea?.address || '').toLowerCase();
+      return {
+        id: String(m.id),
+        date: String(m.receivedDateTime || m.sentDateTime || ''),
+        fromAddr: addr,
+        fromName: ea?.name || '',
+        subject: String(m.subject || ''),
+        // Le fil cité en bas de nos réponses répète tout l'historique : on coupe au
+        // séparateur Outlook, sinon chaque mail traîne la totalité des précédents.
+        text: (body?.content || '')
+          .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+          .replace(/<[^>]+>/g, '\n')
+          .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+          .split('\n').map((l) => l.trim()).filter(Boolean).join('\n')
+          .split(/\n(?:From:|De\s*:|Sent:|Envoyé\s*:)\s/)[0]
+          .slice(0, 2500),
+        deNous: addr === moi,
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Un brouillon de réponse existe-t-il déjà sur ce fil ?
+//
+// Le 2026-07-23, Léna rédigeait sa réponse à Lila Ayed dans Outlook ; quatre minutes plus tard
+// l'assistant en a posé un second, contradictoire, sous le même objet. Un brouillon n'est pas
+// une réponse (il ne compte donc pas dans `dossierThread`), mais c'est du travail humain en
+// cours : on n'écrit pas par-dessus. Renvoie l'id du brouillon existant, ou null.
+export async function existingReplyDraft(mailbox: string, messageId: string): Promise<string | null> {
+  const m = await gm<{ conversationId?: string }>(mailbox, `/messages/${messageId}?$select=conversationId`);
+  if (!m.conversationId) return null;
+  const j = await gm<{ value: { id: string }[] }>(
+    mailbox,
+    `/mailFolders/drafts/messages?$top=5&$select=id` +
+    `&$filter=conversationId eq '${m.conversationId.replace(/'/g, "''")}'`,
+  );
+  return j.value?.[0]?.id || null;
+}
+
 // Déplacer un mail : destination = dossier bien connu ('deleteditems','archive','junkemail') ou id de dossier.
 export async function moveMessage(mailbox: string, id: string, destination: string): Promise<void> {
   await gm(mailbox, `/messages/${id}/move`, { method: 'POST', body: JSON.stringify({ destinationId: destination }) });
@@ -229,8 +305,15 @@ export async function forwardMessage(mailbox: string, id: string, to: string, co
 
 // Créer un BROUILLON de réponse (reste dans Brouillons — RIEN n'est envoyé).
 // On préfixe notre texte au fil cité renvoyé par Graph. Renvoie l'id + le lien web du brouillon.
+//
+// `attachments` sert la SIGNATURE : la bannière HTBM est une image inline (`cid:`), et un
+// `cid:` sans pièce jointe correspondante s'affiche cassé. Les brouillons partaient donc
+// avec une signature texte au rabais — « signature incomplète » (Martin 2026-07-23).
+// Graph n'accepte pas les pièces jointes dans le PATCH : il faut les POSTer une à une sur
+// le brouillon créé.
 export async function createReplyDraft(
   mailbox: string, id: string, htmlPrepend: string,
+  attachments: Record<string, unknown>[] = [],
 ): Promise<{ draftId: string; webLink: string }> {
   const draft = await gm<{ id: string; webLink?: string; body?: { content?: string } }>(
     mailbox, `/messages/${id}/createReply`, { method: 'POST' },
@@ -240,5 +323,9 @@ export async function createReplyDraft(
     method: 'PATCH',
     body: JSON.stringify({ body: { contentType: 'HTML', content: `${htmlPrepend}${quoted}` } }),
   });
+  for (const a of attachments) {
+    await gm(mailbox, `/messages/${draft.id}/attachments`, { method: 'POST', body: JSON.stringify(a) })
+      .catch(() => null);   // signature absente vaut mieux que brouillon perdu
+  }
   return { draftId: draft.id, webLink: draft.webLink || '' };
 }
