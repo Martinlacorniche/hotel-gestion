@@ -10,9 +10,7 @@ import { ThemedBackground } from '@/components/ThemedBackground';
 import { Card, CardContent } from '@/components/ui/card';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import {
-  Users, Plus, Trash2, Loader2, ArrowLeft, Pencil, X, Check, Copy, Link2,
-  BedDouble, ImagePlus, Eye, EyeOff, Building2, CalendarDays, Hash, ExternalLink,
-  Mail, Phone, Settings, BedSingle, ChevronRight,
+  Users, Plus, Trash2, Loader2, ArrowLeft, Pencil, X, Check, Copy, Link2, BedDouble, ImagePlus, Eye, EyeOff, Building2, CalendarDays, Hash, ExternalLink, Mail, Phone, Settings, BedSingle, ChevronRight, AlertTriangle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -80,9 +78,60 @@ interface GroupeReservation {
   modified_at: string;
 }
 
+// Allotement Mews d'un groupe (Les Voiles). Sans lui, les chambres du bloc restent
+// vendables dans le PMS et sur tous les canaux — c'était le cas des deux mariages
+// de 2027 jusqu'au 2026-07-23. Le retour affiche la disponibilité AVANT/APRÈS :
+// l'API ne sait pas relister les allotements, la baisse de disponibilité est donc
+// notre seule preuve que le bloc travaille, et c'est la plus parlante.
+function MewsAllotement({ group, onDone }: { group: Groupe; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const pose = !!group.mews_block_id;
+
+  const appel = async (method: 'POST' | 'DELETE') => {
+    if (method === 'DELETE' && !(await confirmDialog(
+      'Retirer l’allotement ? Les chambres non réservées redeviendront vendables dans Mews et sur les canaux.'))) return;
+    setBusy(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const res = await fetch('/api/groupes/mews-block', {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess.session?.access_token}` },
+        body: JSON.stringify({ groupeId: group.id }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Erreur');
+      toast.success(method === 'POST'
+        ? `Allotement créé — ${json.retirees} chambre(s) retirées de la vente (${json.vendablesAvant} → ${json.vendablesApres})`
+        : `Allotement retiré — ${json.vendablesApres} chambre(s) de nouveau vendables`);
+      onDone();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur');
+    } finally { setBusy(false); }
+  };
+
+  return pose ? (
+    <button onClick={() => appel('DELETE')} disabled={busy}
+      className="inline-flex items-center gap-1 text-xs px-2.5 h-8 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+      title="Les chambres sont retirées de la vente dans Mews. Cliquer pour retirer l’allotement.">
+      {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Allotement Mews
+    </button>
+  ) : (
+    <button onClick={() => appel('POST')} disabled={busy}
+      className="inline-flex items-center gap-1 text-xs px-2.5 h-8 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+      title="Retirer les chambres du bloc de la vente dans Mews (Les Voiles uniquement)">
+      {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BedDouble className="w-3.5 h-3.5" />} Créer l’allotement Mews
+    </button>
+  );
+}
+
 interface Groupe {
   id: string;
   nom: string;
+  // Allotement Mews (Les Voiles). Renseigné = les chambres du bloc sont retirées
+  // de la vente dans le PMS et sur tous les canaux. NULL = le groupe ne vit que
+  // chez nous, et ses chambres restent vendables par Booking & co.
+  mews_block_id?: string | null;
+  mews_sync_at?: string | null;
   code_acces: string;
   date_arrivee: string;
   date_depart: string;
@@ -429,6 +478,11 @@ function GroupesRecap({ groupes, hotelName, hotelsCount }: {
               )}
               <div className="mt-3 flex items-center gap-3 text-xs text-slate-600">
                 <span className="inline-flex items-center gap-1"><BedSingle className="w-3.5 h-3.5 text-slate-400" /> {confirmed}/{nbChambres} réservées</span>
+                {/* Sans allotement, les chambres du bloc restent en vente dans le PMS
+                    et sur les canaux : l'information mérite d'être visible d'un coup d'œil. */}
+                {g.mews_block_id
+                  ? <span className="inline-flex items-center gap-1 text-emerald-700" title="Chambres retirées de la vente dans Mews"><Check className="w-3.5 h-3.5" /> Allotement Mews</span>
+                  : <span className="inline-flex items-center gap-1 text-amber-600" title="Les chambres restent vendables dans le PMS et sur les canaux"><AlertTriangle className="w-3.5 h-3.5" /> Pas d'allotement</span>}
               </div>
             </div>
           </a>
@@ -1350,6 +1404,7 @@ function GroupDetail({ group, chambres, roomTypes, hotelName, onBack, onEdit, on
           <div className="flex items-center gap-2 shrink-0">
             <button onClick={onCopyLink} className="inline-flex items-center gap-1 text-xs px-2.5 h-8 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" title="Copier le lien invité"><Link2 className="w-3.5 h-3.5" /> Lien <Copy className="w-3 h-3" /></button>
             <a href={publicLink(group.code_acces)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs px-2.5 h-8 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Page invité <ExternalLink className="w-3 h-3" /></a>
+            <MewsAllotement group={group} onDone={() => { void onChanged(); }} />
             <button onClick={onEdit} className="text-slate-300 hover:text-rose-600 p-1.5" title="Modifier le groupe"><Pencil className="w-4 h-4" /></button>
             <button onClick={onDelete} className="text-slate-300 hover:text-rose-600 p-1.5" title="Supprimer le groupe"><Trash2 className="w-4 h-4" /></button>
           </div>
