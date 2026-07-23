@@ -88,7 +88,7 @@ const ACTION_LABEL: Record<string, string> = {
   presejour_check: "Lire le formulaire pré-séjour",
   rooftop_check: "Vérifier la résa Rooftop",
   livraison_consigne: "Créer la consigne de livraison",
-  none: "Laisser à l’humain",
+  none: "Je te laisse la main",
 };
 
 // Les trois boutons sont des engagements de JUNIOR, à la première personne comme
@@ -120,7 +120,7 @@ const CAT_EFFET: Record<string, { geste: string; risque: "sur" | "moyen" | "sens
   livraison:       { geste: "Je crée la consigne de livraison", risque: "moyen" },
   litige_ota:      { geste: "Je classe sans supprimer", risque: "sur" },
   rapport_pms:     { geste: "Je classe", risque: "sur" },
-  autre:           { geste: "Je te laisse la main", risque: "sur" },
+  autre:           { geste: "Je ne sais pas quoi en faire, je te le passe", risque: "sur" },
 };
 const effet = (c: string) => CAT_EFFET[c] || CAT_EFFET.autre;
 
@@ -174,6 +174,13 @@ export default function MailAssistantPage() {
   const [filtre, setFiltre] = useState<string | null>(null);
   const [voirTraites, setVoirTraites] = useState(false);
   const [selection, setSelection] = useState<Set<string>>(new Set());
+  // « Non, c'est plutôt… » — la correction est de la DONNÉE, pas une conversation :
+  // elle retraite le mail tout de suite ET s'accumule pour devenir une règle plus
+  // tard. Sans elle, une erreur de Junior disparaît dans l'oubli.
+  const [corrige, setCorrige] = useState<string | null>(null);
+  const [corCat, setCorCat] = useState("");
+  const [corAct, setCorAct] = useState("");
+  const [corMot, setCorMot] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -264,6 +271,33 @@ export default function MailAssistantPage() {
     if (rate) toast.error(`${ok}/${cibles.length} traités — ${rate} en échec`);
     else toast.success(decision === "skip" ? `OK, j’en laisse ${ok} de côté` : `${ok} de faits !`);
     await load(cfg!.key);
+    setBusyId(null);
+  };
+
+  const envoyerCorrection = async (row: Row) => {
+    if (!cfg) return;
+    if (!corCat && !corAct && !corMot.trim()) { toast.error("Dis-moi au moins ce qui n’allait pas"); return; }
+    setBusyId(row.id);
+    const headers = await authHeaders();
+    if (!headers) { setBusyId(null); return; }
+    const resp = await fetch(`/api/mail-assistant/correct?hotel=${cfg.key}`, {
+      method: "POST", headers,
+      body: JSON.stringify({
+        id: row.id,
+        category: corCat || undefined,
+        action: corAct || undefined,
+        commentaire: corMot.trim() || undefined,
+        // On ne retraite que si une action a été choisie : un simple commentaire
+        // enrichit le dossier sans rien déclencher.
+        executer: !!corAct,
+      }),
+    });
+    const j = await resp.json().catch(() => ({}));
+    if (resp.ok && j.ok) {
+      toast.success(corAct ? "Corrigé, je m’en occupe" : "Noté, merci — ça me servira");
+      setCorrige(null); setCorCat(""); setCorAct(""); setCorMot("");
+      await load(cfg.key);
+    } else toast.error(j.error || "Ça a coincé");
     setBusyId(null);
   };
 
@@ -528,6 +562,100 @@ export default function MailAssistantPage() {
                                 <Copy className="w-3 h-3" /> Copier la note
                               </button>
                             </div>
+                          )}
+
+                          {/* Checklist commerciale. Un lead n'est pas UNE action mais une
+                              petite séquence — fiche, devis, réponse — avec une DÉCISION
+                              HUMAINE au milieu (le prix, la faisabilité). Enchaîner les
+                              trois d'un clic produirait un devis inventé et une promesse
+                              intenable : Junior fait ce qu'il sait faire seul et ouvre la
+                              porte pour le reste. La ligne reste visible tant que la
+                              séquence n'est pas finie. */}
+                          {r.result?.kind === "commercial" && (
+                            <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/40 px-3 py-2 space-y-1.5">
+                              <p className="text-xs text-emerald-800 flex items-center gap-1.5">
+                                <Check className="w-3.5 h-3.5" />
+                                Fiche {r.result.mode === "rattache" ? "rattachée au dossier" : r.result.mode === "updated" ? "complétée" : "créée"}
+                                {r.result.ref ? <span className="text-emerald-600">· {String(r.result.ref)}</span> : null}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {r.result.id ? (
+                                  <a
+                                    href={`/devis?leadId=${String(r.result.id)}`}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-emerald-200 hover:bg-emerald-50 text-emerald-800 px-2.5 h-7 text-xs font-medium"
+                                  >
+                                    Ouvrir le devis <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                ) : null}
+                                {r.result.webLink ? (
+                                  <a
+                                    href={String(r.result.webLink)} target="_blank" rel="noreferrer"
+                                    className="inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-emerald-200 hover:bg-emerald-50 text-emerald-800 px-2.5 h-7 text-xs font-medium"
+                                  >
+                                    Relire le brouillon <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-slate-400">
+                                    Brouillon : dis-moi le prix ci-dessous et je le rédige.
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Correction : ouverte à tous ceux qui traitent, parce que c'est
+                              celui qui voit le mail qui sait ce qu'il fallait en faire. */}
+                          {corrige === r.id ? (
+                            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-slate-600">Qu’est-ce que j’aurais dû faire ?</p>
+                              <div className="grid sm:grid-cols-2 gap-2">
+                                <select
+                                  value={corCat} onChange={(e) => setCorCat(e.target.value)}
+                                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                                >
+                                  <option value="">— même famille ({meta(r.category).label}) —</option>
+                                  {Object.keys(CAT_META).map((c) => <option key={c} value={c}>{meta(c).label}</option>)}
+                                </select>
+                                <select
+                                  value={corAct} onChange={(e) => setCorAct(e.target.value)}
+                                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                                >
+                                  <option value="">— même action —</option>
+                                  {Object.keys(ACTION_LABEL).map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}
+                                </select>
+                              </div>
+                              <textarea
+                                value={corMot} onChange={(e) => setCorMot(e.target.value)}
+                                rows={2}
+                                placeholder="Ce que je ne peux pas voir : « déjà remboursé, vu avec Nina », « c’est un habitué »…"
+                                className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700"
+                              />
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => envoyerCorrection(r)} disabled={!!busyId}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3 h-8 text-xs font-medium disabled:opacity-50"
+                                >
+                                  {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                  Envoyer la correction
+                                </button>
+                                <button
+                                  onClick={() => { setCorrige(null); setCorCat(""); setCorAct(""); setCorMot(""); }}
+                                  className="text-xs text-slate-400 hover:text-slate-600"
+                                >
+                                  Annuler
+                                </button>
+                                <span className="ml-auto text-[11px] text-slate-400">
+                                  {corAct ? "Je retraite le mail tout de suite." : "Sans action choisie, je note sans rien faire."}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setCorrige(r.id); setCorCat(""); setCorAct(""); setCorMot(""); }}
+                              className="mt-2 text-xs text-slate-400 hover:text-[var(--brand)] underline underline-offset-2"
+                            >
+                              Non, c’est plutôt…
+                            </button>
                           )}
 
                           {r.action_error && (

@@ -565,12 +565,25 @@ export function classifyMail(mail: MailInput): Classification {
   //     de séminaire était déjà prise par un autre client sur l'une des deux dates ; ouvrir une
   //     fiche et envoyer des questions au prospect avant de le savoir aurait été à côté.
   //     La fiche se monte à la main, une fois la faisabilité connue.
-  if (rx.bwFrom.test(from) && rx.bwLead.test(subj)) {
+  //     ⚠️ DEUX CAS À NE PAS CONFONDRE (Martin 2026-07-23) :
+  //     · une NOUVELLE DEMANDE (« Nouvelle demande pour <hôtel> ») → on ne fait
+  //       rien d'automatique : la première question est « peut-on l'accueillir ? ».
+  //     · un SUIVI de dossier existant → on rattache et on répond. La centrale
+  //       écrit alors « Dossier du 29/09 au 01/10 » et met la référence DANS LE
+  //       CORPS (« Dossier : BY-1881460 · Répondez bien à ce mail pour faciliter
+  //       le suivi »). Chercher la réf dans le seul objet ratait donc tous les
+  //       suivis — vécu le 2026-07-23, un mail qui rouvrait un dossier à 5 000 €
+  //       est tombé en « je te laisse la main ».
+  const bwRef = (`${subj}\n${prev}`).match(/\bBY-\d{6,}\b/i)?.[0]?.toUpperCase() || null;
+  if (rx.bwFrom.test(from) && (rx.bwLead.test(subj) || bwRef)) {
+    const nouvelle = /nouvelle demande pour\b/i.test(subj);
     return {
       category: 'commercial',
-      action: 'none',
-      reason: 'Demande d’affaires de la centrale Best Western → vérifier la faisabilité (salle, chambres) avant d’ouvrir un dossier',
-      detail: { canal: 'Best Western', ref: subj.match(/\bBY-\d{6,}\b/i)?.[0]?.toUpperCase() || null },
+      action: nouvelle ? 'none' : 'commercial_followup',
+      reason: nouvelle
+        ? 'Demande d’affaires de la centrale Best Western → vérifier la faisabilité (salle, chambres) avant d’ouvrir un dossier'
+        : `Suivi du dossier Best Western ${bwRef ?? ''} → rattacher au dossier et préparer la réponse`.trim(),
+      detail: { canal: 'Best Western', ref: bwRef, suivi: !nouvelle },
     };
   }
 
@@ -592,5 +605,5 @@ export function classifyMail(mail: MailInput): Classification {
   }
 
   // 7) Reste -> laisser à l'humain
-  return { category: 'autre', action: 'none', reason: 'Non classé — laissé à l’humain', detail: {} };
+  return { category: 'autre', action: 'none', reason: 'Je ne sais pas encore quoi en faire — je te le passe', detail: {} };
 }

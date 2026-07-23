@@ -414,10 +414,41 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
   ].join(' ').slice(0, 1000);
 
   // Brouillon de pré-qualif (si des infos manquent) — reste dans Brouillons, rien n'est envoyé.
+  // Le brouillon est signé du PRÉNOM de la personne en poste, pas d'un « Service
+  // commercial » anonyme (Martin 2026-07-23) : c'est elle qui recevra la réponse,
+  // et un interlocuteur qui a un prénom obtient de meilleurs retours qu'une boîte.
+  // Repli sur le service si personne n'est en shift (nuit, creux entre deux postes).
   let draft: { draftId: string; webLink: string } | null = null;
   if (missing.length && lead.draft_html) {
-    const sig = `<br/><p>Bien à vous,<br/>Service commercial — Hôtel ${cfg.nom}</p>`;
+    const enPoste = await receptionOnDuty(cfg.hotelId).catch(() => null);
+    const sig = enPoste
+      ? `<br/><p>Bien à vous,<br/>${enPoste.name}<br/>Réception — Hôtel ${cfg.nom}</p>`
+      : `<br/><p>Bien à vous,<br/>Service commercial — Hôtel ${cfg.nom}</p>`;
     draft = await createReplyDraft(cfg.mailbox, row.message_id, `${lead.draft_html}${sig}`).catch(() => null);
+  }
+
+  // Canal Best Western : la réf `BY-xxxxxxx` identifie LE DOSSIER ; l'expéditeur,
+  // lui, est le chargé de compte de la centrale. Vérifié en base : clemence.estienne@
+  // bestwestern.fr porte à elle seule trois dossiers sans rapport (CNRS, NORAUTO,
+  // AXA). Chercher la fiche « par e-mail » les fusionnerait — c'est la référence
+  // qui fait foi, et c'est elle qui permet de RATTACHER un suivi au bon dossier
+  // plutôt que d'en ouvrir un second.
+  const bwRef = String((row.detail as { ref?: string } | null)?.ref
+    || (row.subject || '').match(/\bBY-\d{6,}\b/i)?.[0] || '').toUpperCase() || null;
+  if (bwRef) {
+    const { data } = await supabaseAdmin
+      .from('suivi_commercial').select('id, commentaires').eq('hotel_id', cfg.hotelId)
+      .or(`nom_client.ilike.%${bwRef}%,titre_demande.ilike.%${bwRef}%,commentaires.ilike.%${bwRef}%`)
+      .limit(1);
+    if (data && data.length) {
+      const merged = [data[0].commentaires, stampedNote].filter(Boolean).join('\n');
+      await supabaseAdmin.from('suivi_commercial')
+        .update({ commentaires: merged, date_relance: relance }).eq('id', data[0].id);
+      return {
+        status: 'executed',
+        result: { kind: 'commercial', mode: 'rattache', ref: bwRef, id: data[0].id, missing, ...(draft || {}), lead },
+      };
+    }
   }
 
   // Fiche existante ? (même email, même hôtel) → on complète + reprogramme la relance.
