@@ -30,7 +30,21 @@ async function token(): Promise<string> {
   return cachedToken.value;
 }
 
+// 🔒 PÉRIMÈTRE DE L'ASSISTANT — RÈGLE ABSOLUE (Martin 2026-07-23).
+// Junior ne touche QUE les deux boîtes de réception des hôtels. L'app Graph a un
+// jeton « app-only » qui ouvre TOUTES les boîtes du tenant : direction@,
+// administration@, hebergement2@, recrutement@… Rien dans Microsoft ne nous en
+// empêche, c'est donc à nous de poser la barrière, et à un seul endroit — ici,
+// le passage obligé de tous les appels.
+// Toute autre boîte se consulte à la main, par Martin, jamais par l'assistant.
+const BOITES_AUTORISEES = new Set(['contact-lesvoiles@htbm.fr', 'contact-corniche@htbm.fr']);
+
 async function gm<T>(mailbox: string, path: string, init?: RequestInit): Promise<T> {
+  if (!BOITES_AUTORISEES.has(String(mailbox).trim().toLowerCase())) {
+    throw new Error(
+      `Boîte hors périmètre : ${mailbox}. L'assistant n'accède qu'à ${[...BOITES_AUTORISEES].join(' et ')}.`,
+    );
+  }
   const res = await fetch(`${GRAPH}/users/${encodeURIComponent(mailbox)}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json', ...(init?.headers || {}) },

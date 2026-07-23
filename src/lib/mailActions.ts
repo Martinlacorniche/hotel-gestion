@@ -273,10 +273,24 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
     }
   }
 
+  // CLASSEMENT (Martin 2026-07-23). La règle « traiter d'abord, classer ensuite »
+  // du 04/07 protégeait des résas archivées SANS avoir été contrôlées — à l'époque,
+  // « traiter » voulait dire produire une note qu'un humain devait recopier dans le
+  // PMS, donc le mail devait rester visible tant que ce n'était pas fait.
+  // Maintenant que la note part seule dans Mews, valider = travail terminé.
+  // ⚠️ On ne classe QUE si la note est bien arrivée dans le PMS : sans elle (Corniche,
+  // qui est sur HotSoft, ou Mews indisponible) le garde-fou d'origine doit jouer —
+  // le mail reste en réception pour que quelqu'un s'en occupe.
+  let classe = false;
+  if (pms?.noteId) {
+    try { await moveMessage(cfg.mailbox, row.message_id, 'archive'); classe = true; }
+    catch (e) { console.error('resa_control: classement échoué', row.message_id, e instanceof Error ? e.message : e); }
+  }
+
   return {
     status: 'executed',
     result: {
-      kind: 'resa_control', note, dejaVenu, cityTax, linked, pms,
+      kind: 'resa_control', note, dejaVenu, cityTax, linked, pms, classe,
       resa: {
         ref: r.ref, source: r.source, guest: r.guestName, arrival: r.arrival, departure: r.departure,
         nights: r.nights, guests: r.guests, room: r.roomType, amount: r.amount,

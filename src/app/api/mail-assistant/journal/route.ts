@@ -21,6 +21,11 @@ export async function GET(req: Request) {
   let q = supabaseAdmin
     .from('assistant_mail_log')
     .select('id, created_at, mailbox, from_addr, from_name, subject, received_at, category, proposed_action, reason, detail, status, dry_run, result, action_error, decided_at')
+    // ⚠️ FENÊTRE 24 H. Le journal s'accumule sans fin : au-delà d'une journée, la
+    // page devient une archive illisible où le travail du jour se noie. Ce qui est
+    // plus vieux reste en base (et dans le PMS), il n'a juste plus à encombrer
+    // l'écran — un mail non traité depuis 24 h relève d'autre chose qu'un tri.
+    .gte('received_at', new Date(Date.now() - 24 * 3600e3).toISOString())
     .order('received_at', { ascending: false, nullsFirst: false })
     .limit(200);
   if (cfg) q = q.eq('mailbox', cfg.mailbox);

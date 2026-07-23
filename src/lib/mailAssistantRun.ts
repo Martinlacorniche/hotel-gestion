@@ -46,7 +46,7 @@ export async function runDryRun(hotelKey: string): Promise<DryRunResult> {
     const mewsEnrich = cfg.mews && (c.category === 'resa_ota' || c.category === 'resa_swile');
     summary[c.category] = (summary[c.category] || 0) + 1;
 
-    const { error } = await supabaseAdmin
+    const { data: ins, error } = await supabaseAdmin
       .from('assistant_mail_log')
       .upsert({
         mailbox: cfg.mailbox,
@@ -61,8 +61,13 @@ export async function runDryRun(hotelKey: string): Promise<DryRunResult> {
         detail: { ...c.detail, attachmentNames, hotel: cfg.key, mewsEnrich },
         status: 'proposed',
         dry_run: true,
-      }, { onConflict: 'mailbox,message_id', ignoreDuplicates: true });
-    if (!error) logged += 1;
+      }, { onConflict: 'mailbox,message_id', ignoreDuplicates: true })
+      .select('id');
+    // ⚠️ `ignoreDuplicates` n'est PAS une erreur : un mail déjà journalisé passe
+    // silencieusement. Compter « pas d'erreur » revenait donc à compter les mails
+    // VUS, pas les nouveaux — l'écran annonçait « 1 mail classé » sans qu'aucune
+    // ligne n'apparaisse. Seules les lignes réellement insérées comptent.
+    if (!error && ins?.length) logged += ins.length;
   }
 
   return { hotel: cfg.key, mailbox: cfg.mailbox, mews: cfg.mews, logged, reconciled: stale.length, summary };

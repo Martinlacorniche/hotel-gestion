@@ -44,6 +44,7 @@ export type MailInput = {
 export type MailCategory =
   | 'spam_alert' | 'resa_ota' | 'resa_swile' | 'resa_rooftop' | 'prise_en_charge' | 'facture' | 'facture_interne' | 'facture_ota'
   | 'commission_ota' | 'candidature' | 'commercial' | 'client_msg' | 'pre_sejour' | 'rapport_pms'
+  | 'facture_client'
   | 'litige_ota' | 'livraison'
   | 'autre';
 
@@ -74,6 +75,17 @@ const rx = {
   resaMod: /modification de réservation/i,
   resaCancel: /annulation de réservation/i,
   facture: /\bfacture\b|avis d[’' ]?échéance|quittance|bon de livraison|\bBL\b/i,
+  // 🆕 UN CLIENT QUI INTERROGE SUR SA FACTURE N'EST PAS UNE FACTURE FOURNISSEUR
+  // (Martin 2026-07-23). Vécu : « Demande facture » de t.colomina@lambertontp.fr —
+  // « nous avons réglé 445,26 € le 30/05 et 45,66 € le 15/06, je ne comprends pas
+  // l'écart, y a-t-il une facture complémentaire ? », avec notre propre facture
+  // scannée en pièce jointe. La règle Pennylane s'y déclenchait (PJ PDF + le mot
+  // « facture ») et aurait envoyé NOTRE facture à la compta FOURNISSEURS, pendant
+  // que le client attendait une réponse que personne n'aurait écrite.
+  // Le signal qui les sépare : une facture fournisseur ne POSE JAMAIS de question.
+  // Elle arrive avec une ligne de politesse ; celle-ci est entièrement interrogative.
+  factureQuestion:
+    /je ne comprends pas|pourriez-vous|pouvez-vous|y a-?t-?il|serait-il possible|demande de facture|demande facture|nous n[’' ]avons pas re[çc]u|o[uù] en est|relance de notre|merci de nous (?:faire parvenir|transmettre|envoyer)/i,
   candidature: /candidature|alternance|(recherche|à la recherche).{0,25}(alternance|stage|emploi|apprentissage)|\bBTS\b.{0,20}tourisme/i,
   // ⚠️ Élargi 2026-07-16 au TOURNAGE (production audiovisuelle) : la demande CACTUS FILMS via
   // Madame Hotels (18 comédiens, 15→30/10/2026, ~180 nuitées) tombait en `autre/none` — aucun
@@ -458,6 +470,29 @@ export function classifyMail(mail: MailInput): Classification {
     rx.resaNew.test(subj) || rx.resaMod.test(subj) || rx.resaCancel.test(subj) || rx.dedge.test(hay);
   if (rx.marketingSenders.test(from) && !looksLikeResa && senderDeleteOk) {
     return { category: 'spam_alert', action: 'delete', reason: 'Pub / marketing OTA (à supprimer)', detail: {} };
+  }
+
+  // 3-bis) Question d'un CLIENT sur sa facturation -> on laisse la main.
+  //     Surtout pas Pennylane (compta FOURNISSEURS) : ce serait envoyer notre propre
+  //     facture au mauvais endroit et laisser le client sans réponse.
+  //     Et surtout pas un brouillon automatique : la réponse se trouve dans le PMS
+  //     (Hotsoft à La Corniche), que l'assistant ne voit pas — il ne pourrait
+  //     qu'écrire « nous vérifions », ce qui ne vaut pas mieux que le silence.
+  //     L'équipe range ces mails dans « Clients / Factures clients » : 396 mails,
+  //     c'est un flux courant, pas un cas isolé.
+  //     ⚠️ Deuxième signal, mesuré sur 329 mails réels des dossiers de l'équipe :
+  //     un FIL (« Re: », « TR: ») portant sur une facture est TOUJOURS une discussion
+  //     en cours — un fournisseur envoie sa facture dans un mail neuf, jamais en
+  //     réponse. Sans ce signal, 9 mails clients sur 60 partaient encore chez
+  //     Pennylane (« Re: Facture relative à votre séjour », « RE: Facture OKKO »).
+  if (rx.facture.test(hay) && !from.includes('htbm.fr')
+      && (rx.factureQuestion.test(hay) || rx.reply.test(subj))) {
+    return {
+      category: 'facture_client',
+      action: 'none',
+      reason: 'Le client interroge sur sa facturation → à traiter par la réception, la réponse est dans le PMS',
+      detail: {},
+    };
   }
 
   // 3) Facture fournisseur en PJ -> routage Pennylane (l'entité se lira dans le PDF)
