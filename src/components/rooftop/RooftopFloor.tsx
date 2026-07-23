@@ -398,6 +398,27 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
     } catch { toast.error("Règlement OK, mais push Mews échoué (réseau)"); }
   };
 
+  // Charges (consommations) → Mews, une fois l'addition SOLDÉE. Complète le push
+  // du règlement : sans ça le folio Rooftop n'a que des paiements, et l'équipe
+  // ressaisit les consos à la main le lendemain. Poussé ici et pas à la clôture
+  // de service parce que Mews IGNORE la date de consommation qu'on lui envoie :
+  // une charge se date au jour du push, donc il faut pousser pendant le service.
+  // Silencieux en cas d'échec : l'addition est soldée, on ne bloque pas la caisse
+  // pour un problème de PMS — la route est idempotente, on pourra rejouer.
+  const syncChargesToMews = async (orderId: string) => {
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) return;
+      const res = await fetch("/api/rooftop/mews-charges", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ orderId }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) toast.error("Addition soldée, mais consommations non transmises à Mews");
+    } catch { toast.error("Addition soldée, mais consommations non transmises à Mews (réseau)"); }
+  };
+
   const addPayment = async () => {
     if (!active || active.statut === "encaissee") return;
     if (closed) { toast.error("Service clôturé — la caisse de ce jour est verrouillée."); return; }
@@ -427,6 +448,9 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
       }).eq("id", active.id);
       setBusy(false);
       if (e2) { toast.error(e2.message || "Erreur"); return; }
+      // L'addition est verrouillée (statut `encaissee`) : ses lignes ne bougeront
+      // plus, on peut poster les charges sans risque de correction ultérieure.
+      void syncChargesToMews(active.id);
       toast.success("Addition soldée ✓");
       closeActive(); setSelId(null); await reload();
     } else {

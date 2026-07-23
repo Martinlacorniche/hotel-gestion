@@ -8,7 +8,8 @@ import { requirePaymentAccess } from '@/lib/apiAuth';
 // (Checkout, PAS de facture → le PMS de l'hôtel reste la facture légale + TVA :
 // Hotsoft à la Corniche, Mews aux Voiles), renvoie le lien, et l'envoie par
 // email si demandé. Accès : admin/superadmin, ou rôle « user » pendant son shift.
-// Body: { hotelId, amount (€), description, email, clientNom?, leadId?, sendEmail }
+// Body: { hotelId, amount (€), description, email, clientNom?, leadId?, sendEmail,
+//         mewsCustomerId?, mewsReservationId? }
 export async function POST(req: Request) {
   const auth = await requirePaymentAccess(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -20,6 +21,10 @@ export async function POST(req: Request) {
   const description = String(body.description || '').trim();
   const email = String(body.email || '').trim();
   const clientNom = String(body.clientNom || '').trim();
+  // Réservation Mews rattachée au comptoir (Les Voiles). Facultatif : sans elle
+  // l'encaissement fonctionne comme avant, il ne part simplement pas dans le PMS.
+  const mewsCustomerId = String(body.mewsCustomerId || '').trim();
+  const mewsReservationId = String(body.mewsReservationId || '').trim();
   const hotelId = body.hotelId ? String(body.hotelId) : null;
   const leadId = body.leadId ? String(body.leadId) : null;
   const sendEmail = body.sendEmail !== false;
@@ -52,6 +57,10 @@ export async function POST(req: Request) {
       hotel_id: hotelId, type: 'manuel', lead_id: leadId,
       amount, currency: 'eur', description: description || null,
       client_nom: clientNom || null, email: email || null,
+      // Réservation Mews choisie au comptoir (Voiles). Renseignée = le webhook
+      // posera le règlement sur ce folio dès que Stripe le passe à « payé ».
+      mews_customer_id: mewsCustomerId || null,
+      mews_reservation_id: mewsReservationId || null,
       status: 'open',
       stripe_checkout_id: session.id,
       hosted_invoice_url: session.url,

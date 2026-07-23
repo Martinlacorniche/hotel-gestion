@@ -11,12 +11,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import CardTerminal from './CardTerminal';
-import {
-  CreditCard, Loader2, Search, Copy, Link2, Send,
-  RotateCcw, Mail, ExternalLink, ChevronLeft, ChevronRight, AlertTriangle,
-} from 'lucide-react';
+import { CreditCard, Loader2, Search, Copy, Link2, Send, RotateCcw, Mail, ExternalLink, ChevronLeft, ChevronRight, AlertTriangle, Check, X } from 'lucide-react';
 
 interface Hotel { id: string; nom: string }
+interface MewsResa {
+  reservationId: string; customerId: string; nom: string;
+  arrivee: string; depart: string; chambre: string | null; etat: string;
+}
 interface Payment {
   id: string; hotel_id: string | null; type: string;
   amount: number; currency: string; description: string | null;
@@ -24,7 +25,13 @@ interface Payment {
   hosted_invoice_url: string | null; created_at: string; paid_at: string | null; refunded_at: string | null;
   created_by: string | null; refunded_by: string | null; refund_reason: string | null;
   pms_done: boolean; method: string | null;
+  mews_customer_id: string | null; mews_reservation_id: string | null; mews_payment_id: string | null;
 }
+
+// Mews n'existe qu'aux Voiles — La Corniche tourne sur HotSoft, où rien ne se
+// pousse par API. Le rattachement d'un encaissement à une résa n'a donc de sens
+// que pour cet hôtel-là.
+const VOILES_HOTEL_ID = 'ded6e6fb-ff3c-4fa8-ad07-403ee316be53';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   open:     { label: 'En attente', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -60,6 +67,10 @@ export default function EncaissementPage() {
   const [sendEmail, setSendEmail] = useState(true);
   const [creating, setCreating] = useState(false);
   const [lastLink, setLastLink] = useState<string | null>(null);
+  // Réservation Mews rattachée AVANT paiement : le règlement partira tout seul
+  // sur le folio dès que Stripe le passe à « payé » (webhook). Sans rattachement,
+  // l'encaissement fonctionne comme avant — il ne part simplement pas dans le PMS.
+  const [resaLiee, setResaLiee] = useState<MewsResa | null>(null);
 
   // Historique : navigation par jour + recherche globale
   const ymd = (d: Date) => { const o = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return o.toISOString().slice(0, 10); };
@@ -69,6 +80,14 @@ export default function EncaissementPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('Tous');
   const [busyId, setBusyId] = useState<string | null>(null);
+  // ── Rattachement d'un encaissement à une réservation Mews (Les Voiles) ──────
+  // La réception encaissait via Stripe puis ressaisissait le règlement dans le PMS
+  // (d'où la case « PMS fait »). On pose désormais le règlement sur le folio du
+  // client — encore faut-il savoir lequel : Stripe ne connaît qu'un nom libre.
+  const [mewsTarget, setMewsTarget] = useState<Payment | null>(null);
+  const [mewsQuery, setMewsQuery] = useState('');
+  const [mewsResults, setMewsResults] = useState<MewsResa[]>([]);
+  const [mewsSearching, setMewsSearching] = useState(false);
   const [refundTarget, setRefundTarget] = useState<Payment | null>(null);
   const [refundReason, setRefundReason] = useState('');
   const searching = debouncedSearch.trim().length > 0;
@@ -123,7 +142,10 @@ export default function EncaissementPage() {
     try {
       const res = await fetch('/api/paiements/create', {
         method: 'POST', headers: await authHeaders(),
-        body: JSON.stringify({ hotelId, amount: amt, description, email: email.trim(), clientNom: clientNom.trim(), sendEmail }),
+        body: JSON.stringify({
+          hotelId, amount: amt, description, email: email.trim(), clientNom: clientNom.trim(), sendEmail,
+          mewsCustomerId: resaLiee?.customerId, mewsReservationId: resaLiee?.reservationId,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Erreur');
@@ -131,7 +153,7 @@ export default function EncaissementPage() {
       if (sendEmail && json.emailed) toast.success('Demande envoyée par email');
       else if (sendEmail && !json.emailed) toast.error('Lien créé, mais email NON envoyé : ' + (json.emailError || 'raison inconnue'), { duration: 8000 });
       else toast.success('Lien de paiement créé');
-      setAmount(''); setDescription(''); setClientNom(''); setEmail('');
+      setAmount(''); setDescription(''); setClientNom(''); setEmail(''); setResaLiee(null);
       await loadPayments();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Erreur');
@@ -160,6 +182,37 @@ export default function EncaissementPage() {
     } finally {
       setBusyId(null);
     }
+  }
+
+  async function searchResa(q: string) {
+    setMewsQuery(q);
+    if (q.trim().length < 2) { setMewsResults([]); return; }
+    setMewsSearching(true);
+    try {
+      const res = await fetch('/api/mews/reservations/search', {
+        method: 'POST', headers: await authHeaders(), body: JSON.stringify({ q: q.trim() }),
+      });
+      const json = await res.json();
+      setMewsResults(res.ok && json.ok ? json.results : []);
+    } catch { setMewsResults([]); }
+    finally { setMewsSearching(false); }
+  }
+
+  async function pushToMews(p: Payment, r: MewsResa) {
+    setBusyId(p.id);
+    try {
+      const res = await fetch('/api/paiements/mews', {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ paymentId: p.id, customerId: r.customerId, reservationId: r.reservationId }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Erreur');
+      toast.success(json.already ? 'Déjà transmis à Mews' : `Règlement posé sur le folio de ${r.nom}`);
+      setMewsTarget(null); setMewsQuery(''); setMewsResults([]);
+      await loadPayments();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erreur');
+    } finally { setBusyId(null); }
   }
 
   async function togglePms(p: Payment, done: boolean) {
@@ -267,8 +320,46 @@ export default function EncaissementPage() {
                 <div className="grid sm:grid-cols-2 gap-4">
                   <label className="block">
                     <span className="text-xs font-medium text-slate-500 mb-1 block">Client</span>
-                    <input value={clientNom} onChange={e => setClientNom(e.target.value)} placeholder="Nom du client"
+                    <input value={clientNom}
+                      onChange={e => {
+                        setClientNom(e.target.value);
+                        // Aux Voiles, le nom saisi cherche la réservation en direct :
+                        // la rattacher AVANT le paiement évite d'avoir à revenir
+                        // pousser le règlement dans le PMS après coup.
+                        if (hotelId === VOILES_HOTEL_ID) { setResaLiee(null); void searchResa(e.target.value); }
+                      }}
+                      placeholder="Nom du client"
                       className="w-full border rounded-lg px-3 h-11 text-sm bg-white" />
+                    {hotelId === VOILES_HOTEL_ID && (
+                      resaLiee ? (
+                        <div className="mt-1.5 flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800">
+                          <Check className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">
+                            <b>{resaLiee.nom}</b>{resaLiee.chambre ? ` · ch. ${resaLiee.chambre}` : ''} · {new Date(resaLiee.arrivee).toLocaleDateString('fr-FR')} → {new Date(resaLiee.depart).toLocaleDateString('fr-FR')}
+                          </span>
+                          <button type="button" onClick={() => setResaLiee(null)} className="ml-auto p-0.5 rounded hover:bg-indigo-100"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                      ) : mewsResults.length > 0 ? (
+                        <div className="mt-1.5 max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+                          {mewsResults.map(r => (
+                            <button type="button" key={r.reservationId} onClick={() => { setResaLiee(r); setClientNom(r.nom); setMewsResults([]); }}
+                              className="w-full text-left px-3 py-2 hover:bg-indigo-50/60 border-b border-slate-50 last:border-0">
+                              <div className="text-sm text-slate-800 flex items-center gap-2">
+                                {r.nom}
+                                {r.etat === 'Started' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">en maison</span>}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {r.chambre ? `Chambre ${r.chambre} · ` : ''}{new Date(r.arrivee).toLocaleDateString('fr-FR')} → {new Date(r.depart).toLocaleDateString('fr-FR')}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : mewsSearching ? (
+                        <p className="mt-1.5 text-xs text-slate-400">Recherche de la réservation…</p>
+                      ) : (
+                        <p className="mt-1.5 text-xs text-slate-400">Tape le nom pour rattacher la réservation — le règlement partira seul dans Mews.</p>
+                      )
+                    )}
                   </label>
                   <label className="block">
                     <span className="text-xs font-medium text-slate-500 mb-1 block">Email {mode === 'lien' && sendEmail ? '*' : <span className="text-slate-300">(reçu, optionnel)</span>}</span>
@@ -394,6 +485,18 @@ export default function EncaissementPage() {
                         {p.pms_done ? 'Traité PMS' : 'À saisir PMS'}
                       </label>
                     )}
+                    {p.status === 'paid' && p.hotel_id === VOILES_HOTEL_ID && !p.mews_payment_id && (
+                      <button onClick={() => { setMewsTarget(p); setMewsQuery(p.client_nom || ''); void searchResa(p.client_nom || ''); }}
+                        disabled={busyId === p.id} title="Poser ce règlement sur le folio du client dans Mews"
+                        className="text-xs px-2.5 h-8 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 inline-flex items-center gap-1">
+                        <Search className="w-3.5 h-3.5" /> Envoyer dans Mews
+                      </button>
+                    )}
+                    {p.mews_payment_id && (
+                      <span className="text-xs px-2.5 h-8 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 inline-flex items-center gap-1" title="Règlement posé sur le folio Mews">
+                        <Check className="w-3.5 h-3.5" /> Dans Mews
+                      </span>
+                    )}
                     {p.status === 'paid' && (
                       <button onClick={() => { setRefundTarget(p); setRefundReason(''); }} disabled={busyId === p.id} title="Rembourser"
                         className="text-xs px-2.5 h-8 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1">
@@ -409,6 +512,46 @@ export default function EncaissementPage() {
       </div>
 
       {/* Modal remboursement — motif obligatoire */}
+      {/* Rattacher un encaissement à une réservation Mews. Le nom saisi au comptoir
+          sert d'amorce ; les DATES et la CHAMBRE sont là pour trancher — un même
+          client peut avoir plusieurs séjours (cas vu en réel : 3 le même jour). */}
+      {mewsTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setMewsTarget(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                <Search className="w-4 h-4 text-indigo-600" /> Sur quelle réservation ?
+              </h2>
+              <button onClick={() => setMewsTarget(null)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><X className="w-4 h-4" /></button>
+            </div>
+            <p className="text-xs text-slate-500 mb-3">
+              {Number(mewsTarget.amount).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} € seront posés sur le folio du client dans Mews.
+            </p>
+            <input autoFocus value={mewsQuery} onChange={e => void searchResa(e.target.value)}
+              placeholder="Nom du client…"
+              className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+            <div className="max-h-72 overflow-y-auto -mx-1 px-1">
+              {mewsSearching && <div className="text-xs text-slate-400 py-3 text-center">Recherche…</div>}
+              {!mewsSearching && mewsQuery.trim().length >= 2 && mewsResults.length === 0 && (
+                <div className="text-xs text-slate-400 py-3 text-center">Aucune réservation à ce nom (fenêtre : 30 jours en arrière, 65 en avant).</div>
+              )}
+              {mewsResults.map(r => (
+                <button key={r.reservationId} onClick={() => void pushToMews(mewsTarget, r)} disabled={busyId === mewsTarget.id}
+                  className="w-full text-left px-3 py-2.5 rounded-lg border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/50 mb-1.5 disabled:opacity-50">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-slate-800">{r.nom}</span>
+                    {r.etat === 'Started' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">en maison</span>}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {r.chambre ? `Chambre ${r.chambre} · ` : ''}{new Date(r.arrivee).toLocaleDateString('fr-FR')} → {new Date(r.depart).toLocaleDateString('fr-FR')}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {refundTarget && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}
           onClick={e => { if (e.target === e.currentTarget && busyId !== refundTarget.id) setRefundTarget(null); }}>

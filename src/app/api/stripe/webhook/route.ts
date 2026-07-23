@@ -3,6 +3,7 @@ import type Stripe from 'stripe';
 import { Resend } from 'resend';
 import { getStripe, getWebhookSecrets, senderFor } from '@/lib/stripe';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { pushPaymentToMews } from '@/lib/mews';
 
 // Base publique du site invité (Site-BW) pour le lien « gérer ma réservation ».
 const SITE_BW_BASE = process.env.NEXT_PUBLIC_SITE_BW_URL || 'https://sitehtbm.netlify.app';
@@ -82,6 +83,21 @@ export async function POST(req: Request) {
         const { data: pay } = await supabaseAdmin.from('payments')
           .update({ status: 'paid', paid_at: new Date().toISOString(), stripe_payment_intent_id: pi })
           .eq('stripe_checkout_id', s.id).select().single();
+        // Le règlement est encaissé ET une réservation Mews a été rattachée à la
+        // création → on le pose sur le folio du client, sans geste humain. C'est
+        // la raison d'être du rattachement en amont : la réception n'a plus à
+        // revenir cocher « PMS fait » ni à recopier le montant dans le PMS.
+        // Best-effort : un échec Mews ne doit jamais faire retourner une erreur à
+        // Stripe (il rejouerait le webhook). Le bouton de rattrapage reste là.
+        if (pay?.id && pay?.mews_customer_id) {
+          try {
+            const { id: mewsId, skipped } = await pushPaymentToMews(pay.id);
+            if (skipped) console.warn('Mews: encaissement non transmis —', skipped, pay.id);
+            else console.log('Mews: encaissement posé sur le folio', mewsId);
+          } catch (e) {
+            console.error('Mews: push encaissement échoué', pay.id, e instanceof Error ? e.message : e);
+          }
+        }
         // Répercute sur le dossier commercial lié (cumul des règlements)
         if (pay?.lead_id) {
           const { data: lead } = await supabaseAdmin.from('suivi_commercial').select('montant_paye').eq('id', pay.lead_id).single();

@@ -16,6 +16,7 @@ import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '
 import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
 import { parseRooftopMail, normalizeHeure, normName } from '@/lib/rooftopMail';
 import { receptionOnDuty } from '@/lib/onDuty';
+import { syncControlNote, type NoteSyncResult } from '@/lib/mewsNotes';
 import type { HotelMailConfig, MailCategory } from '@/lib/mailAssistant';
 
 const LLM_MODEL = 'claude-sonnet-4-6';   // même modèle que /api/brief, /api/fiche-audit
@@ -213,14 +214,17 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
 
   let dejaVenu: boolean | null = null;   // null = info indisponible (Corniche / Mews KO)
   let cityTax: number | null = null;     // TS exacte à encaisser sur place (VCC, Voiles)
+  let mewsResaId: string | null = null;  // pour écrire la note directement dans le PMS
   if (cfg.mews && r.guestLast) {
     try {
       const g = await findGuest(r.guestFirst, r.guestLast);
       dejaVenu = g ? await hasPastStay(g.id) : false;   // pas de profil Mews = 1er séjour
+      // La réservation sert à DEUX choses : la taxe de séjour exacte, et l'écriture
+      // de la note. On la cherche donc dès qu'on a le profil, plus seulement en VCC.
+      if (g && r.arrivalISO) mewsResaId = await findReservation(g.id, r.arrivalISO);
       // TS exacte : VCC (la carte virtuelle ne couvre pas la taxe) OU Swile prépayé (TS sur place).
-      if (g && (r.payment === 'vcc' || r.source === 'Swile') && r.arrivalISO) {
-        const resaId = await findReservation(g.id, r.arrivalISO);
-        if (resaId) cityTax = (await cityTaxForReservation(resaId))?.amount ?? null;
+      if (mewsResaId && (r.payment === 'vcc' || r.source === 'Swile')) {
+        cityTax = (await cityTaxForReservation(mewsResaId))?.amount ?? null;
       }
     } catch {
       dejaVenu = null;   // Mews indisponible : on ne bloque pas la note pour autant
@@ -248,10 +252,31 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
     note += ' · NE RIEN RÉCLAMER (chambre prépayée)';
     if (r.specialRequests) note += ` · ⚠️ DEMANDES VOYAGEUR : ${r.specialRequests} → RÉPONDRE`;
   }
+  // ÉCRITURE DE LA NOTE DANS LE PMS (2026-07-23). Jusqu'ici on la rendait à l'écran
+  // avec un bouton « Copier » et la réception la retapait — parce qu'on croyait la
+  // note de réservation inaccessible au Connector. Elle ne l'est pas (cf mewsNotes).
+  // Best-effort : si Mews refuse, la note reste affichée et rien n'est perdu.
+  let pms: NoteSyncResult | null = null;
+  if (cfg.mews && mewsResaId) {
+    try {
+      const { data: known } = await supabaseAdmin
+        .from('mews_reservation_notes').select('note_id').eq('reservation_id', mewsResaId).maybeSingle();
+      pms = await syncControlNote({ reservationId: mewsResaId, text: note, knownNoteId: known?.note_id ?? null });
+      if (pms.noteId) {
+        await supabaseAdmin.from('mews_reservation_notes').upsert({
+          reservation_id: mewsResaId, note_id: pms.noteId, hotel_id: cfg.hotelId,
+          text: note, updated_at: new Date().toISOString(),
+        }, { onConflict: 'reservation_id' });
+      }
+    } catch (e) {
+      console.error('resa_control: note PMS non écrite', mewsResaId, e instanceof Error ? e.message : e);
+    }
+  }
+
   return {
     status: 'executed',
     result: {
-      kind: 'resa_control', note, dejaVenu, cityTax, linked,
+      kind: 'resa_control', note, dejaVenu, cityTax, linked, pms,
       resa: {
         ref: r.ref, source: r.source, guest: r.guestName, arrival: r.arrival, departure: r.departure,
         nights: r.nights, guests: r.guests, room: r.roomType, amount: r.amount,

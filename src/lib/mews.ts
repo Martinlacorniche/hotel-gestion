@@ -16,6 +16,8 @@
 // certification. Le champ `Client` doit rester unique et stable : c'est la clé
 // qui leur permet de retrouver nos appels dans leurs logs.
 
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
+
 const MEWS_BASE = process.env.MEWS_BASE || 'https://api.mews.com/api/connector/v1';
 const MEWS_CLIENT = process.env.MEWS_CLIENT_NAME || 'Hotel Les Voiles Integration INT004073';
 
@@ -375,6 +377,44 @@ export async function addExternalPayment(params: {
   return { id: res.ExternalPaymentId ?? null };
 }
 
+// Pose dans Mews un encaissement Stripe déjà réglé, sur le folio du client
+// rattaché à l'avance. Idempotent : on ne repousse jamais un paiement qui porte
+// déjà un `mews_payment_id` — un doublon sur un folio se solde par un
+// remboursement à tort, et rien dans l'API ne permet de l'annuler proprement.
+//
+// Appelée depuis le webhook Stripe (au passage à « payé ») ET depuis le bouton
+// de rattrapage de /encaissement, d'où la centralisation ici.
+export async function pushPaymentToMews(paymentId: string): Promise<{ id: string | null; skipped?: string }> {
+  const { data: p } = await supabaseAdmin
+    .from('payments')
+    .select('id, hotel_id, amount, currency, status, method, client_nom, description, stripe_payment_intent_id, mews_customer_id, mews_payment_id')
+    .eq('id', paymentId).single();
+  if (!p) return { id: null, skipped: 'introuvable' };
+  if (p.mews_payment_id) return { id: p.mews_payment_id, skipped: 'déjà transmis' };
+  if (!p.mews_customer_id) return { id: null, skipped: 'aucune réservation rattachée' };
+  if (p.status !== 'paid') return { id: null, skipped: `statut ${p.status}` };
+  const amount = Number(p.amount);
+  if (!(amount > 0)) return { id: null, skipped: 'montant invalide' };
+
+  const type: MewsExternalPaymentType =
+    ({ cb: 'CreditCard', carte: 'CreditCard', tpe: 'CreditCard', amex: 'Amex', espece: 'Cash' } as const)[
+      String(p.method || 'cb').toLowerCase() as 'cb'
+    ] ?? 'CreditCard';
+
+  const { id } = await addExternalPayment({
+    accountId: p.mews_customer_id,
+    grossValue: amount,
+    type,
+    currency: (p.currency || 'EUR').toUpperCase(),
+    externalIdentifier: p.stripe_payment_intent_id || p.id,
+    notes: `Encaissement ${p.client_nom || ''}${p.description ? ' · ' + p.description : ''}`.trim(),
+  });
+  await supabaseAdmin.from('payments')
+    .update({ mews_payment_id: id, pms_done: true })   // le règlement EST dans le PMS
+    .eq('id', p.id);
+  return { id };
+}
+
 // ── Pré-remplissage caisse (Voiles) depuis Mews ──────────────────────────────
 // Récupère les encaissements du jour (heure de Paris) et les range par LIGNE de
 // caisse (TPE CB / Amex / Espèces / ANCV / Virement) et par SHIFT (matin 6h-14h,
@@ -388,6 +428,65 @@ export type CaissePrefill = { matin: CaisseShiftAmounts; soir: CaisseShiftAmount
 
 const ROOFTOP_ACCOUNT_ID_EXCL =
   process.env.MEWS_ROOFTOP_ACCOUNT_ID || 'd3451171-ce99-42cc-b412-b47c00f8a967';
+
+// ── ÉCRITURE : poster les CHARGES d'une addition Rooftop ─────────────────────
+// Jusqu'au 2026-07-23, seul le RÈGLEMENT partait dans Mews : le folio « Rooftop
+// 2026 » accumulait des paiements sans contrepartie, et l'équipe saisissait les
+// charges à la main, avec un jour de décalage. `orders/add` était fermé (401) —
+// la certification l'a ouvert.
+//
+// On reproduit exactement la saisie manuelle, relevée sur le folio : un
+// `ProductOrder` par TAUX DE TVA, sur le service « ROOFTOP » (Additional),
+// catégorie comptable ROOFTOP (630), avec deux produits à prix libre :
+//   · « F&B BAR 10% » (code taxe FR-R) · « F&B BAR 20% » (code taxe FR-S)
+// Le montant est passé en TTC (l'entreprise est en gross pricing), Mews en
+// déduit la taxe — vérifié : 26,50 € → 4,42 € au taux 20 %.
+//
+// ⚠️ `ConsumedUtc` est IGNORÉ par Mews, y compris à l'intérieur de l'item
+// (testé le 2026-07-23) : une charge se date TOUJOURS au jour où on la pousse.
+// C'est pour ça qu'on pousse à la clôture de l'addition, pendant le service, et
+// non en différé : la date est alors juste par construction.
+// ⚠️ `Notes` est ignoré aussi. `ExternalIdentifier`, lui, EST enregistré — c'est
+// notre seule trace pour relier une ligne Mews à une addition du POS.
+const ROOFTOP_SERVICE_ID =
+  process.env.MEWS_ROOFTOP_SERVICE_ID || 'f20f67f0-d473-4e20-b542-b47c008100f2';
+const ROOFTOP_PRODUCT_10 =
+  process.env.MEWS_ROOFTOP_PRODUCT_10 || '7c31a216-afca-4a1c-a94e-b47c00d33951';
+const ROOFTOP_PRODUCT_20 =
+  process.env.MEWS_ROOFTOP_PRODUCT_20 || '7a161e5b-da7e-4d3d-8ab0-b47c00d3654b';
+
+export async function addRooftopCharges(params: {
+  accountId?: string;
+  ttc10: number;
+  ttc20: number;
+  externalPrefix: string;   // id de l'addition POS → traçabilité + anti-doublon
+  currency?: string;
+}): Promise<{ id: string | null; lines: number }> {
+  const { ttc10, ttc20, externalPrefix, currency = 'EUR' } = params;
+  const accountId = params.accountId || ROOFTOP_ACCOUNT_ID_EXCL;
+  const Items: Record<string, unknown>[] = [];
+  // Une ligne par taux, et seulement si elle porte un montant : une addition
+  // 100 % soft ne doit pas poser une ligne à 0 € au taux 20 %.
+  if (ttc10 > 0) {
+    Items.push({
+      ProductId: ROOFTOP_PRODUCT_10, UnitCount: 1,
+      ExternalIdentifier: `${externalPrefix}-10`,
+      UnitAmount: { Currency: currency, GrossValue: ttc10, TaxCodes: ['FR-R'] },
+    });
+  }
+  if (ttc20 > 0) {
+    Items.push({
+      ProductId: ROOFTOP_PRODUCT_20, UnitCount: 1,
+      ExternalIdentifier: `${externalPrefix}-20`,
+      UnitAmount: { Currency: currency, GrossValue: ttc20, TaxCodes: ['FR-S'] },
+    });
+  }
+  if (!Items.length) return { id: null, lines: 0 };
+  const res = await callMews<{ Id?: string; OrderId?: string }>('orders/add', {
+    ServiceId: ROOFTOP_SERVICE_ID, AccountId: accountId, Items,
+  });
+  return { id: res.Id ?? res.OrderId ?? null, lines: Items.length };
+}
 
 type MewsPaymentLite = {
   State?: string; Type?: string; AccountId?: string; ChargedUtc?: string;
