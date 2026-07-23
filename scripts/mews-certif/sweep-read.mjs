@@ -134,6 +134,17 @@ await probe('customers/getAll', {
   Limitation: { Count: 50 },
 }, 'borne');
 await probe('customers/search', { Text: 'a', Limitation: { Count: 20 } }, 'borne');
+// ⚠️ `cancellationPolicies/getAll` EST CASSÉ CÔTÉ MEWS — vérifié à fond le 2026-07-23 après
+// que Milan Bezdecka (Mews) a suggéré que nous passions l'ID d'un service additionnel au lieu
+// d'un service réservable. Ce n'est pas ça :
+//   · sans aucun filtre        → 400 « Please specify at least one of the filters: UpdatedUtc,
+//                                 RateGroupIds, CancellationPolicyIds » (ServiceIds n'y est pas)
+//   · RateGroupIds (les nôtres, service « Stay », Bookable)      → 400 « Invalid ServiceIds. »
+//   · RateGroupIds tirés de SON service (« Overnight », Bookable) → 400 « Invalid ServiceIds. »
+//   · UpdatedUtc seul, CancellationPolicyIds seul                 → 400 « Invalid ServiceIds. »
+// L'opération valide donc un champ `ServiceIds` que l'appelant ne peut pas lui fournir et qui
+// n'apparaît pas dans sa propre liste de filtres. Les deux variantes dont la borne a besoin
+// (`getByRates`, `getByReservations`) fonctionnent — c'est par là qu'on passe.
 await probe('cancellationPolicies/getAll', { RateGroupIds: rateGroupIds, Limitation: { Count: 50 } }, 'borne');
 await probe('ageCategories/getAll', { ServiceIds: bookableIds, Limitation: { Count: 50 } }, 'borne');
 

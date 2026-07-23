@@ -34,15 +34,20 @@ async function handle(req: Request) {
     return NextResponse.json({ ok: false, error: 'HTBM_HOTEL_UUID manquant' }, { status: 500 });
   }
 
-  // 2) Capacité = nb de chambres vendables suivies aux Voiles (table chambres).
-  const { count, error: capErr } = await supabaseAdmin
+  // 2) Capacité = nb de chambres VENDABLES aux Voiles.
+  //    ⚠️ La table `chambres` sert AUSSI d'inventaire de serrures (colonnes `tthotel_lock_*`) :
+  //    elle contient des portes qui ne se louent pas — « Cuisine » et « Bureau ». Les compter
+  //    donnait une capacité de 18 au lieu de 16, soit un dénominateur gonflé de 12,5 % et un
+  //    taux d'occupation sous-estimé d'autant (juillet 2026 affichait 70,1 % au lieu de 78,8 %).
+  //    Une chambre vendable porte un NUMÉRO ; les locaux de service portent un nom.
+  const { data: rooms, error: capErr } = await supabaseAdmin
     .from('chambres')
-    .select('id', { count: 'exact', head: true })
+    .select('numero')
     .eq('hotel_id', voilesId);
   if (capErr) {
     return NextResponse.json({ ok: false, error: `chambres: ${capErr.message}` }, { status: 500 });
   }
-  const capacity = count || 0;
+  const capacity = (rooms || []).filter((r) => /^\s*\d+\s*$/.test(String(r.numero ?? ''))).length;
   if (capacity === 0) {
     return NextResponse.json({ ok: false, error: 'capacité 0 (aucune chambre en base)' }, { status: 500 });
   }

@@ -46,22 +46,24 @@ Full per-endpoint matrices: `docs/mews-capacites-{lecture,ecriture,complement,ra
 
 ---
 
-## 3. Two things we need from Mews
+## 3. What we need from Mews
 
-**a) Card payments are not enabled on the shared demo enterprise.**
-`payments/addCreditCard` returns **403 "Invalid identifier"** for every card type and every obfuscation format. Because `payments/refund` only accepts card and alternative payments, **it cannot be exercised at all**. Both are declared in our form. → Please enable card payments on the demo enterprise, or tell us how to certify these two.
+**a) Real-time.** We subscribed to webhooks (Service Order Updated, Resource Updated, Resource Block Updated, Customer Added/Updated, Payment Updated) and websocket events (Command, Reservation, Resource, Price update). Our endpoint is live and answers 200 to both GET and POST. Without them we would have to poll — which is worse for us *and* for your rate limits.
 
-**b) Real-time.** We subscribed to webhooks (Service Order Updated, Resource Updated, Resource Block Updated, Customer Added/Updated, Payment Updated) and websocket events (Command, Reservation, Resource, Price update). Our endpoint is live and answers 200 to both GET and POST. Without them we would have to poll — which is worse for us *and* for your rate limits.
+**b) The path to production** on the real property. The connectivity add-on is confirmed enabled (Milan Bezdecka, 20 July 2026) — we need to know what remains on our side to obtain production credentials.
+
+> **Resolved 23 July 2026 — card payments.** This section previously reported that card payments were disabled on the demo enterprise, `payments/addCreditCard` returning 403 "Invalid identifier" for every card format. That diagnosis was **wrong, and the fault was ours**: the demo enterprise's default currency is **GBP** and we were sending **EUR**, because we read `Enterprise.DefaultCurrencyCode` from `configuration/get` — a field that does not exist in the response (the default is the `IsDefault` entry of `Enterprise.Currencies[]`), so we fell back to a hard-coded EUR. With the correct currency, `payments/addCreditCard` **and** `payments/refund` both succeed. Nothing is needed from Mews here.
 
 ---
 
-## 4. Three defects found on your side
+## 4. Two defects found on your side
 
 | Operation | Symptom |
 |---|---|
-| `accountNotes/update` | Constant **500** ("Something went wrong on our end"), reproducible. Workaround: delete + re-add. |
-| `cancellationPolicies/getAll` | Returns **"Invalid ServiceIds"** even when **no** `ServiceIds` is sent, whatever the filter. Workaround: `getByRates` / `getByReservations`, which both work. |
+| `cancellationPolicies/getAll` | Returns **"Invalid ServiceIds"** even when **no** `ServiceIds` is sent — with `RateGroupIds` (ours or Mews'), with `UpdatedUtc` alone, with `CancellationPolicyIds` alone. `ServiceIds` is not among the filters its own error message lists. Re-verified 23 July 2026. Workaround: `getByRates` / `getByReservations`, which both work. |
 | `fiscalMachineCommands/getAll` | Returns **"Invalid JSON"** for every body, including an empty one. |
+
+> **Withdrawn 23 July 2026 — `accountNotes/update`.** We reported a constant 500. It was **our** payload: a note carries **one** classification, and we were setting two to `true` in the same update. Setting the previous one explicitly to `false` returns 200 (Milan Bezdecka, Mews). Only the error code was misleading — a 400 naming the constraint would have saved the round trip.
 
 ---
 

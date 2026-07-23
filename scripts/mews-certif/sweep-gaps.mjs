@@ -47,7 +47,13 @@ function midnight(n) {
 section('Découverte');
 const config = await call('configuration/get', {}, { module: 'socle', label: 'config' });
 HOTEL_TZ = config?.Enterprise?.TimeZoneIdentifier || 'UTC';
-const currency = config?.Enterprise?.DefaultCurrencyCode || 'EUR';
+// ⚠️ LA DEVISE N'EST PAS DANS `DefaultCurrencyCode` — ce champ n'existe pas dans la réponse
+// de `configuration/get`. Elle est dans `Enterprise.Currencies[]`, sur la ligne `IsDefault`.
+// On lisait donc `undefined` et on retombait en silence sur EUR, alors que la démo est en GBP
+// — d'où le 403 « Invalid identifier » de `payments/addCreditCard` (Milan Bezdecka, Mews,
+// 2026-07-22 : le même appel passe chez lui, en GBP, avec nos tokens).
+const currency = (config?.Enterprise?.Currencies || []).find((c) => c.IsDefault)?.Currency
+  || config?.Enterprise?.DefaultCurrencyCode || 'EUR';
 
 const services = await call('services/getAll', { Limitation: { Count: 1000 } }, { module: 'socle', label: 'services' });
 const recent = await call('reservations/getAll', {
@@ -169,11 +175,16 @@ if (clientId) {
   if (noteId) {
     // Asymétrie piégeuse : à l'AJOUT, Classifications est un TABLEAU d'énumérés ;
     // à la MODIFICATION, c'est un OBJET de booléens (chacun en « update value »).
+    //
+    // ⚠️ UNE NOTE NE PORTE QU'UNE SEULE CLASSIFICATION (Milan Bezdecka, Mews, 2026-07-22).
+    // En poser deux à `true` en même temps renvoyait un 500 — que nous avions pris pour
+    // une panne de leur côté. Pour RECLASSER une note, il faut donc éteindre l'ancienne
+    // classification dans le même appel : c'est un remplacement, pas un ajout.
     await call('accountNotes/update', {
       AccountNoteUpdates: [{
         AccountNoteId: noteId,
         Content: { Value: `${tag} — corrigée` },
-        Classifications: { FrontOffice: { Value: true }, PreviousStay: { Value: true } },
+        Classifications: { FrontOffice: { Value: false }, PreviousStay: { Value: true } },
       }],
     }, { module: 'reception', label: 'corriger la note de fiche', retries: 2 });
     await call('accountNotes/delete', {

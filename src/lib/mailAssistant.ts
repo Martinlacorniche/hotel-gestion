@@ -118,6 +118,19 @@ const rx = {
   // « JARRY / Sud concerts ». Une facture de commission de leur part est DUE : elle ne doit
   // jamais déclencher le brouillon « nos réservations ne sont pas commissionnables ».
   commissionablePartners: /@madamehotels\.fr/i,
+  // 🆕 CANAL BEST WESTERN — La Corniche est un BW Plus : la centrale nous envoie les demandes
+  // d'affaires captées par ses chargés de compte. Sujet toujours « Nouvelle demande pour <hôtel>
+  // (BY-xxxxxxx) », expéditeur = un humain @bestwestern.fr. C'est un des GROS canaux de leads de
+  // la Corniche (8 dossiers en base : URETEK, Genmills, NORAUTO, AXA, CNRS, ZOLL…), et il tombait
+  // en `autre/none`. ⚠️ Pourquoi la règle 5 (`rx.commercial`) ne l'attrape pas : le type
+  // d'événement (« Convention, Séminaire, Voyage d'entreprise ») est DANS LE CORPS, bien au-delà
+  // des ~255 car. du `bodyPreview`. Le sujet, lui, est stable → on trie dessus.
+  bwLead: /nouvelle demande pour\b|\bBY-\d{6,}\b/i,
+  bwFrom: /@bestwestern\.fr$/i,
+  // ⛔ PAS DE RÈGLE « CV EN PIÈCE JOINTE » (tranché Martin 2026-07-23). Le cas vécu ce jour
+  // (objet « Please print 15 copies », corps vide, PJ `CV.pdf` — un chef italien qui démarche)
+  // relève de l'EXCEPTIONNEL : on le laisse aux équipes, en `autre/none`. Une candidature qui
+  // se nomme (mot « candidature », « alternance »…) reste attrapée par `rx.candidature`.
   // Pub / marketing envoyée par les OTA elles-mêmes (Expedia « Maximisez vos revenus »…).
   // ⚠️ Ces expéditeurs peuvent AUSSI porter de vraies notifications de réservation → la règle
   // ne s'applique qu'aux mails qui ne ressemblent pas à une résa (Martin 2026-07-10).
@@ -463,6 +476,28 @@ export function classifyMail(mail: MailInput): Classification {
   //     existant, la réception note « G dispo » sur la fiche — rien à envoyer automatiquement.
   if (rx.monsieurCocktail.test(from)) {
     return { category: 'commercial', action: 'none', reason: 'Monsieur Cocktail (partenaire traiteur cocktail) → fil commercial, à noter par la réception', detail: { partner: 'Monsieur Cocktail' } };
+  }
+
+  // 4c) DEMANDE D'AFFAIRES ENVOYÉE PAR LA CENTRALE BEST WESTERN -> suivi_commercial.
+  //     La Corniche est un BW Plus : ses chargés de compte nous transmettent des demandes de
+  //     séminaire/groupe avec une référence `BY-xxxxxxx`. Canal récurrent et productif en
+  //     volume (8 dossiers en base). Placé avant la règle 5, qui ne peut pas voir le type
+  //     d'événement (« Convention, Séminaire ») : il est dans le corps, hors des ~255 car.
+  //     de `bodyPreview`. L'objet, lui, est stable.
+  //     ⚠️ ACTION `none` — VOULU (Martin 2026-07-23) : « on classe en attendant la réponse ».
+  //     Surtout PAS `commercial_followup` (fiche + relance + brouillon de pré-qualif auto) :
+  //     sur ces demandes la première question n'est pas « que manque-t-il au brief ? » mais
+  //     « est-ce qu'on peut seulement l'accueillir ? ». Vécu ce jour sur BY-1881460 — la salle
+  //     de séminaire était déjà prise par un autre client sur l'une des deux dates ; ouvrir une
+  //     fiche et envoyer des questions au prospect avant de le savoir aurait été à côté.
+  //     La fiche se monte à la main, une fois la faisabilité connue.
+  if (rx.bwFrom.test(from) && rx.bwLead.test(subj)) {
+    return {
+      category: 'commercial',
+      action: 'none',
+      reason: 'Demande d’affaires de la centrale Best Western → vérifier la faisabilité (salle, chambres) avant d’ouvrir un dossier',
+      detail: { canal: 'Best Western', ref: subj.match(/\bBY-\d{6,}\b/i)?.[0]?.toUpperCase() || null },
+    };
   }
 
   // 5) Demande commerciale (séminaire / devis / groupe pro) -> suivi_commercial

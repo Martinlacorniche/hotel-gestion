@@ -48,7 +48,13 @@ function midnight(n) {
 section('Découverte');
 const config = await call('configuration/get', {}, { module: 'socle', label: 'config' });
 HOTEL_TZ = config?.Enterprise?.TimeZoneIdentifier || 'UTC';
-const currency = config?.Enterprise?.DefaultCurrencyCode || 'EUR';
+// ⚠️ LA DEVISE N'EST PAS DANS `DefaultCurrencyCode` — ce champ n'existe pas dans la réponse
+// de `configuration/get`. Elle est dans `Enterprise.Currencies[]`, sur la ligne `IsDefault`.
+// On lisait donc `undefined` et on retombait en silence sur EUR, alors que la démo est en GBP
+// — d'où le 403 « Invalid identifier » de `payments/addCreditCard` (Milan Bezdecka, Mews,
+// 2026-07-22 : le même appel passe chez lui, en GBP, avec nos tokens).
+const currency = (config?.Enterprise?.Currencies || []).find((c) => c.IsDefault)?.Currency
+  || config?.Enterprise?.DefaultCurrencyCode || 'EUR';
 
 const services = await call('services/getAll', { Limitation: { Count: 1000 } }, { module: 'socle', label: 'services' });
 const recent = await call('reservations/getAll', {
@@ -132,6 +138,10 @@ const cardClient = await call('customers/add', {
 }, { module: 'pos', label: 'client CB' });
 
 if (cardClient?.Id) {
+  // Payload aligné sur celui que Mews nous a envoyé et qui passe chez eux AVEC NOS TOKENS
+  // (Milan Bezdecka, 2026-07-22). Deux écarts corrigés : la devise (voir plus haut — la démo
+  // est en GBP, on envoyait EUR) et les trois champs de traçabilité du paiement externe.
+  // `ReceiptIdentifier` = le n° de ticket du terminal qui a réellement encaissé.
   const cardPay = await call('payments/addCreditCard', {
     CustomerId: cardClient.Id,
     Amount: { Currency: currency, GrossValue: 60 },
@@ -141,6 +151,9 @@ if (cardClient?.Id) {
       Name: 'LES VOILES CERTIF',
       Expiration: '12/2030',
     },
+    AccountingCategoryId: null,
+    ReceiptIdentifier: String(now).slice(-6),
+    Notes: `${tag} — encaissé sur terminal externe`,
   }, { module: 'pos', label: 'consigner un paiement CB' });
   const payId = cardPay?.PaymentId ?? cardPay?.CreditCardPaymentId;
 
