@@ -155,7 +155,22 @@ const rx = {
   // d'affichage obligatoires, suivie d'une facturation agressive). Adressé « HOTEL LES VOILES »
   // mais tombé dans la boîte Corniche (envoi en masse). Le vrai droit du travail ne démarche pas.
   prospectionSenders:
-    /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris|@snservice\.co|@lestoilesdularge\.com|@cndt-fr\.fr/i,
+    /translaser\.fr|neutraliz\.com|@provence-alpes-cotedazur\.com|@email\.transgourmet\.fr|@vigneron\.paris|@snservice\.co|@lestoilesdularge\.com|@cndt-fr\.fr|@provencemed\.com/i,
+  // 🔁 `@provencemed.com` REMIS ICI le 2026-07-23 — ceci ANNULE la correction du 2026-07-13.
+  // Le backtest d'alors concluait « partenaire, l'équipe les garde » ; Martin tranche l'inverse :
+  // « c'est de la merde qui pollue donc on vire, SAUF si c'est une demande ». Sur les 16 mails
+  // de cet expéditeur en historique, la coupure est nette : 6 pubs (agenda hebdo des animations,
+  // invitations, save the date) contre 8 « RE: Facture Pro Forma » et 1 « Demande de mise à jour »
+  // de brochure. Les 8 factures sont déjà protégées (fil humain + argent) ; la demande de mise à
+  // jour ne l'était PAS → d'où `demandeHook` ci-dessous, sans lequel cette règle jetterait une
+  // vraie sollicitation. Cf. `senderDeleteOk`.
+  //
+  // Une sollicitation qui attend une action de notre part (mettre à jour notre fiche, remplir un
+  // formulaire, renvoyer un document) n'est jamais de la pub, même venant d'un expéditeur qui en
+  // envoie par ailleurs. Volontairement ÉTROIT : « demandez votre devis » ou « sur simple demande »
+  // sont des formules publicitaires et ne doivent pas matcher.
+  demandeHook:
+    /demande de (?:mise à jour|renseignements?|documents?|informations?|devis de)|merci de (?:bien vouloir )?(?:nous )?(?:compl[ée]ter|mettre à jour|renvoyer|retourner)|pourriez-vous nous (?:envoyer|transmettre|communiquer|mettre)/i,
   // Cuisine Solutions (fournisseur de plats surgelés du Rooftop des Voiles) envoie des
   // CONFIRMATIONS DE COMMANDE (`envoifacturescse@cuisinesolutions.com`, progiciel VIF) avec le
   // bon en PJ PDF — souvent RELAYÉES par Nina « à imprimer » (l'expéditeur devient alors interne
@@ -301,9 +316,13 @@ export function classifyMail(mail: MailInput): Classification {
   // supprimé « Message reçu de la part d'un voyageur Expedia », et la règle PACA une facture.
   // → Une règle de suppression fondée sur l'EXPÉDITEUR ne s'applique jamais à un mail qui porte la
   //   parole d'un humain (réponse dans un fil, message de voyageur) ou qui parle d'argent.
+  //   Troisième cas depuis le 2026-07-23 : un mail qui nous DEMANDE quelque chose (mettre à jour
+  //   notre fiche dans une brochure, compléter un formulaire) n'est pas de la pub, même si
+  //   l'expéditeur en envoie aussi — « on vire, sauf si c'est une demande » (Martin).
   const humanThread = rx.reply.test(subj) || rx.guestMessage.test(hay);
   const aboutMoney = rx.facture.test(hay) || rx.moneyHook.test(hay);
-  const senderDeleteOk = !humanThread && !aboutMoney;
+  const asksSomething = rx.demandeHook.test(hay);
+  const senderDeleteOk = !humanThread && !aboutMoney && !asksSomething;
 
   // 1f) Pub / prospection connue (expéditeurs déjà repérés) -> corbeille (Martin 2026-07-09).
   if (rx.prospectionSenders.test(from) && senderDeleteOk) {
