@@ -179,6 +179,13 @@ export default function MailAssistantPage() {
   const [filtre, setFiltre] = useState<string | null>(null);
   const [voirTraites, setVoirTraites] = useState(false);
   const [selection, setSelection] = useState<Set<string>>(new Set());
+  // Ce que Junior vient de faire SOUS LES YEUX de la personne reste affiché.
+  // Sinon la ligne bascule en « traité » à la seconde où elle est validée, et
+  // disparaît — emportant avec elle les boutons « Relire le brouillon » et
+  // « Ouvrir le devis », c'est-à-dire précisément ce qu'il fallait aller voir
+  // (Martin 2026-07-23). Ces lignes ne survivent pas au rechargement : la liste
+  // du lendemain doit rester une liste de choses À FAIRE.
+  const [fraichementTraites, setFraichementTraites] = useState<Set<string>>(new Set());
   // « Non, c'est plutôt… » — la correction est de la DONNÉE, pas une conversation :
   // elle retraite le mail tout de suite ET s'accumule pour devenir une règle plus
   // tard. Sans elle, une erreur de Junior disparaît dans l'oubli.
@@ -262,6 +269,7 @@ export default function MailAssistantPage() {
     setBusyId(row.id);
     const ok = await decideOne(row, decision);
     toast[ok ? "success" : "error"](ok ? (decision === "skip" ? "OK, je laisse tomber" : "C’est fait !") : "Ça a coincé");
+    if (ok) setFraichementTraites((s) => new Set(s).add(row.id));
     await load(cfg!.key);
     setBusyId(null);
   };
@@ -271,7 +279,9 @@ export default function MailAssistantPage() {
     if (!cibles.length) return;
     setBusyId("lot");
     let ok = 0;
-    for (const r of cibles) if (await decideOne(r, decision)) ok++;
+    const faits: string[] = [];
+    for (const r of cibles) if (await decideOne(r, decision)) { ok++; faits.push(r.id); }
+    setFraichementTraites((s) => { const n = new Set(s); for (const id of faits) n.add(id); return n; });
     const rate = cibles.length - ok;
     if (rate) toast.error(`${ok}/${cibles.length} traités — ${rate} en échec`);
     else toast.success(decision === "skip" ? `OK, j’en laisse ${ok} de côté` : `${ok} de faits !`);
@@ -300,6 +310,7 @@ export default function MailAssistantPage() {
     const j = await resp.json().catch(() => ({}));
     if (resp.ok && j.ok) {
       toast.success(corAct ? "Corrigé, je m’en occupe" : "Noté, merci — ça me servira");
+      setFraichementTraites((s) => new Set(s).add(row.id));
       setCorrige(null); setCorCat(""); setCorAct(""); setCorMot("");
       await load(cfg.key);
     } else toast.error(j.error || "Ça a coincé");
@@ -320,16 +331,20 @@ export default function MailAssistantPage() {
   );
 
   const aFaire = useMemo(() => rows.filter(estActionnable), [rows, estActionnable]);
+  const garde = useCallback(
+    (r: Row) => voirTraites || !estTraite(r) || fraichementTraites.has(r.id),
+    [voirTraites, fraichementTraites],
+  );
   const visibles = useMemo(() => {
-    const base = voirTraites ? rows : rows.filter((r) => !estTraite(r));
+    const base = rows.filter(garde);
     return filtre ? base.filter((r) => r.category === filtre) : base;
-  }, [rows, filtre, voirTraites]);
+  }, [rows, filtre, garde]);
 
   const compteurs = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const r of rows) if (voirTraites || !estTraite(r)) c[r.category] = (c[r.category] || 0) + 1;
+    for (const r of rows) if (garde(r)) c[r.category] = (c[r.category] || 0) + 1;
     return c;
-  }, [rows, voirTraites]);
+  }, [rows, garde]);
 
   const selectionnables = visibles.filter(estActionnable);
   const toutSelectionne = selectionnables.length > 0 && selectionnables.every((r) => selection.has(r.id));
@@ -711,6 +726,15 @@ export default function MailAssistantPage() {
                                 <a href={String(r.result.webLink)} target="_blank" rel="noreferrer" className="text-[var(--brand)] hover:underline inline-flex items-center gap-0.5 ml-1">
                                   <ExternalLink className="w-3 h-3" /> Ouvrir
                                 </a>
+                              ) : null}
+                              {/* La ligne qu'on vient de traiter ne part que quand on le dit. */}
+                              {fraichementTraites.has(r.id) ? (
+                                <button
+                                  onClick={() => setFraichementTraites((s) => { const n = new Set(s); n.delete(r.id); return n; })}
+                                  className="ml-1 text-slate-400 hover:text-slate-600 underline underline-offset-2"
+                                >
+                                  ranger
+                                </button>
                               ) : null}
                             </span>
                           )}
