@@ -100,6 +100,12 @@ const rx = {
   //  · Mews envoie les factures/folios clients depuis noreply@mews.li
   //  · le Rooftop / l'hôtel envoie ses factures depuis *@send.hotel-corniche.com
   factureInterneFrom: /noreply@mews\.li|@send\.hotel-corniche\.com/i,
+  // Nos propres mails Mews. `mewsConfirmation` ne vise QUE la confirmation de séjour :
+  // du même expéditeur partent aussi les annulations automatiques (qui portent une info),
+  // nos factures, un lien d'authentification et des « [ACTION REQUIRED] Groupe de
+  // réservation » — tous doivent survivre. Cf. règle 1e-bis.
+  mewsSelf: /noreply@mews\.li/i,
+  mewsConfirmation: /confirmation de votre r[ée]servation|your reservation .{0,20}confirmed/i,
   // Relance de commission d'agence (ex. Travel Counsellors) → même traitement qu'Onyx :
   // brouillon « non commissionnables » PUIS corbeille (Martin 2026-07-13). Le `delete` sec
   // d'avant (2026-07-09) supprimait une VRAIE facture sans que personne ne réponde → l'agence
@@ -323,6 +329,20 @@ export function classifyMail(mail: MailInput): Classification {
   const aboutMoney = rx.facture.test(hay) || rx.moneyHook.test(hay);
   const asksSomething = rx.demandeHook.test(hay);
   const senderDeleteOk = !humanThread && !aboutMoney && !asksSomething;
+
+  // 1e-bis) NOS PROPRES confirmations de réservation Mews -> corbeille (Martin 2026-07-23 :
+  //     « ça dégage, pense écologie »). C'est la copie d'un mail que Mews a déjà envoyé au
+  //     client : elle n'apprend rien à la réception et occupe du stockage pour rien.
+  //     ⚠️ RÈGLE VOLONTAIREMENT ÉTROITE. `noreply@mews.li` envoie 5 familles distinctes
+  //     (41 mails inventoriés le 2026-07-23) : 31 confirmations, 5 annulations automatiques
+  //     pour non-présentation (qui, elles, PORTENT UNE INFO — cf. le dossier Galand), 2 de
+  //     nos factures (archivées par la règle 1d), 1 lien d'authentification, et surtout
+  //     2 « [ACTION REQUIRED] Groupe de réservation » qui appellent une action. Élargir au
+  //     seul expéditeur jetterait les quatre autres familles.
+  //     Placé APRÈS le garde-fou : une réponse humaine dans le fil reste protégée.
+  if (rx.mewsSelf.test(from) && rx.mewsConfirmation.test(subj) && senderDeleteOk) {
+    return { category: 'facture_interne', action: 'delete', reason: 'Copie de notre confirmation de réservation Mews (déjà envoyée au client)', detail: {} };
+  }
 
   // 1f) Pub / prospection connue (expéditeurs déjà repérés) -> corbeille (Martin 2026-07-09).
   if (rx.prospectionSenders.test(from) && senderDeleteOk) {
