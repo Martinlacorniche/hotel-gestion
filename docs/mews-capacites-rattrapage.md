@@ -38,7 +38,7 @@ Balayage du Connector API sur la **démo publique** (`api.mews-demo.com`), clien
 |---|---|---|---|
 | `accountNotes/add` | note sur la fiche client | OK | — |
 | `accountNotes/getAll` | relire les notes de fiche | OK | — |
-| `accountNotes/update` | corriger la note de fiche | KO (500) | Something went wrong on our end. Our team has been notified and is working to fix the issu |
+| `accountNotes/update` | corriger la note de fiche | OK | — |
 | `accountNotes/delete` | supprimer la note de fiche | OK | — |
 | `customers/getRelationships` | relations du profil | OK | — |
 
@@ -73,4 +73,4 @@ Balayage du Connector API sur la **démo publique** (`api.mews-demo.com`), clien
 |---|---|---|---|
 | `commands/getAllActive` | commandes en cours (encodeur) | OK | — |
 
-_35/36 appels en succès._
+_36/36 appels en succès._

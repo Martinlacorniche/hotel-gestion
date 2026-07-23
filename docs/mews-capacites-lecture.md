@@ -15,12 +15,12 @@ node --env-file=.env.mews-demo scripts/mews-certif/sweep-read.mjs
 | Opération | Verdict | Objets | Champs renvoyés |
 |---|---|---|---|
 | `configuration/get` | OK | — | NowUtc, Enterprise, Service, PaymentCardStorage, IsIdentityDocumentNumberRequired |
-| `services/getAll` | OK | 495 | Id, EnterpriseId, IsActive, Name, Names, StartTime, EndTime, Options |
+| `services/getAll` | OK | 498 | Id, EnterpriseId, IsActive, Name, Names, StartTime, EndTime, Options |
 | `resources/getAll` | OK | 100 | Id, EnterpriseId, IsActive, ParentResourceId, Name, State, Descriptions, CreatedUtc |
-| `resourceCategories/getAll` | OK | 20 | Id, EnterpriseId, ServiceId, IsActive, Type, Classification, Names, ShortNames |
-| `resourceBlocks/getAll` | OK | 5 | Id, EnterpriseId, AssignedResourceId, IsActive, Type, StartUtc, EndUtc, CreatedUtc |
+| `resourceCategories/getAll` | OK | 21 | Id, EnterpriseId, ServiceId, IsActive, Type, Classification, Names, ShortNames |
+| `resourceBlocks/getAll` | OK | 4 | Id, EnterpriseId, AssignedResourceId, IsActive, Type, StartUtc, EndUtc, CreatedUtc |
 | `companies/getAll` | OK | 50 | Id, ChainId, Name, MotherCompanyId, InvoicingEmail, WebsiteUrl, InvoiceDueInterval, NchClassifications |
-| `counters/getAll` | OK | 11 | Id, EnterpriseId, Name, IsDefault, Value, Format, Type, CreatedUtc |
+| `counters/getAll` | OK | 12 | Id, EnterpriseId, Name, IsDefault, Value, Format, Type, CreatedUtc |
 | `outlets/getAll` | OK | 50 | Id, IsActive, Name, EnterpriseId, CreatedUtc, UpdatedUtc |
 
 ## Borne de self check-in
@@ -30,8 +30,8 @@ node --env-file=.env.mews-demo scripts/mews-certif/sweep-read.mjs
 | `reservations/getAll` | OK | 100 | Id, ServiceId, GroupId, Number, ChannelNumber, ChannelManagerNumber, ChannelManagerGroupNumber, ChannelManager |
 | `reservationGroups/getAll` | OK | 20 | Id, Name, ChannelManager, ChannelManagerGroupNumber, EnterpriseId |
 | `customers/getAll` | OK | 50 | Id, ChainId, Number, Title, Sex, Gender, FirstName, LastName |
-| `customers/search` | OK | 2071 | Customer, Reservation, Id, FirstName, LastName, RoomNumber, ResourceName |
-| `cancellationPolicies/getAll` | KO (400) | — | Invalid ServiceIds. |
+| `customers/search` | OK | 2130 | Customer, Reservation, Id, FirstName, LastName, RoomNumber, ResourceName |
+| `cancellationPolicies/getAll` | KO (400) | — | Please specify at least one of the filters: UpdatedUtc, RateGroupIds, CancellationPolicyId |
 | `ageCategories/getAll` | OK | 6 | Id, ServiceId, MinimalAge, MaximalAge, Names, ShortNames, CreatedUtc, UpdatedUtc |
 
 ## Yield / RMS interne
@@ -41,7 +41,7 @@ node --env-file=.env.mews-demo scripts/mews-certif/sweep-read.mjs
 | `rateGroups/getAll` | OK | 18 | Id, ServiceId, IsActive, CreatedUtc, UpdatedUtc, Ordering, Names, ShortNames |
 | `rates/getAll` | OK | 100 | Id, GroupId, ServiceId, BaseRateId, IsBaseRate, BusinessSegmentId, IsActive, IsEnabled |
 | `rates/getPricing` | OK | 5 | Currency, DatesUtc, TimeUnitStartsUtc, BasePrices, BaseAmountPrices, CategoryPrices, CategoryAdjustments, AgeCategoryAdjustments |
-| `restrictions/getAll` | OK | 1 | Id, ServiceId, ExternalIdentifier, Origin, Conditions, Exceptions |
+| `restrictions/getAll` | OK | 0 | Restrictions, Cursor |
 | `services/getAvailability` | OK | 5 | DatesUtc, TimeUnitStartsUtc, CategoryAvailabilities |
 | `availabilityBlocks/getAll` | OK | — | AvailabilityBlocks, ServiceOrders, Adjustments, Rates, Cursor |
 | `businessSegments/getAll` | OK | 3 | Id, ServiceId, IsActive, Name, CreatedUtc, UpdatedUtc |
@@ -64,7 +64,7 @@ node --env-file=.env.mews-demo scripts/mews-certif/sweep-read.mjs
 
 | Opération | Verdict | Objets | Champs renvoyés |
 |---|---|---|---|
-| `serviceOrderNotes/getAll` | OK | 6 | Id, OrderId, Text, Type, CreatedUtc, UpdatedUtc |
+| `serviceOrderNotes/getAll` | OK | 21 | Id, OrderId, Text, Type, CreatedUtc, UpdatedUtc |
 | `tasks/getAll` | OK | 50 | Id, EnterpriseId, Name, State, Description, DepartmentId, ServiceOrderId, CreatedUtc |
 | `cashiers/getAll` | OK | 11 | Id, EnterpriseId, IsActive, Name, CreatedUtc, UpdatedUtc |
 | `cashierTransactions/getAll` | OK | 0 | CashierTransactions, Cursor |

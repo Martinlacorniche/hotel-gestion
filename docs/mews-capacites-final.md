@@ -31,7 +31,7 @@ Balayage du Connector API sur la **démo publique** (`api.mews-demo.com`), clien
 | Opération | Étape | Verdict | Détail |
 |---|---|---|---|
 | `customers/add` | client CB | OK | — |
-| `payments/addCreditCard` | consigner un paiement CB | KO (403) | Invalid identifier. (Card payment (Visa ****1111)) |
+| `payments/addCreditCard` | consigner un paiement CB | OK | — |
 | `paymentMethodRequests/add` | demander une empreinte CB | OK | — |
 
 ## Yield — extras, occupation
@@ -58,4 +58,4 @@ Balayage du Connector API sur la **démo publique** (`api.mews-demo.com`), clien
 |---|---|---|---|
 | `resourceAccessTokens/getAll` | jetons d'accès aux chambres | OK | — |
 
-_25/26 appels en succès._
+_26/26 appels en succès._

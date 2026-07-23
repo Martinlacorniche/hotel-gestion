@@ -28,8 +28,8 @@ Balayage du Connector API sur la **démo publique** (`api.mews-demo.com`), clien
 | `resources/getAll` | chambres | OK | — |
 | `resourceCategoryAssignments/getAll` | chambres par catégorie | OK | — |
 | `reservations/update` | attribuer la chambre | OK | — |
-| `reservations/start` | CHECK-IN | OK | — |
-| `reservations/process` | CHECK-OUT | OK | — |
+| `reservations/start` | CHECK-IN | KO (403) | Cannot check in reservation because assigned space is blocked. (Stay 91309 (Les Voiles Cer |
+| `reservations/process` | CHECK-OUT | KO (403) | Cannot complete check-out for reservation because it's too early. (Stay 91309 (Les Voiles  |
 | `reservations/updateInterval` | décaler les dates | OK | — |
 | `reservations/cancel` | annuler la réservation | OK | — |
 
@@ -68,9 +68,9 @@ Balayage du Connector API sur la **démo publique** (`api.mews-demo.com`), clien
 | Opération | Étape | Verdict | Détail |
 |---|---|---|---|
 | `rates/updatePrice` | pousser un prix | OK | — |
-| `restrictions/set` | poser une restriction (2 nuits mini le week-end) | OK | — |
+| `restrictions/set` | poser une restriction (2 nuits mini le week-end) | KO (400) | Invalid Mews.Server.Web.Api.Connector.V1.Dto.DaysParameters. Supplied days do not match th |
 | `restrictions/clear` | lever la restriction | OK | — |
 | `services/updateAvailability` | ajuster la disponibilité | OK | — |
 | `services/updateAvailability` | rétablir la disponibilité | OK | — |
 
-_46/46 appels en succès._
+_43/46 appels en succès._
