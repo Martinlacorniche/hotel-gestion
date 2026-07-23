@@ -60,10 +60,12 @@ Full per-endpoint matrices: `docs/mews-capacites-{lecture,ecriture,complement,ra
 
 | Operation | Symptom |
 |---|---|
-| `cancellationPolicies/getAll` | Returns **"Invalid ServiceIds"** even when **no** `ServiceIds` is sent — with `RateGroupIds` (ours or Mews'), with `UpdatedUtc` alone, with `CancellationPolicyIds` alone. `ServiceIds` is not among the filters its own error message lists. Re-verified 23 July 2026. Workaround: `getByRates` / `getByReservations`, which both work. |
+| `cancellationPolicies/getAll` | Two inputs are required — `ServiceIds` **and** one filter — but **`ServiceIds` appears in no error message and in no filter list**, so omitting it returns *"Invalid ServiceIds"* about a field the caller never sent. Worse, `rateGroups/getAll(ServiceIds:[X])` returns rate groups that `cancellationPolicies/getAll(ServiceIds:[X])` then **rejects** (3 of 18 on demo) — and a single invalid id fails the whole call. |
 | `fiscalMachineCommands/getAll` | Returns **"Invalid JSON"** for every body, including an empty one. |
 
 > **Withdrawn 23 July 2026 — `accountNotes/update`.** We reported a constant 500. It was **our** payload: a note carries **one** classification, and we were setting two to `true` in the same update. Setting the previous one explicitly to `false` returns 200 (Milan Bezdecka, Mews). Only the error code was misleading — a 400 naming the constraint would have saved the round trip.
+
+> **Downgraded 23 July 2026 — `cancellationPolicies/getAll` is not broken.** We reported it as unusable. It works: `ServiceIds` + `RateGroupIds`, or `ServiceIds` + `UpdatedUtc` (window ≤ 3 months), both return 200. What remains is the undocumented requirement and the rate-group disagreement above. Our probes now call it successfully.
 
 ---
 

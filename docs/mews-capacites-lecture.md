@@ -30,8 +30,8 @@ node --env-file=.env.mews-demo scripts/mews-certif/sweep-read.mjs
 | `reservations/getAll` | OK | 100 | Id, ServiceId, GroupId, Number, ChannelNumber, ChannelManagerNumber, ChannelManagerGroupNumber, ChannelManager |
 | `reservationGroups/getAll` | OK | 20 | Id, Name, ChannelManager, ChannelManagerGroupNumber, EnterpriseId |
 | `customers/getAll` | OK | 50 | Id, ChainId, Number, Title, Sex, Gender, FirstName, LastName |
-| `customers/search` | OK | 2130 | Customer, Reservation, Id, FirstName, LastName, RoomNumber, ResourceName |
-| `cancellationPolicies/getAll` | KO (400) | — | Please specify at least one of the filters: UpdatedUtc, RateGroupIds, CancellationPolicyId |
+| `customers/search` | OK | 2136 | Customer, Reservation, Id, FirstName, LastName, RoomNumber, ResourceName |
+| `cancellationPolicies/getAll` | OK | 0 | CancellationPolicies, Cursor |
 | `ageCategories/getAll` | OK | 6 | Id, ServiceId, MinimalAge, MaximalAge, Names, ShortNames, CreatedUtc, UpdatedUtc |
 
 ## Yield / RMS interne
@@ -64,10 +64,10 @@ node --env-file=.env.mews-demo scripts/mews-certif/sweep-read.mjs
 
 | Opération | Verdict | Objets | Champs renvoyés |
 |---|---|---|---|
-| `serviceOrderNotes/getAll` | OK | 21 | Id, OrderId, Text, Type, CreatedUtc, UpdatedUtc |
+| `serviceOrderNotes/getAll` | OK | 19 | Id, OrderId, Text, Type, CreatedUtc, UpdatedUtc |
 | `tasks/getAll` | OK | 50 | Id, EnterpriseId, Name, State, Description, DepartmentId, ServiceOrderId, CreatedUtc |
 | `cashiers/getAll` | OK | 11 | Id, EnterpriseId, IsActive, Name, CreatedUtc, UpdatedUtc |
 | `cashierTransactions/getAll` | OK | 0 | CashierTransactions, Cursor |
 | `exchangeRates/getAll` | OK | 50 | Id, EnterpriseId, SourceCurrency, TargetCurrency, Value |
 
-_34/35 opérations en succès._
+_35/35 opérations en succès._

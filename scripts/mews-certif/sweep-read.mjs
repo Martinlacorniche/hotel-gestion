@@ -134,18 +134,22 @@ await probe('customers/getAll', {
   Limitation: { Count: 50 },
 }, 'borne');
 await probe('customers/search', { Text: 'a', Limitation: { Count: 20 } }, 'borne');
-// ⚠️ `cancellationPolicies/getAll` EST CASSÉ CÔTÉ MEWS — vérifié à fond le 2026-07-23 après
-// que Milan Bezdecka (Mews) a suggéré que nous passions l'ID d'un service additionnel au lieu
-// d'un service réservable. Ce n'est pas ça :
-//   · sans aucun filtre        → 400 « Please specify at least one of the filters: UpdatedUtc,
-//                                 RateGroupIds, CancellationPolicyIds » (ServiceIds n'y est pas)
-//   · RateGroupIds (les nôtres, service « Stay », Bookable)      → 400 « Invalid ServiceIds. »
-//   · RateGroupIds tirés de SON service (« Overnight », Bookable) → 400 « Invalid ServiceIds. »
-//   · UpdatedUtc seul, CancellationPolicyIds seul                 → 400 « Invalid ServiceIds. »
-// L'opération valide donc un champ `ServiceIds` que l'appelant ne peut pas lui fournir et qui
-// n'apparaît pas dans sa propre liste de filtres. Les deux variantes dont la borne a besoin
-// (`getByRates`, `getByReservations`) fonctionnent — c'est par là qu'on passe.
-await probe('cancellationPolicies/getAll', { RateGroupIds: rateGroupIds, Limitation: { Count: 50 } }, 'borne');
+// ⚠️ `cancellationPolicies/getAll` exige DEUX choses, et une seule est documentée par son
+// message d'erreur (résolu le 2026-07-23 avec Milan Bezdecka, Mews) :
+//   ① `ServiceIds` est OBLIGATOIRE — il n'apparaît pourtant dans aucune des listes de filtres
+//      que renvoie l'erreur, d'où notre diagnostic erroné de « bug Mews » : sans lui, la
+//      réponse est « Invalid ServiceIds », sur un champ que nous n'avions pas envoyé.
+//   ② ET au moins un filtre parmi `RateGroupIds`, `CancellationPolicyIds`, `UpdatedUtc`
+//      (fenêtre ≤ 3 mois, sinon « The interval must not exceed 3M1D »).
+// ⚠️ Piège restant : `rateGroups/getAll(ServiceIds:[X])` renvoie des groupes que
+// `cancellationPolicies/getAll(ServiceIds:[X])` REFUSE — 3 sur 18 sur la démo — et un seul
+// identifiant invalide fait échouer tout l'appel. On passe donc par `UpdatedUtc`, qui ne
+// dépend d'aucune liste d'identifiants et couvre le besoin (lister les politiques du service).
+await probe('cancellationPolicies/getAll', {
+  ServiceIds: bookableIds,
+  UpdatedUtc: { StartUtc: iso(now - 80 * 864e5), EndUtc: iso(now) },
+  Limitation: { Count: 50 },
+}, 'borne');
 await probe('ageCategories/getAll', { ServiceIds: bookableIds, Limitation: { Count: 50 } }, 'borne');
 
 // POS Rooftop / facturation
