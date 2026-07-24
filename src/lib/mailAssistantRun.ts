@@ -43,10 +43,17 @@ export async function runDryRun(hotelKey: string): Promise<DryRunResult> {
   const currentIds = new Set(messages.map((m) => m.id));
   const { data: existing } = await supabaseAdmin
     .from('assistant_mail_log')
-    .select('message_id')
-    .eq('mailbox', cfg.mailbox)
-    .eq('status', 'proposed');
-  const stale = (existing ?? []).map((r) => r.message_id as string).filter((id) => !currentIds.has(id));
+    .select('message_id, status')
+    .eq('mailbox', cfg.mailbox);
+  // ⚠️ NE PAS RELIRE DEUX FOIS LE MÊME MAIL (2026-07-24). Le classifieur était
+  // rappelé à chaque tri sur tous les mails encore en boîte : relancer la relève
+  // trois fois dans la journée, c'était payer trois fois la lecture des mêmes
+  // messages — insoutenable dès lors que la page lance le tri toute seule à
+  // l'ouverture. Un mail déjà journalisé garde son verdict ; seuls les nouveaux
+  // sont lus. Pour reprendre une décision, on passe par « Non, c'est plutôt… ».
+  const dejaVus = new Set((existing ?? []).map((r) => r.message_id as string));
+  const stale = (existing ?? []).filter((r) => r.status === 'proposed')
+    .map((r) => r.message_id as string).filter((id) => !currentIds.has(id));
   if (stale.length) {
     await supabaseAdmin.from('assistant_mail_log')
       .delete().eq('mailbox', cfg.mailbox).eq('status', 'proposed').in('message_id', stale);
@@ -75,7 +82,7 @@ export async function runDryRun(hotelKey: string): Promise<DryRunResult> {
     // `bodyPreview` de Graph, dont la troncature est la cause de la moitié des
     // ratés (le lien de désinscription et le type d'événement des demandes BW
     // sont toujours plus bas).
-    if (c.weak) {
+    if (c.weak && !dejaVus.has(m.id)) {
       const body = await getMessageText(cfg.mailbox, m.id).catch(() => m.preview || '');
       const verdict = await classifyWithLlm({
         hotelName: cfg.nom, fromAddr: m.fromAddr, fromName: m.fromName,
@@ -117,7 +124,12 @@ export async function runDryRun(hotelKey: string): Promise<DryRunResult> {
     // la ligne à la main. Or c'est précisément quand une règle vient d'être corrigée
     // qu'on veut voir le nouveau verdict. On ne touche QUE le statut `proposed` :
     // une ligne validée ou ignorée garde sa trace, c'est de l'historique.
-    if (!ins?.length) {
+    // ⚠️ …MAIS PAS QUAND LE VERDICT VIENT D'UNE LECTURE. Sans l'appel au
+    // classifieur (mail déjà vu), `c` ne porte que l'avis des règles à mot-clé —
+    // souvent « je ne sais pas ». Le réécrire effacerait la décision prise après
+    // lecture du mail entier. On ne rafraîchit donc que les lignes dont le verdict
+    // vient d'une règle SÛRE, qui, elle, a pu être corrigée entre deux passages.
+    if (!ins?.length && !(c.weak && dejaVus.has(m.id))) {
       await supabaseAdmin
         .from('assistant_mail_log')
         .update({

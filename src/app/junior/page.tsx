@@ -287,6 +287,23 @@ export default function MailAssistantPage() {
     if (cfg) load(cfg.key); else { setRows([]); setLoading(false); }
   }, [isSuperadmin, cfg, load]);
 
+  // ── Il relève la boîte tout seul quand on arrive ────────────────────────────
+  //
+  // Ouvrir la page pour devoir cliquer « relever », c'est une étape de trop : on
+  // vient voir ce qu'il y a, pas lui demander d'aller voir (Martin 2026-07-24).
+  // Une seule fois par hôtel et par visite — `dejaReleve` garde la trace, sinon
+  // un simple retour sur la page relancerait un tri complet.
+  const dejaReleve = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isSuperadmin || !cfg || loading) return;
+    if (dejaReleve.current === cfg.key) return;
+    dejaReleve.current = cfg.key;
+    void runNow();
+    // `runNow` change à chaque rendu (il dépend de l'état) : le mettre en
+    // dépendance relancerait le tri en boucle. Le garde ci-dessus fait foi.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperadmin, cfg, loading]);
+
   const runNow = async () => {
     if (!cfg) return;
     setRunning(true);
@@ -304,9 +321,10 @@ export default function MailAssistantPage() {
       const classes = j.logged
         ? `J’ai classé ${j.logged} nouveau${j.logged > 1 ? "x" : ""} mail${j.logged > 1 ? "s" : ""}`
         : "Rien de neuf — tout ce qui est dans la boîte est déjà dans la liste";
-      toast.success(
-        j.autonomes ? `${classes} · j’en ai traité ${j.autonomes} tout seul` : classes,
-      );
+      const rien = !j.logged && !j.autonomes;
+      if (!rien) {
+        toast.success(j.autonomes ? `${classes} · j’en ai traité ${j.autonomes} tout seul` : classes);
+      }
       await load(cfg.key);
     } else toast.error(j.error || "Je n’ai pas réussi à lire la boîte");
     setRunning(false);
