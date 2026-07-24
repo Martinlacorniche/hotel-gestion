@@ -180,6 +180,74 @@ function resultSummary(r: Row): string | null {
   return res.auto ? `${fait} · sans te demander` : fait;
 }
 
+// ── Le bilan d'un dossier commercial : deux zones, jamais mélangées ─────────
+//
+// Tout était au même niveau visuel — « Fiche créée », « À vérifier : … », les liens
+// et le statut — si bien qu'on ne voyait pas ce qui restait à faire (Martin
+// 2026-07-24 : « on dirait un vieux CRM des années 2000 »). Or c'est la seule chose
+// qui compte quand Junior agit à moitié : ce qu'il a fait est derrière lui, ce qui
+// reste est du travail. D'où la séparation en deux : un bilan discret de ce qui est
+// accompli, puis un bloc net de ce qui revient à l'humain, avec les boutons dedans.
+function BilanCommercial({ r }: { r: Row }) {
+  const res = (r.result || {}) as Record<string, unknown>;
+  const fait = res.mode === "deja_repondu" ? "Un collègue avait déjà répondu — je n’ai rien ajouté"
+    : res.mode === "sans_fiche" ? "Aucune fiche ne porte ce dossier — je n’en ai pas créé"
+    : res.mode === "annule" ? (res.ficheId ? "Dossier passé en Refus, motif enregistré" : "Dossier perdu — aucune fiche à mettre à jour")
+    : res.mode === "confirme" ? (res.ficheId ? "Dossier passé en Confirmé, relance annulée" : "Dossier confirmé — aucune fiche")
+    : `Fiche ${res.mode === "rattache" ? "rattachée au dossier" : res.mode === "updated" ? "complétée" : "créée"}`;
+
+  const aVerifier = Array.isArray(res.incertitudes) ? (res.incertitudes as unknown[]).map(String) : [];
+  const liens = [
+    res.id ? { href: `/devis?leadId=${String(res.id)}`, label: "Ouvrir le devis", ext: false } : null,
+    res.webLink ? { href: String(res.webLink), label: "Relire la réponse au client", ext: true } : null,
+    res.draftGaetanLink ? { href: String(res.draftGaetanLink), label: "Le mot pour Gaëtan", ext: true } : null,
+  ].filter(Boolean) as { href: string; label: string; ext: boolean }[];
+  const consigne = res.consigne ? "Consigne posée pour l’équipe" : null;
+  const aFaire = res.message ? String(res.message) : null;
+
+  return (
+    <div className="mt-3 space-y-2">
+      {/* CE QUI EST FAIT — discret, au passé, sans bouton : c'est un accusé. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+        <CircleCheckBig className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+        <span>{fait}</span>
+        {consigne ? <span className="text-slate-400">· {consigne}</span> : null}
+        {res.ref ? <span className="text-slate-400">· {String(res.ref)}</span> : null}
+      </div>
+
+      {/* CE QUI TE REVIENT — le seul bloc qui attire l'œil, avec les actions dedans. */}
+      {(aFaire || aVerifier.length || liens.length) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">À toi de jouer</p>
+          {aFaire ? <p className="text-sm text-slate-800 leading-snug">{aFaire}</p> : null}
+          {aVerifier.length ? (
+            <ul className="space-y-1">
+              {aVerifier.map((x, i) => (
+                <li key={i} className="text-xs text-amber-900/80 flex gap-1.5">
+                  <span className="shrink-0">⚠️</span><span>{x}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {liens.length ? (
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              {liens.map((l) => (
+                <a
+                  key={l.href} href={l.href}
+                  {...(l.ext ? { target: "_blank", rel: "noreferrer" } : {})}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-white ring-1 ring-amber-300 hover:bg-amber-100 text-amber-900 px-3 h-8 text-xs font-semibold transition"
+                >
+                  {l.label} <ExternalLink className="w-3 h-3" />
+                </a>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MailAssistantPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
@@ -617,63 +685,7 @@ export default function MailAssistantPage() {
                               intenable : Junior fait ce qu'il sait faire seul et ouvre la
                               porte pour le reste. La ligne reste visible tant que la
                               séquence n'est pas finie. */}
-                          {r.result?.kind === "commercial" && (
-                            <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/40 px-3 py-2 space-y-1.5">
-                              <p className="text-xs text-emerald-800 flex items-center gap-1.5">
-                                <Check className="w-3.5 h-3.5" />
-                                {r.result.mode === "deja_repondu" ? "Un collègue avait déjà répondu — je n’ai rien ajouté"
-                                  : r.result.mode === "sans_fiche" ? "Aucune fiche ne porte ce dossier"
-                                  : `Fiche ${r.result.mode === "rattache" ? "rattachée au dossier" : r.result.mode === "updated" ? "complétée" : "créée"}`}
-                                {r.result.ref ? <span className="text-emerald-600">· {String(r.result.ref)}</span> : null}
-                              </p>
-                              {r.result.message ? (
-                                <p className="text-xs text-emerald-700/80">{String(r.result.message)}</p>
-                              ) : null}
-                              {/* Ce dont Junior n'est pas sûr. Un brouillon qui a l'air net mais
-                                  repose sur une hypothèse est plus dangereux qu'un brouillon
-                                  visiblement incomplet : on affiche le doute avant l'envoi. */}
-                              {Array.isArray(r.result.incertitudes) && r.result.incertitudes.length ? (
-                                <ul className="text-xs text-amber-700 list-disc pl-4 space-y-0.5">
-                                  {(r.result.incertitudes as unknown[]).map((x, i) => (
-                                    <li key={i}>À vérifier : {String(x)}</li>
-                                  ))}
-                                </ul>
-                              ) : null}
-                              <div className="flex flex-wrap items-center gap-2">
-                                {r.result.id ? (
-                                  <a
-                                    href={`/devis?leadId=${String(r.result.id)}`}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-emerald-200 hover:bg-emerald-50 text-emerald-800 px-2.5 h-7 text-xs font-medium"
-                                  >
-                                    Ouvrir le devis <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                ) : null}
-                                {r.result.webLink ? (
-                                  <a
-                                    href={String(r.result.webLink)} target="_blank" rel="noreferrer"
-                                    className="inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-emerald-200 hover:bg-emerald-50 text-emerald-800 px-2.5 h-7 text-xs font-medium"
-                                  >
-                                    Relire le brouillon <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                ) : (
-                                  <span className="text-xs text-slate-400">
-                                    Brouillon : dis-moi le prix ci-dessous et je le rédige.
-                                  </span>
-                                )}
-                                {/* Le mot au traiteur est un SECOND brouillon, vers un autre
-                                    destinataire : sans son propre bouton, il resterait
-                                    invisible dans Brouillons et ne partirait jamais. */}
-                                {r.result.draftGaetanLink ? (
-                                  <a
-                                    href={String(r.result.draftGaetanLink)} target="_blank" rel="noreferrer"
-                                    className="inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-amber-200 hover:bg-amber-50 text-amber-800 px-2.5 h-7 text-xs font-medium"
-                                  >
-                                    Le mot pour Gaëtan <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                ) : null}
-                              </div>
-                            </div>
-                          )}
+                          {r.result?.kind === "commercial" && <BilanCommercial r={r} />}
 
                           {/* Correction : ouverte à tous ceux qui traitent, parce que c'est
                               celui qui voit le mail qui sait ce qu'il fallait en faire. */}

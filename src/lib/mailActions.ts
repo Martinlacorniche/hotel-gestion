@@ -507,7 +507,14 @@ async function handleRefus(
 //   · le SILENCE : si un collègue a déjà répondu après ce mail, on n'écrit rien.
 type OccupationSalles = { salles: string[]; occupation: string[] };
 
-async function sallesEtOccupation(hotelId: string, fil: string): Promise<OccupationSalles> {
+// ⚠️ `excluLeadId` : NOS PROPRES OPTIONS NE SONT PAS UNE OCCUPATION CONCURRENTE
+// (2026-07-24). Sur le dossier BY-1880231, Junior lisait les deux créneaux posés pour
+// CE dossier — Telo Segreto 19h30-23h et Patio Tropical 22h-23h — et annonçait « le
+// Patio est occupé par un autre client de 22h à 23h, à clarifier en interne avant
+// envoi ». Il faisait douter d'une salle qu'on avait réservée pour ce client-là, et
+// bloquait la réponse. Une salle que le dossier s'est réservée à lui-même est libre
+// POUR LUI.
+async function sallesEtOccupation(hotelId: string, fil: string, excluLeadId?: string | null): Promise<OccupationSalles> {
   const { data: salles } = await supabaseAdmin
     .from('seminar_rooms').select('name, capacity, surface')
     .eq('hotel_id', hotelId).order('capacity', { ascending: false });
@@ -527,13 +534,15 @@ async function sallesEtOccupation(hotelId: string, fil: string): Promise<Occupat
   // vraiment la salle.
   const { data: occ } = await supabaseAdmin
     .from('view_planning_seminaires')
-    .select('room_name, start_date, end_date, start_time, end_time')
+    .select('room_name, start_date, end_date, start_time, end_time, reference_id')
     .eq('hotel_id', hotelId)
     .lte('start_date', dates[dates.length - 1]).gte('end_date', dates[0]);
 
   // ⚠️ Le NOM du client qui occupe la salle ne sort pas d'ici : ce texte part dans un
   // brouillon destiné à un tiers, et le planning contient des dossiers concurrents.
-  const occupation = (occ || []).map((o) => {
+  const occupation = (occ || [])
+    .filter((o) => !excluLeadId || String(o.reference_id) !== String(excluLeadId))
+    .map((o) => {
     const jour = String(o.start_date).split('-').reverse().join('/');
     const h = o.start_time && o.end_time
       ? ` de ${String(o.start_time).slice(0, 5)} à ${String(o.end_time).slice(0, 5)}`
@@ -952,14 +961,15 @@ async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string
     `--- ${m.date.slice(0, 16).replace('T', ' ')} · ${m.deNous ? 'NOUS' : m.fromName || m.fromAddr}\n${m.text}`,
   ).join('\n\n');
 
-  const salles = await sallesEtOccupation(cfg.hotelId, texteFil);
+  const { fiche: ficheAvant } = await trouverFiche(cfg.hotelId, { ref });
+  const salles = await sallesEtOccupation(cfg.hotelId, texteFil, ficheAvant?.id);
   const prenom = (row.from_name || '').split(/\s+/)[0] || null;
 
   // La fiche est lue AVANT de rédiger : elle seule sait qu'un devis est parti.
   // Par la référence uniquement à ce stade — le nom du client final n'est connu
   // qu'après lecture du fil, et un mauvais rapprochement coûte plus cher qu'un
   // rapprochement manquant.
-  const { fiche: ficheRef } = await trouverFiche(cfg.hotelId, { ref });
+  const ficheRef = ficheAvant;
   const suivi = await redigeSuivi(cfg.nom, ref, texteFil, salles, prenom, ficheRef);
 
   if (suivi.issue === 'annulation') return await cloreDossier(cfg, row, ref, suivi, ficheRef);
