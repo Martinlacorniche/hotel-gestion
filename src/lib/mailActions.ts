@@ -376,7 +376,19 @@ async function qualifyLead(subject: string, body: string, hotelName: string): Pr
 //
 // ⚠️ UNE SEULE CORRESPONDANCE, sinon on ne touche à RIEN. Deux fiches qui matchent,
 // c'est une chance sur deux de saccager la mauvaise — et le silence coûte moins cher.
-type FicheTrouvee = { id: string; commentaires: string | null };
+// `statut`, `date_evenement` et `budget_estime` ne servent pas qu'à l'affichage : ils
+// sont relus par le rédacteur pour qu'il sache où en est le dossier avant d'écrire.
+type FicheTrouvee = {
+  id: string; commentaires: string | null;
+  nom_client?: string | null; statut?: string | null;
+  date_evenement?: string | null; budget_estime?: number | null;
+  // `etat_paiement` porte les conditions de vente (« Attente acompte »), `besoin_gaetan`
+  // dit si le traiteur partenaire est de la partie. Deux champs que l'équipe remplit et
+  // qu'aucun mail ne contient : sans eux, une confirmation oublie l'acompte et le traiteur.
+  etat_paiement?: string | null; besoin_gaetan?: string | null;
+};
+const CHAMPS_FICHE =
+  'id, commentaires, nom_client, statut, date_evenement, budget_estime, etat_paiement, besoin_gaetan';
 
 function motifSql(s: string): string {
   // Les virgules et parenthèses cassent la syntaxe `.or()` de PostgREST.
@@ -390,7 +402,7 @@ async function trouverFiche(
   if (crit.ref) {
     const ref = motifSql(crit.ref);
     const { data } = await supabaseAdmin
-      .from('suivi_commercial').select('id, commentaires').eq('hotel_id', hotelId)
+      .from('suivi_commercial').select(CHAMPS_FICHE).eq('hotel_id', hotelId)
       .or(`nom_client.ilike.%${ref}%,titre_demande.ilike.%${ref}%,commentaires.ilike.%${ref}%`)
       .limit(3);
     if (data?.length === 1) return { fiche: data[0], comment: `fiche retrouvée par la référence ${crit.ref}` };
@@ -402,13 +414,30 @@ async function trouverFiche(
     .sort((a, b) => b.length - a.length)[0];
   if (token) {
     let q = supabaseAdmin
-      .from('suivi_commercial').select('id, commentaires').eq('hotel_id', hotelId)
+      .from('suivi_commercial').select(CHAMPS_FICHE).eq('hotel_id', hotelId)
       .or(`nom_client.ilike.%${token}%,societe.ilike.%${token}%`);
     if (crit.dateEvenement) q = q.eq('date_evenement', crit.dateEvenement);
     const { data } = await q.limit(3);
     const quoi = `« ${token} »${crit.dateEvenement ? ` au ${crit.dateEvenement}` : ' (sans date)'}`;
     if (data?.length === 1) return { fiche: data[0], comment: `fiche retrouvée par ${quoi}` };
     if ((data?.length ?? 0) > 1) return { fiche: null, comment: `plusieurs fiches correspondent à ${quoi} — je n'en touche aucune` };
+  }
+
+  // Repli par la SEULE DATE de l'événement. Le nom ne suffit pas toujours : la fiche
+  // de l'événement Nestlé du 07/09 est au nom de « YANNICK PAQUIER », société vide —
+  // chercher « Nestlé » n'y mène pas, alors que la date y mène tout droit. Une date
+  // d'événement est très discriminante, et l'exigence d'unicité nous protège : deux
+  // dossiers le même jour ⇒ on ne touche à rien (2026-07-24).
+  if (crit.dateEvenement) {
+    const { data } = await supabaseAdmin
+      .from('suivi_commercial').select(CHAMPS_FICHE)
+      .eq('hotel_id', hotelId).eq('date_evenement', crit.dateEvenement).limit(3);
+    if (data?.length === 1) {
+      return { fiche: data[0], comment: `fiche retrouvée par la date du ${crit.dateEvenement} (${data[0].nom_client ?? 'sans nom'})` };
+    }
+    if ((data?.length ?? 0) > 1) {
+      return { fiche: null, comment: `plusieurs dossiers au ${crit.dateEvenement} — je n'en touche aucun` };
+    }
   }
 
   return { fiche: null, comment: 'aucune fiche ne correspond à ce dossier' };
@@ -531,8 +560,29 @@ type Suivi = {
 
 // Exportée pour pouvoir l'essayer à blanc sur un vrai fil (aucun effet de bord :
 // elle lit et rédige, elle n'écrit ni en base ni dans la boîte).
+// ── Ce que notre CRM sait du dossier, mis sous les yeux du rédacteur ────────
+//
+// Junior lisait LE FIL DE MAILS, jamais LA FICHE. Sur BY-1880231 (« Souhaitez-vous
+// vous positionner sur ce projet ? »), le fil ne dit rien alors que la fiche dit
+// tout : statut « Devis envoyé », événement du 14/10, et le traiteur qui a confirmé
+// sa disponibilité. Sans elle, il répondait « nous étudions votre demande » sur un
+// dossier déjà chiffré — vis-à-vis de la centrale, ça nous fait passer pour
+// désorganisés. Martin, 2026-07-24 : « oui il faut lire la fiche ».
+function contexteFiche(f: FicheTrouvee | null): string {
+  if (!f) return 'Aucune fiche à ce dossier dans notre CRM (le dossier n’a peut-être jamais été ouvert).';
+  return [
+    `NOTRE FICHE (source : notre CRM, elle fait foi sur l'état du dossier) :`,
+    `- client : ${f.nom_client || '—'}`,
+    `- statut : ${f.statut || '—'}`,
+    f.date_evenement ? `- date de l'événement : ${f.date_evenement}` : null,
+    f.budget_estime ? `- budget estimé : ${f.budget_estime} €` : null,
+    f.commentaires ? `- historique interne :\n${String(f.commentaires).slice(0, 1500)}` : null,
+  ].filter(Boolean).join('\n');
+}
+
 export async function redigeSuivi(
   hotelName: string, ref: string, fil: string, salles: OccupationSalles, prenom: string | null,
+  fiche: FicheTrouvee | null = null,
 ): Promise<Suivi> {
   const client = new Anthropic();
   const msg = await client.messages.create({
@@ -542,6 +592,7 @@ export async function redigeSuivi(
       content:
         `Tu écris à la place de la réception de l'Hôtel ${hotelName}. Voici l'INTÉGRALITÉ du fil ` +
         `du dossier ${ref}, du plus ancien au plus récent, nos réponses comprises.\n\n${fil.slice(0, 14000)}\n\n` +
+        `${contexteFiche(fiche)}\n\n` +
         `NOS SALLES : ${salles.salles.join(' · ') || 'non renseignées'}\n` +
         `OCCUPATION RÉELLE sur la période (source : notre planning) :\n` +
         `${salles.occupation.length ? salles.occupation.join('\n') : 'aucune salle occupée sur ces dates'}\n` +
@@ -572,6 +623,10 @@ export async function redigeSuivi(
         `3. N'INVENTE aucun tarif, aucun horaire, aucune prestation qui ne soit pas dans le fil ` +
         `ou dans les données ci-dessus. Si le prix est nécessaire, annonce qu'il suit dans le devis.\n` +
         `4. Ne reviens pas sur ce qui est déjà acté dans le fil, ne le renégocie pas.\n` +
+        `4bis. TIENS COMPTE DE NOTRE FICHE. Si elle dit qu'un devis est parti, ne réponds ` +
+        `pas que nous étudions la demande : rappelle que notre proposition a été adressée. ` +
+        `Si elle dit que le dossier est confirmé, ne le repropose pas. Le fil de mails ne ` +
+        `contient pas tout — la fiche fait foi sur l'état du dossier.\n` +
         `5. Commence par « Bonjour ${prenom || 'Madame, Monsieur'}, ». PAS de signature ni de ` +
         `formule finale de type « Bien à vous » : elles sont ajoutées après. ` +
         `Balises <p>/<ul>/<li>/<strong> uniquement.`,
@@ -595,7 +650,7 @@ export async function redigeSuivi(
 // huit dossiers Best Western en base sont en refus et aucun ne dit pourquoi — donc
 // personne ne sait si on perd sur le prix, sur les salles ou sur la réactivité.
 async function cloreDossier(
-  cfg: HotelMailConfig, row: LogRow, ref: string, suivi: Suivi,
+  cfg: HotelMailConfig, row: LogRow, ref: string, suivi: Suivi, dejaTrouvee: FicheTrouvee | null = null,
 ): Promise<ExecOutcome> {
   const today = new Date().toISOString().slice(0, 10);
   const motif = (suivi.motif_perte || '').slice(0, 300) || null;
@@ -615,9 +670,10 @@ async function cloreDossier(
     ).catch(() => null);
   }
 
-  const { fiche, comment } = await trouverFiche(cfg.hotelId, {
-    ref, nom: suivi.client_nom, dateEvenement: suivi.date_evenement,
-  });
+  const trouve = dejaTrouvee
+    ? { fiche: dejaTrouvee, comment: `fiche retrouvée par la référence ${ref}` }
+    : await trouverFiche(cfg.hotelId, { nom: suivi.client_nom, dateEvenement: suivi.date_evenement });
+  const { fiche, comment } = trouve;
 
   // Pas de fiche ⇒ on n'en ouvre pas une (Martin) : un dossier mort n'a pas à naître
   // dans le pipeline, et une fiche créée au nom de la centrale pollue le CRM.
@@ -643,6 +699,174 @@ async function cloreDossier(
       ...(draft || {}),
       message: (fiche ? `Dossier passé en Refus — ${comment}.` : `${comment[0].toUpperCase()}${comment.slice(1)} : je n'en crée pas.`)
         + (draft ? ' Remerciement prêt à relire.' : dejaEnCours ? ' Un brouillon existe déjà sur ce fil.' : ''),
+    },
+  };
+}
+
+// ── Ce qu'une confirmation de séminaire oblige à faire ──────────────────────
+//
+// Une confirmation n'est pas qu'un changement de statut : elle déclenche une chaîne
+// d'obligations que Martin a listée le 2026-07-24 — contrôler que la rooming list
+// correspond à ce qui a été vendu, faire saisir le dossier dans Hotsoft (le PMS de
+// La Corniche, invisible depuis ici), remonter les régimes alimentaires, réclamer
+// l'acompte si les conditions le prévoient, et prévenir le traiteur quand il est de
+// la partie. Rien de tout cela ne se voit dans le mail seul : il faut croiser la
+// rooming list avec la fiche.
+type ElementsConfirmation = {
+  participants: number | null;
+  regimes: string[];
+  ecart_vente: string | null;
+  a_reprendre: string[];
+};
+
+export async function elementsConfirmation(corps: string, fiche: FicheTrouvee | null): Promise<ElementsConfirmation> {
+  const vide: ElementsConfirmation = { participants: null, regimes: [], ecart_vente: null, a_reprendre: [] };
+  try {
+    const client = new Anthropic();
+    const msg = await client.messages.create({
+      model: LLM_MODEL, max_tokens: 900,
+      messages: [{
+        role: 'user',
+        content:
+          `Un client confirme son événement dans notre hôtel. Voici son message :\n\n${corps.slice(0, 8000)}\n\n` +
+          `${contexteFiche(fiche)}\n\n` +
+          `Réponds en JSON STRICT (rien autour), clés :\n` +
+          `- participants : le nombre de personnes de la liste nominative (rooming list) s'il y en a une, sinon null\n` +
+          `- regimes : les régimes et allergies signalés, un par entrée, avec le nom de la personne ` +
+          `(ex. "Valérie Baugier — menu sans viandes"). Liste vide si aucun.\n` +
+          `- ecart_vente : compare le nombre de participants à ce qui a été VENDU d'après la fiche ` +
+          `(son historique interne indique en général le nombre de personnes). Si ça correspond, réponds null. ` +
+          `Si ça diffère, une phrase courte disant l'écart (ex. "13 personnes dans la liste pour 11 vendues"). ` +
+          `Si la fiche ne permet pas de le savoir, réponds null.\n` +
+          `- a_reprendre : UNIQUEMENT ce qu'un humain doit encore faire sur le terrain ` +
+          `(horaires d'arrivée à obtenir, demandes particulières, besoins techniques, matériel). ` +
+          `⚠️ N'Y METS PAS ce qui est déjà pris en charge automatiquement : passer le dossier en ` +
+          `confirmé, annuler la relance, écrire la note sur la fiche, répondre au client, saisir ` +
+          `dans le PMS, transmettre les régimes, réclamer l'acompte, prévenir le traiteur — tout ` +
+          `cela est déjà fait ou déjà écrit ailleurs. Une consigne qui demande du travail déjà ` +
+          `accompli fait perdre confiance à l'équipe. Liste vide si rien ne reste.`,
+      }],
+    });
+    const t = msg.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
+    const j = JSON.parse((t.match(/\{[\s\S]*\}/)?.[0] || '{}')) as Partial<ElementsConfirmation>;
+    return {
+      participants: typeof j.participants === 'number' ? j.participants : null,
+      regimes: Array.isArray(j.regimes) ? j.regimes.slice(0, 12) : [],
+      ecart_vente: j.ecart_vente || null,
+      a_reprendre: Array.isArray(j.a_reprendre) ? j.a_reprendre.slice(0, 8) : [],
+    };
+  } catch {
+    return vide;   // Le reste du traitement vaut mieux que rien : on n'abandonne pas la confirmation.
+  }
+}
+
+// La consigne est le livrable : c'est elle qui fait exister le dossier pour l'équipe
+// du soir, qui n'a ni le mail ni la fiche sous les yeux. Elle dit quoi faire, pas
+// « il y a eu une confirmation ».
+export function texteConsigneConfirmation(
+  fiche: FicheTrouvee | null, el: ElementsConfirmation, titre: string, ref: string | null,
+): string {
+  const l: string[] = [];
+  const quoi = fiche?.nom_client || titre;
+  const quand = fiche?.date_evenement ? ` du ${fiche.date_evenement.slice(8, 10)}/${fiche.date_evenement.slice(5, 7)}` : '';
+  l.push(`✅ ÉVÉNEMENT CONFIRMÉ PAR LE CLIENT — ${quoi}${quand}${ref ? ` (${ref})` : ''}`);
+  l.push(`→ À SAISIR DANS HOTSOFT (chambres + salle) : le dossier n'y est pas tant que personne ne l'a fait.`);
+  if (el.participants) l.push(`· Rooming list reçue : ${el.participants} personnes.`);
+  if (el.ecart_vente) l.push(`· ⚠️ À VÉRIFIER : ${el.ecart_vente}`);
+  if (el.regimes.length) l.push(`· 🍽️ À TRANSMETTRE EN CUISINE : ${el.regimes.join(' · ')}`);
+  if (fiche?.etat_paiement && /acompte|attente|impay/i.test(String(fiche.etat_paiement))) {
+    l.push(`· 💶 ${fiche.etat_paiement} — acompte à réclamer avant l'arrivée (conditions de vente).`);
+  }
+  // Gaëtan (Monsieur Cocktail) est le traiteur partenaire : quand la fiche dit qu'il
+  // est de la partie, une confirmation client est aussi une confirmation pour lui.
+  if (fiche?.besoin_gaetan && !/^non|^aucun/i.test(String(fiche.besoin_gaetan))) {
+    l.push(`· 🍸 Prévenir Gaëtan (Monsieur Cocktail) que l'événement est confirmé — sa prestation est « ${fiche.besoin_gaetan} » sur la fiche.`);
+  }
+  for (const a of el.a_reprendre) l.push(`· ${a}`);
+  l.push(`Le mail de confirmation est classé ; la fiche commerciale est à jour.`);
+  return l.join('\n').slice(0, 2000);
+}
+
+// ── Le dossier est gagné : on l'acte, on ne le relance pas ──────────────────
+//
+// Le symétrique de `cloreDossier`, et le même trou. Le code ne connaissait que deux
+// cas — nouvelle demande et refus — si bien qu'une CONFIRMATION retombait dans
+// « nouvelle demande » : note « Demande reçue par mail », relance reprogrammée, et
+// statut laissé à « Devis envoyé ». Vécu le 2026-07-24 sur l'événement Nestlé du 7
+// septembre, où le client écrivait « je viens d'avoir le retour, c'est OK » en
+// joignant sa rooming list. On relançait un client qui venait de dire oui.
+async function confirmerDossier(
+  cfg: HotelMailConfig, row: LogRow, ref: string | null, suivi: Suivi, dejaTrouvee: FicheTrouvee | null = null,
+): Promise<ExecOutcome> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const dejaEnCours = await existingReplyDraft(cfg.mailbox, row.message_id).catch(() => null);
+  let draft: { draftId: string; webLink: string } | null = null;
+  if (suivi.draft_html && !dejaEnCours) {
+    const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
+    draft = await createReplyDraft(
+      cfg.mailbox, row.message_id,
+      `${suivi.draft_html}<p>Bien à vous,</p>${signatureHtml(duty?.name || 'La Réception', `Réception — Hôtel ${cfg.nom}`)}`,
+      [signatureAttachment()],
+    ).catch(() => null);
+  }
+
+  const trouve = dejaTrouvee
+    ? { fiche: dejaTrouvee, comment: `fiche retrouvée par la référence ${ref}` }
+    : await trouverFiche(cfg.hotelId, { nom: suivi.client_nom, dateEvenement: suivi.date_evenement });
+  const { fiche, comment } = trouve;
+
+  // Les éléments opérationnels se lisent dans le mail ET dans la fiche : la rooming
+  // list ne veut rien dire sans le nombre vendu.
+  const corps = await getMessageText(cfg.mailbox, row.message_id).catch(() => row.subject || '');
+  const el = await elementsConfirmation(corps, fiche);
+
+  if (fiche) {
+    // Note COURTE (Martin) : la fiche n'est pas un journal, elle dit où on en est.
+    const bref = [
+      el.participants ? `rooming ${el.participants} pax` : null,
+      el.ecart_vente ? `⚠️ ${el.ecart_vente}` : null,
+      el.regimes.length ? `${el.regimes.length} régime(s) signalé(s)` : null,
+    ].filter(Boolean).join(', ');
+    const note = `${today.slice(8, 10)}/${today.slice(5, 7)} CONFIRMÉ par le client${bref ? ` (${bref})` : ''}. À saisir dans Hotsoft. - Junior`;
+    const merged = [note, fiche.commentaires].filter(Boolean).join('\n').slice(0, 4000);
+    // Relance annulée : c'est tout l'intérêt — un dossier acté ne se relance pas.
+    await supabaseAdmin.from('suivi_commercial')
+      .update({ statut: 'Confirmé', date_relance: null, commentaires: merged })
+      .eq('id', fiche.id);
+  }
+
+  // La consigne porte ce que la fiche ne dira jamais à l'équipe du soir. Anti-doublon
+  // sur la journée × hôtel comme pour les consignes Telo : l'action peut être rejouée.
+  let consigne = false;
+  const marqueur = (fiche?.nom_client || row.subject || '').slice(0, 24);
+  const { data: dejaPosee } = await supabaseAdmin
+    .from('consignes').select('id')
+    .eq('hotel_id', cfg.hotelId).eq('date_creation', today).ilike('texte', `%${marqueur}%`).limit(1);
+  if (!dejaPosee?.length) {
+    const { error } = await supabaseAdmin.from('consignes').insert({
+      texte: texteConsigneConfirmation(fiche, el, row.subject || '', ref),
+      auteur: 'Junior', date_creation: today, hotel_id: cfg.hotelId, valide: false,
+    });
+    consigne = !error;
+  }
+
+  // Le mail est classé (Martin) : ce qu'il portait vit maintenant dans la consigne et
+  // dans la fiche. ⚠️ Après le brouillon — un déplacement change l'id Graph du message.
+  await moveMessage(cfg.mailbox, row.message_id, 'archive').catch(() => null);
+
+  return {
+    status: 'executed',
+    result: {
+      kind: 'commercial', mode: 'confirme', ref, movedTo: 'archive', consigne,
+      ficheId: fiche?.id ?? null, fiche: comment, resume: suivi.resume,
+      participants: el.participants, regimes: el.regimes, ecart_vente: el.ecart_vente,
+      client: suivi.client_nom ?? null, date_evenement: suivi.date_evenement ?? null,
+      incertitudes: suivi.incertitudes || [],
+      ...(draft || {}),
+      message: (fiche ? `Dossier passé en Confirmé, relance annulée — ${comment}.` : `${comment[0].toUpperCase()}${comment.slice(1)}.`)
+        + (consigne ? ' Consigne posée pour la saisie dans Hotsoft.' : '')
+        + (el.ecart_vente ? ` ⚠️ ${el.ecart_vente}` : ''),
     },
   };
 }
@@ -675,9 +899,16 @@ async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string
 
   const salles = await sallesEtOccupation(cfg.hotelId, texteFil);
   const prenom = (row.from_name || '').split(/\s+/)[0] || null;
-  const suivi = await redigeSuivi(cfg.nom, ref, texteFil, salles, prenom);
 
-  if (suivi.issue === 'annulation') return await cloreDossier(cfg, row, ref, suivi);
+  // La fiche est lue AVANT de rédiger : elle seule sait qu'un devis est parti.
+  // Par la référence uniquement à ce stade — le nom du client final n'est connu
+  // qu'après lecture du fil, et un mauvais rapprochement coûte plus cher qu'un
+  // rapprochement manquant.
+  const { fiche: ficheRef } = await trouverFiche(cfg.hotelId, { ref });
+  const suivi = await redigeSuivi(cfg.nom, ref, texteFil, salles, prenom, ficheRef);
+
+  if (suivi.issue === 'annulation') return await cloreDossier(cfg, row, ref, suivi, ficheRef);
+  if (suivi.issue === 'confirmation') return await confirmerDossier(cfg, row, ref, suivi, ficheRef);
 
   // Quelqu'un rédige déjà (ou Junior est déjà passé) : on ne pose pas un second brouillon.
   const dejaEnCours = await existingReplyDraft(cfg.mailbox, row.message_id).catch(() => null);
@@ -745,6 +976,17 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
 
   // Le client décline → surtout PAS la pré-qualif ni la relance à J+3.
   if (lead.issue === 'refus') return await handleRefus(cfg, row, lead, email, today);
+
+  // Une confirmation hors canal Best Western (donc sans référence de dossier) suit
+  // exactement le même sort : dossier acté, relance annulée. C'est le cas de
+  // l'événement Nestlé du 07/09 — « je viens d'avoir le retour, c'est OK ».
+  if (lead.issue === 'confirmation') {
+    return await confirmerDossier(cfg, row, null, {
+      resume: lead.resume || '', draft_html: lead.draft_html || '',
+      client_nom: lead.nom_client || lead.societe || null,
+      date_evenement: lead.date_evenement || null,
+    });
+  }
 
   const relance = new Date(Date.now() + RELANCE_DAYS * 24 * 3600e3).toISOString().slice(0, 10);
   const missing = Array.isArray(lead.missing) ? lead.missing : [];
@@ -875,7 +1117,13 @@ async function actRoutePennylane(cfg: HotelMailConfig, row: LogRow): Promise<Exe
   const address = PENNYLANE_SUPPLIERS[entity];
   await forwardMessage(cfg.mailbox, row.message_id, address,
     `Facture transférée pour comptabilisation (routage assistant réception — entité: ${entity}).`);
-  return { status: 'executed', result: { kind: 'pennylane', entity, address, attachment: pdf.name } };
+
+  // La facture est partie en compta : le mail n'a plus rien à faire en boîte de
+  // réception. Il y restait (Martin 2026-07-24 : « il a bien envoyé la facture mais
+  // il a pas classé le mail »), si bien qu'une facture traitée ressemblait encore à
+  // une facture à traiter. On classe, on ne supprime pas : c'est une pièce comptable.
+  const classe = await moveMessage(cfg.mailbox, row.message_id, 'archive').then(() => true).catch(() => false);
+  return { status: 'executed', result: { kind: 'pennylane', entity, address, attachment: pdf.name, classe } };
 }
 
 // livraison_consigne : lit le bon de commande Cuisine Solutions (PDF) pour en extraire la DATE

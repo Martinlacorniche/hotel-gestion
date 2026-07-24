@@ -157,9 +157,18 @@ function resultSummary(r: Row): string | null {
       if (res.mode === "annule") {
         return res.ficheId ? "Dossier perdu · passé en Refus · classé" : "Dossier perdu · aucune fiche à mettre à jour · classé";
       }
+      if (res.mode === "confirme") {
+        return [
+          res.ficheId ? "Dossier confirmé · relance annulée" : "Dossier confirmé · aucune fiche",
+          res.consigne ? "consigne Hotsoft posée" : null,
+          res.ecart_vente ? `⚠️ ${String(res.ecart_vente)}` : null,
+        ].filter(Boolean).join(" · ");
+      }
       return res.mode === "created" ? "Fiche créée" : "Fiche complétée";
     }
-    if (res.kind === "pennylane") return `Envoyé à Pennylane (${String(res.entity)})`;
+    if (res.kind === "pennylane") {
+      return `Envoyé à Pennylane (${String(res.entity)})${res.classe === false ? " · à classer à la main" : " · classé"}`;
+    }
     if (res.draftId) return "Brouillon créé";
     return "Fait";
   })();
