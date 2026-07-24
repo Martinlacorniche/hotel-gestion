@@ -718,13 +718,18 @@ async function cloreDossier(
 // rooming list avec la fiche.
 type ElementsConfirmation = {
   participants: number | null;
+  /** La liste nominative, recopiée telle quelle. Sans elle, classer le mail enterre
+   *  la rooming list : la personne qui saisit dans Hotsoft n'a plus les noms sous les
+   *  yeux (Martin 2026-07-24 : « il a classé le mail alors que la rooming est à
+   *  rentrer »). Le mail se classe, la consigne porte tout ce qu'il faut pour saisir. */
+  noms: string[];
   regimes: string[];
   ecart_vente: string | null;
   a_reprendre: string[];
 };
 
 export async function elementsConfirmation(corps: string, fiche: FicheTrouvee | null): Promise<ElementsConfirmation> {
-  const vide: ElementsConfirmation = { participants: null, regimes: [], ecart_vente: null, a_reprendre: [] };
+  const vide: ElementsConfirmation = { participants: null, noms: [], regimes: [], ecart_vente: null, a_reprendre: [] };
   try {
     const client = new Anthropic();
     const msg = await client.messages.create({
@@ -736,6 +741,9 @@ export async function elementsConfirmation(corps: string, fiche: FicheTrouvee | 
           `${contexteFiche(fiche)}\n\n` +
           `Réponds en JSON STRICT (rien autour), clés :\n` +
           `- participants : le nombre de personnes de la liste nominative (rooming list) s'il y en a une, sinon null\n` +
+          `- noms : la liste nominative RECOPIÉE À L'IDENTIQUE, un nom par entrée, dans l'ordre ` +
+          `du mail (ex. "ALDEBERT Eugénie"). C'est elle qu'on saisira dans le PMS : n'invente ` +
+          `rien, ne réordonne pas, n'abrège pas. Liste vide s'il n'y a pas de liste nominative.\n` +
           `- regimes : les régimes et allergies signalés, un par entrée, avec le nom de la personne ` +
           `(ex. "Valérie Baugier — menu sans viandes"). Liste vide si aucun.\n` +
           `- ecart_vente : compare le nombre de participants à ce qui a été VENDU d'après la fiche ` +
@@ -755,6 +763,7 @@ export async function elementsConfirmation(corps: string, fiche: FicheTrouvee | 
     const j = JSON.parse((t.match(/\{[\s\S]*\}/)?.[0] || '{}')) as Partial<ElementsConfirmation>;
     return {
       participants: typeof j.participants === 'number' ? j.participants : null,
+      noms: Array.isArray(j.noms) ? j.noms.slice(0, 60) : [],
       regimes: Array.isArray(j.regimes) ? j.regimes.slice(0, 12) : [],
       ecart_vente: j.ecart_vente || null,
       a_reprendre: Array.isArray(j.a_reprendre) ? j.a_reprendre.slice(0, 8) : [],
@@ -775,7 +784,15 @@ export function texteConsigneConfirmation(
   const quand = fiche?.date_evenement ? ` du ${fiche.date_evenement.slice(8, 10)}/${fiche.date_evenement.slice(5, 7)}` : '';
   l.push(`✅ ÉVÉNEMENT CONFIRMÉ PAR LE CLIENT — ${quoi}${quand}${ref ? ` (${ref})` : ''}`);
   l.push(`→ À SAISIR DANS HOTSOFT (chambres + salle) : le dossier n'y est pas tant que personne ne l'a fait.`);
-  if (el.participants) l.push(`· Rooming list reçue : ${el.participants} personnes.`);
+  // La liste EN ENTIER dans la consigne : le mail est classé, c'est ici qu'on lit les
+  // noms pour les saisir. Une consigne qui dit « rooming list reçue : 11 personnes »
+  // oblige à retourner chercher le mail — donc personne ne saisit.
+  if (el.noms.length) {
+    l.push(`· ROOMING LIST (${el.noms.length} personnes), à saisir :`);
+    for (const n of el.noms) l.push(`    ${n}`);
+  } else if (el.participants) {
+    l.push(`· Rooming list reçue : ${el.participants} personnes (détail dans le mail classé).`);
+  }
   if (el.ecart_vente) l.push(`· ⚠️ À VÉRIFIER : ${el.ecart_vente}`);
   if (el.regimes.length) l.push(`· 🍽️ À TRANSMETTRE EN CUISINE : ${el.regimes.join(' · ')}`);
   if (fiche?.etat_paiement && /acompte|attente|impay/i.test(String(fiche.etat_paiement))) {
@@ -788,7 +805,7 @@ export function texteConsigneConfirmation(
   }
   for (const a of el.a_reprendre) l.push(`· ${a}`);
   l.push(`Le mail de confirmation est classé ; la fiche commerciale est à jour.`);
-  return l.join('\n').slice(0, 2000);
+  return l.join('\n').slice(0, 3000);
 }
 
 // ── Le dossier est gagné : on l'acte, on ne le relance pas ──────────────────
