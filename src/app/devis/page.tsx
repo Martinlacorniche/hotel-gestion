@@ -288,12 +288,17 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
       // Si le devis existe déjà, on ne retouche PAS client_id pour éviter
       // le conflit UNIQUE — on met à jour uniquement les champs éditables.
       // Si c'est un nouveau devis, on assigne le client.
+      // ⚠️ LE STATUT N'EST PAS RÉÉCRIT SUR UN DEVIS EXISTANT (2026-07-24). Il était
+      // remis à 'draft' à CHAQUE enregistrement : un devis marqué envoyé redevenait
+      // brouillon à la correction suivante. Résultat en base : 136 devis sur 137 en
+      // 'draft', un seul en 'sent' — et donc aucun moyen de savoir depuis quand une
+      // proposition attend. Une simple relecture du devis suffisait à effacer le fait
+      // qu'il était parti.
       const quoteData = existingQuote
         ? {
             hotel_id: hotel_id,
             lead_id: leadId,
             comment: teamNotes,
-            status: 'draft',
             start_date: date || null,
             end_date: date || null,
             cancellation_terms: cancellationTerms,
@@ -360,7 +365,30 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
   const branding = getHotelBranding(hotel?.id, hotel?.nom);
 
+  // Envoyer le devis, c'est aussi le DIRE. Le clic ouvrait le client mail et l'app
+  // n'en gardait aucune trace : personne ne savait depuis quand une proposition
+  // attendait, aucune relance ne pouvait être fiable, et l'assistant mails devait se
+  // contenter d'un libellé posé à la main (« Devis envoyé ») sans date. On marque donc
+  // le devis et la fiche au moment du clic.
+  // ⚠️ Limite assumée : un `mailto:` ouvre le message, il ne prouve pas l'envoi. Mieux
+  // vaut une date approchée qu'aucune date — et c'est ce que fait n'importe quel CRM.
+  const marquerDevisEnvoye = async () => {
+    if (!leadId) return;
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      await supabase.from('quotes').update({ status: 'sent' }).eq('lead_id', leadId);
+      await supabase.from('suivi_commercial')
+        .update({ date_devis_envoye: today, statut: 'Devis envoyé' })
+        .eq('id', leadId);
+      showToast('Devis marqué comme envoyé ✓');
+    } catch {
+      // L'ouverture du mail prime : on ne bloque pas l'envoi pour une écriture ratée.
+      showToast("Le mail est ouvert, mais je n'ai pas pu marquer le devis", 'error');
+    }
+  };
+
   const handleSendMail = () => {
+    void marquerDevisEnvoye();
     const refLabel = quoteNumber ? `REF : ${quoteNumber}` : 'REF : EN COURS';
     const subject = encodeURIComponent(`Proposition commerciale ${refLabel} - ${client?.nom_client}`);
     const body = encodeURIComponent(
