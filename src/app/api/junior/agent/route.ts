@@ -39,6 +39,9 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const question = String(body.question || '').trim();
   if (!question) return NextResponse.json({ ok: false, error: 'question requise' }, { status: 400 });
+  // Le service n'a aucune mémoire entre deux enquêtes : c'est l'écran qui lui
+  // repasse le fil, sinon une question de suivi repartirait de zéro.
+  const fil = Array.isArray(body.fil) ? body.fil.slice(-3) : [];
 
   // Le dossier ouvert à l'écran lui évite de chercher ce qu'on a déjà sous les
   // yeux : on ne discute pas dans le vide, on discute DE quelque chose.
@@ -64,7 +67,7 @@ export async function POST(req: Request) {
     const r = await fetch(base, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-agent-secret': secret },
-      body: JSON.stringify({ question, hotel: cfg.key, contexte }),
+      body: JSON.stringify({ question, hotel: cfg.key, contexte, fil }),
       signal: AbortSignal.timeout(280_000),
     });
     const j = await r.json().catch(() => ({}));

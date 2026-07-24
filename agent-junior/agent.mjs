@@ -221,13 +221,24 @@ la fiche). Si tu n'as pas trouvé, dis-le franchement — une hypothèse présen
 un fait coûte plus cher qu'un « je ne sais pas ». Ne cite jamais le nom d'un autre
 client dans un texte qui pourrait partir chez un tiers.`;
 
-async function enqueter({ question, hotel, contexte }) {
+async function enqueter({ question, hotel, contexte, fil }) {
   const client = new Anthropic();
   const t0 = Date.now();
-  const messages = [{
+  // ⚠️ LE SERVICE N'A AUCUNE MÉMOIRE — c'est voulu : rien ne s'accumule entre deux
+  // enquêtes. Le fil de la conversation est donc renvoyé par l'écran à chaque fois,
+  // sinon « et pour l'autre dossier ? » repartirait de zéro et il redemanderait ce
+  // qu'on vient de lui dire. Trois échanges suffisent : au-delà, on paie du contexte
+  // que personne ne relit.
+  const messages = [];
+  for (const e of (Array.isArray(fil) ? fil : []).slice(-3)) {
+    if (!e?.moi || !e?.lui) continue;
+    messages.push({ role: 'user', content: String(e.moi).slice(0, 2000) });
+    messages.push({ role: 'assistant', content: String(e.lui).slice(0, 6000) });
+  }
+  messages.push({
     role: 'user',
-    content: (contexte ? `Contexte du dossier ouvert à l'écran :\n${contexte}\n\n` : '') + `Question : ${question}`,
-  }];
+    content: (contexte && !messages.length ? `Contexte du dossier ouvert à l'écran :\n${contexte}\n\n` : '') + `Question : ${question}`,
+  });
   const traces = [];
 
   for (let tour = 0; tour < MAX_TOURS; tour++) {
@@ -278,10 +289,10 @@ createServer(async (req, res) => {
   req.on('data', (c) => { brut += c; if (brut.length > 200000) req.destroy(); });
   req.on('end', async () => {
     try {
-      const { question, hotel, contexte } = JSON.parse(brut || '{}');
+      const { question, hotel, contexte, fil } = JSON.parse(brut || '{}');
       if (!question) return fin(400, { ok: false, error: 'question requise' });
       const t0 = Date.now();
-      const r = await enqueter({ question, hotel, contexte });
+      const r = await enqueter({ question, hotel, contexte, fil });
       console.log(`[${new Date().toISOString()}] ${hotel} · ${Math.round((Date.now() - t0) / 1000)}s · ${r.traces.length} outils · ${String(question).slice(0, 70)}`);
       fin(200, { ok: true, ...r });
     } catch (e) {

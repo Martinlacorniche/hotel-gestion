@@ -438,7 +438,14 @@ export default function MailAssistantPage() {
     const headers = await authHeaders();
     if (!headers) { setCherche(false); return; }
     const resp = await fetch(`/api/junior/agent?hotel=${cfg.key}`, {
-      method: "POST", headers, body: JSON.stringify({ id: row.id, question: q }),
+      method: "POST", headers,
+      // On lui repasse ce qu'on s'est déjà dit sur ce dossier : il ne garde rien
+      // d'une question à l'autre, et sans ça « et l'autre dossier ? » serait
+      // incompréhensible pour lui.
+      body: JSON.stringify({
+        id: row.id, question: q,
+        fil: (causerie[row.id] || []).filter((e) => e.lui).slice(-3).map((e) => ({ moi: e.moi, lui: e.lui })),
+      }),
     });
     const j = await resp.json().catch(() => ({}));
     setCauserie((c) => {
