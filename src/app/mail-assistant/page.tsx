@@ -579,9 +579,9 @@ export default function MailAssistantPage() {
     const aVerifier = Array.isArray(res.incertitudes) ? (res.incertitudes as unknown[]).map(String) : [];
     const aFaire = res.message ? String(res.message) : null;
     const liens = [
-      res.id ? { href: `/devis?leadId=${String(res.id)}`, label: "Ouvrir le devis", ext: false } : null,
+      res.id ? { href: `/devis?leadId=${String(res.id)}`, label: "Ouvrir le devis" } : null,
       // Les brouillons ne sont plus des liens : ils s'affichent en entier plus bas.
-    ].filter(Boolean) as { href: string; label: string; ext: boolean }[];
+    ].filter(Boolean) as { href: string; label: string }[];
 
     return (
       <>
@@ -658,7 +658,7 @@ export default function MailAssistantPage() {
                 <div className="flex flex-wrap gap-2 mt-3">
                   {liens.map((l) => (
                     <a
-                      key={l.href} href={l.href} {...(l.ext ? { target: "_blank", rel: "noreferrer" } : {})}
+                      key={l.href} href={l.href} target="_blank" rel="noreferrer"
                       className="inline-flex items-center gap-1.5 rounded-lg bg-white ring-1 ring-slate-200 hover:bg-slate-50 text-slate-700 px-3 h-9 text-[13px] font-semibold"
                     >
                       {l.label} <ExternalLink className="w-3.5 h-3.5" />
