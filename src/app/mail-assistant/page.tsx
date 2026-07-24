@@ -232,9 +232,14 @@ export default function MailAssistantPage() {
       // « 0 nouveau » ne veut pas dire « boîte vide » : les mails déjà journalisés
       // sont ignorés. Le message doit dire lequel des deux, sinon on cherche en vain
       // une ligne qui n'a pas été créée.
+      // Ce que j'ai fait TOUT SEUL doit se dire, sinon des mails disparaissent de la
+      // boîte sans que personne sache pourquoi. Une famille en « Je fais seul » agit
+      // pour de bon : on l'annonce dans la même phrase que le reste.
+      const classes = j.logged
+        ? `J’ai classé ${j.logged} nouveau${j.logged > 1 ? "x" : ""} mail${j.logged > 1 ? "s" : ""}`
+        : "Rien de neuf — tout ce qui est dans la boîte est déjà dans la liste";
       toast.success(
-        j.logged ? `J’ai classé ${j.logged} nouveau${j.logged > 1 ? "x" : ""} mail${j.logged > 1 ? "s" : ""}`
-        : "Rien de neuf — tout ce qui est dans la boîte est déjà dans la liste",
+        j.autonomes ? `${classes} · j’en ai traité ${j.autonomes} tout seul` : classes,
       );
       await load(cfg.key);
     } else toast.error(j.error || "Je n’ai pas réussi à lire la boîte");

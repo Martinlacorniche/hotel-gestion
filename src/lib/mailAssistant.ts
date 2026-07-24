@@ -57,6 +57,16 @@ export type Classification = {
   action: MailAction;
   reason: string;
   detail: Record<string, unknown>;
+  // 🆕 RÈGLE SÛRE vs RÈGLE FAIBLE (2026-07-24). Une règle qui reconnaît un CANAL
+  // (expéditeur technique, format fixe : D-Edge, LoungeUp, Conferma, la vitrine
+  // Rooftop…) ne se trompe pas : elle tranche seule. Une règle qui repose sur un
+  // MOT dans le sujet, si — « Appel à candidature : les agricultrices de Provence »
+  // déclenchait une réponse RH à un journal agricole. Ces règles-là sont marquées
+  // `weak` : leur verdict devient un simple AVIS soumis au classifieur LLM, qui
+  // lit le mail en entier et tranche. Sans ce marquage, mettre le LLM en dernier
+  // recours n'aurait rattrapé que les `autre/none` — jamais les faux positifs,
+  // puisque la règle fautive répond avant.
+  weak?: true;
 };
 
 const rx = {
@@ -497,7 +507,7 @@ export function classifyMail(mail: MailInput): Classification {
 
   // 3) Facture fournisseur en PJ -> routage Pennylane (l'entité se lira dans le PDF)
   if (mail.hasAttachments && (rx.facture.test(hay) || looksLikeFacturePdf(names))) {
-    return { category: 'facture', action: 'route_pennylane', reason: 'Facture fournisseur (PJ PDF)', detail: { attachments: names } };
+    return { category: 'facture', action: 'route_pennylane', reason: 'Facture fournisseur (PJ PDF)', detail: { attachments: names }, weak: true };
   }
 
   // 2c) Prise en charge agence (VCC OTA) sur une résa -> note pour l'équipe. Trois agences
@@ -541,7 +551,7 @@ export function classifyMail(mail: MailInput): Classification {
 
   // 4) Candidature / alternance -> brouillon « effectifs complets »
   if (rx.candidature.test(hay)) {
-    return { category: 'candidature', action: 'draft_reply', reason: 'Candidature spontanée / alternance', detail: { template: 'effectifs_complets' } };
+    return { category: 'candidature', action: 'draft_reply', reason: 'Candidature spontanée / alternance', detail: { template: 'effectifs_complets' }, weak: true };
   }
 
   // 4b) Monsieur Cocktail (Gaëtan) = partenaire traiteur cocktail -> fil commercial, à la
@@ -589,21 +599,21 @@ export function classifyMail(mail: MailInput): Classification {
 
   // 5) Demande commerciale (séminaire / devis / groupe pro) -> suivi_commercial
   if (rx.commercial.test(hay)) {
-    return { category: 'commercial', action: 'commercial_followup', reason: 'Demande commerciale (séminaire/devis/groupe)', detail: {} };
+    return { category: 'commercial', action: 'commercial_followup', reason: 'Demande commerciale (séminaire/devis/groupe)', detail: {}, weak: true };
   }
 
   // 6) Message client (via Booking, ou réponse d'un externe) -> brouillon, validation humaine
   if (rx.bookingGuest.test(from) || (rx.reply.test(subj) && !from.includes('htbm.fr'))) {
-    return { category: 'client_msg', action: 'draft_reply', reason: 'Message client (à répondre)', detail: {} };
+    return { category: 'client_msg', action: 'draft_reply', reason: 'Message client (à répondre)', detail: {}, weak: true };
   }
 
   // 6c) Démarchage à froid / newsletter (accroche marketing + lien de désinscription) et
   //     pas un interne htbm -> corbeille. Placé APRÈS le commercial pour ne jamais avaler une
   //     vraie demande (séminaire/devis). Martin 2026-07-09.
   if (rx.prospectionHook.test(hay) && !from.includes('htbm.fr')) {
-    return { category: 'spam_alert', action: 'delete', reason: 'Démarchage / newsletter (à supprimer)', detail: {} };
+    return { category: 'spam_alert', action: 'delete', reason: 'Démarchage / newsletter (à supprimer)', detail: {}, weak: true };
   }
 
   // 7) Reste -> laisser à l'humain
-  return { category: 'autre', action: 'none', reason: 'Je ne sais pas encore quoi en faire — je te le passe', detail: {} };
+  return { category: 'autre', action: 'none', reason: 'Je ne sais pas encore quoi en faire — je te le passe', detail: {}, weak: true };
 }

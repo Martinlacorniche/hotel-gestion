@@ -1066,8 +1066,8 @@ async function actRooftopCheck(cfg: HotelMailConfig, row: LogRow): Promise<ExecO
     .eq('date_resa', p.dateISO);
   if (error) return { status: 'blocked', error: `Lecture rooftop_reservations : ${error.message}` };
 
-  const match = (data || []).find((r) => normName(r.nom) === normName(p.nom));
-  if (!match) {
+  const homonymes = (data || []).filter((r) => normName(r.nom) === normName(p.nom));
+  if (!homonymes.length) {
     return {
       status: 'blocked',
       error: `⚠️ Résa Rooftop ABSENTE de l’app : ${p.nom} · ${p.dateISO} ${p.heure ?? ''} · ${p.couverts ?? '?'} couv.` +
@@ -1078,11 +1078,28 @@ async function actRooftopCheck(cfg: HotelMailConfig, row: LogRow): Promise<ExecO
   // Divergences : l'heure et le nombre de couverts doivent coller. La TABLE n'est pas un critère
   // (l'équipe la réattribue légitimement depuis le plan de salle), le statut non plus (une résa
   // annulée après coup reste « correctement dans l'app »).
-  const ecarts: string[] = [];
-  if (p.heure && normalizeHeure(match.heure) !== p.heure) ecarts.push(`heure mail ${p.heure} ≠ app ${match.heure}`);
-  if (p.couverts && match.couverts !== p.couverts) ecarts.push(`couverts mail ${p.couverts} ≠ app ${match.couverts}`);
+  const ecartsDe = (r: (typeof homonymes)[number]): string[] => {
+    const e: string[] = [];
+    if (p.heure && normalizeHeure(r.heure) !== p.heure) e.push(`heure mail ${p.heure} ≠ app ${r.heure}`);
+    if (p.couverts && r.couverts !== p.couverts) e.push(`couverts mail ${p.couverts} ≠ app ${r.couverts}`);
+    return e;
+  };
+
+  // ⚠️ UN MÊME NOM PEUT PORTER PLUSIEURS LIGNES LE MÊME JOUR : un client qui modifie sa
+  // réservation laisse l'ancienne (annulée) à côté de la nouvelle. Retenir la PREMIÈRE trouvée
+  // faisait comparer le mail à la mauvaise — vécu le 2026-07-24 sur Véronique chou (30/07) :
+  // « couverts mail 4 ≠ app 2 » alors que la ligne confirmée à 4 couverts était juste à côté.
+  // On garde donc celle qui concorde le MIEUX avec le mail, pas la première venue.
+  const [match, ecarts] = homonymes
+    .map((r) => [r, ecartsDe(r)] as const)
+    .reduce((meilleur, courant) => (courant[1].length < meilleur[1].length ? courant : meilleur));
+
   if (ecarts.length) {
-    return { status: 'blocked', error: `⚠️ Résa Rooftop divergente (${p.nom}, ${p.dateISO}) : ${ecarts.join(' · ')} — à vérifier.` };
+    const autres = homonymes.length > 1 ? ` (${homonymes.length} lignes à ce nom ce jour-là)` : '';
+    return {
+      status: 'blocked',
+      error: `⚠️ Résa Rooftop divergente (${p.nom}, ${p.dateISO})${autres} : ${ecarts.join(' · ')} — à vérifier.`,
+    };
   }
 
   await moveMessage(cfg.mailbox, row.message_id, 'deleteditems');
