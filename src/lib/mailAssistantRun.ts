@@ -28,16 +28,28 @@ export async function runDryRun(hotelKey: string): Promise<DryRunResult> {
   const messages = await listInbox(cfg.mailbox, 30);
 
   // Réconciliation : le journal doit refléter la boîte ACTUELLE. On retire les
-  // lignes dont le mail n'est plus dans l'inbox (classé/supprimé/déplacé entre-temps),
-  // sinon le journal reste figé sur un état périmé.
+  // propositions dont le mail n'est plus dans l'inbox (classé/supprimé/déplacé
+  // entre-temps), sinon le journal reste figé sur un état périmé.
+  //
+  // ⚠️ SEULEMENT LES LIGNES `proposed` (2026-07-24). Le nettoyage portait sur TOUTE
+  // la boîte : dès qu'un mail quittait l'inbox, sa ligne disparaissait — y compris
+  // celles que Junior venait d'exécuter, puisqu'un mail traité est justement un mail
+  // qui n'est plus là. L'historique s'autodétruisait au tri suivant et « Voir aussi
+  // les traités » n'affichait presque rien : Martin traite 10 mails, il en reste 3 en
+  // base (« le récap des mails traités n'est pas très fiable »).
+  // Une proposition périmée n'a plus d'objet, on la jette ; une action FAITE est une
+  // trace, on la garde. L'écran ne s'en trouve pas encombré : le GET du journal ne
+  // remonte que les dernières 24 h.
   const currentIds = new Set(messages.map((m) => m.id));
   const { data: existing } = await supabaseAdmin
     .from('assistant_mail_log')
     .select('message_id')
-    .eq('mailbox', cfg.mailbox);
+    .eq('mailbox', cfg.mailbox)
+    .eq('status', 'proposed');
   const stale = (existing ?? []).map((r) => r.message_id as string).filter((id) => !currentIds.has(id));
   if (stale.length) {
-    await supabaseAdmin.from('assistant_mail_log').delete().eq('mailbox', cfg.mailbox).in('message_id', stale);
+    await supabaseAdmin.from('assistant_mail_log')
+      .delete().eq('mailbox', cfg.mailbox).eq('status', 'proposed').in('message_id', stale);
   }
 
   const summary: Record<string, number> = {};
