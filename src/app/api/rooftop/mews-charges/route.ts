@@ -45,6 +45,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: true, reason: "addition non soldée" });
     }
 
+    // ⚠️ Rien d'antérieur à la mise en service (2026-07-23). Ces additions-là ont
+    // été RESSAISIES À LA MAIN dans le PMS par l'équipe : les pousser créerait un
+    // doublon en face de leur saisie, daté d'aujourd'hui de surcroît (Mews ignore
+    // la date de consommation). `orderItems/cancel` étant fermé, ce doublon ne se
+    // retirerait plus qu'à la main dans Mews. Le garde vit ICI et pas seulement
+    // dans l'écran : c'est une bêtise irréversible, elle ne doit pas dépendre du
+    // bouton par lequel on arrive.
+    if (order.date_service < "2026-07-23") {
+      return NextResponse.json({ ok: true, skipped: true, reason: "service antérieur au push automatique — déjà saisi à la main" });
+    }
+
     // ⚠️ Un transfert chambre n'est PAS poussé côté règlement (décision Martin :
     // risque d'impayé). Poser la charge sur le compte Rooftop sans le paiement en
     // face déséquilibrerait le folio → on saute l'addition entière.

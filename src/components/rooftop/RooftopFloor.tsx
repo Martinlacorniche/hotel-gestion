@@ -24,6 +24,7 @@ import toast from "react-hot-toast";
 import {
   ChevronLeft, ChevronRight, Plus, Minus, Trash2, CreditCard, Banknote, BedDouble,
   CalendarPlus, Users, Clock, ArrowLeft, X, Check, UserCheck, UserX, Mail, Lock, Ban,
+  AlertTriangle, RefreshCw,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -38,8 +39,33 @@ type Order = {
   couvert_nom: string | null; statut: string; total: number;
   numero: string | null; client_nom: string | null; client_email: string | null;
   payment_method: string | null; room_ref: string | null;
+  mews_order_id: string | null;
 };
-const ORDER_COLS = "id,table_id,reservation_id,couvert_nom,statut,total,numero,client_nom,client_email,payment_method,room_ref";
+const ORDER_COLS = "id,table_id,reservation_id,couvert_nom,statut,total,numero,client_nom,client_email,payment_method,room_ref,mews_order_id";
+
+// Addition soldée dont les consommations ne sont PAS dans Mews.
+// Le push est volontairement silencieux (on ne bloque pas la caisse pour un
+// problème de PMS) : sans ce témoin, un échec ne vit que le temps d'un toast et
+// l'addition manque au folio sans que personne ne le sache le lendemain.
+// Trois cas ne sont pas des manques :
+//   • transfert chambre — jamais poussé (risque d'impayé). On le reconnaît au
+//     `room_ref`, renseigné même quand `payment_method` vaut "multi" ;
+//   • addition à 0 € — rien à charger, la route la saute ;
+//   • service ANTÉRIEUR à la mise en service du push (voir MEWS_CHARGES_DEPUIS).
+function chargesEnAttente(o: Order, dateService: string): boolean {
+  return o.statut === "encaissee" && !o.mews_order_id
+    && dateService >= MEWS_CHARGES_DEPUIS
+    && o.payment_method !== "chambre" && !o.room_ref
+    && (Number(o.total) || 0) > 0;
+}
+// Le push des charges est parti en prod le 2026-07-23. Avant, l'équipe
+// ressaisissait les consommations à la main dans le PMS : ces additions-là n'ont
+// pas d'Id Mews et n'en auront jamais, ce n'est pas une anomalie.
+// ⚠️ Le plancher n'est pas cosmétique. Rejouer une addition du 19/07 poserait un
+// DOUBLON en face de la saisie manuelle de l'équipe, daté d'aujourd'hui de
+// surcroît (Mews ignore la date de consommation) — et `orderItems/cancel` étant
+// fermé, ce doublon ne se retire plus que à la main dans le PMS.
+const MEWS_CHARGES_DEPUIS = "2026-07-23";
 
 // Libellé du règlement d'une addition soldée. 'tpe' = legacy (= CB).
 function methodLabel(o: Order): string | null {
@@ -150,6 +176,7 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderTotals, setOrderTotals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [replayBusy, setReplayBusy] = useState(false);
 
   // Périodes de fermeture (bannière) + heures de service (formulaire de résa).
   const [closedPeriods, setClosedPeriods] = useState<{ debut: string; fin: string }[]>([]);
@@ -405,18 +432,46 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
   // une charge se date au jour du push, donc il faut pousser pendant le service.
   // Silencieux en cas d'échec : l'addition est soldée, on ne bloque pas la caisse
   // pour un problème de PMS — la route est idempotente, on pourra rejouer.
-  const syncChargesToMews = async (orderId: string) => {
+  const pushCharges = async (orderId: string): Promise<boolean> => {
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
-      if (!token) return;
+      if (!token) return false;
       const res = await fetch("/api/rooftop/mews-charges", {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ orderId }),
       });
       const json = await res.json();
-      if (!res.ok || !json.ok) toast.error("Addition soldée, mais consommations non transmises à Mews");
-    } catch { toast.error("Addition soldée, mais consommations non transmises à Mews (réseau)"); }
+      if (!res.ok || !json.ok) return false;
+      // Succès : on connaît l'Id Mews, la pastille « non transmises » tombe sans
+      // attendre un reload. Une addition `skipped` (transfert chambre, vide) n'en
+      // a pas — elle n'était de toute façon pas comptée comme en attente.
+      if (json.mewsOrderId) {
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, mews_order_id: json.mewsOrderId } : o));
+      }
+      return true;
+    } catch { return false; }
+  };
+
+  const syncChargesToMews = async (orderId: string) => {
+    if (!(await pushCharges(orderId))) {
+      toast.error("Addition soldée, mais consommations non transmises à Mews");
+    }
+  };
+
+  // Rejeu manuel des additions restées en arrière. La route est idempotente
+  // (l'Id Mews consigné en base fait l'anti-doublon), donc rejouer ne peut pas
+  // charger deux fois — c'est ce qui permet d'offrir le bouton sans filet.
+  const rejouerCharges = async () => {
+    const attente = orders.filter(o => chargesEnAttente(o, date));
+    if (!attente.length || replayBusy) return;
+    setReplayBusy(true);
+    let ok = 0;
+    for (const o of attente) { if (await pushCharges(o.id)) ok++; }
+    setReplayBusy(false);
+    await reload();
+    if (ok === attente.length) toast.success(`${ok} addition${ok > 1 ? "s" : ""} transmise${ok > 1 ? "s" : ""} à Mews ✓`);
+    else toast.error(`${attente.length - ok} addition(s) toujours non transmise(s)`);
   };
 
   const addPayment = async () => {
@@ -756,6 +811,7 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
   const freeTables = tiles.filter(t => t.state === "free").map(t => t.table);
   const paidOrders = orders.filter(o => o.statut === "encaissee");
   const paidCa = paidOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+  const pendingMews = paidOrders.filter(o => chargesEnAttente(o, date));
   const tableNom = (id: string | null) => tables.find(t => t.id === id)?.nom ?? null;
   const reserveTable = tables.find(x => x.id === reserveTableId) || null;
   const facture = { clientNom, setClientNom, clientEmail, setClientEmail, invoicing, sendFacture };
@@ -955,6 +1011,25 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
                   {paidOrders.length} addition{paidOrders.length > 1 ? "s" : ""} · <b className="text-slate-600 tabular-nums">{euro(paidCa)}</b>
                 </span>
               </div>
+              {/* Additions soldées absentes du folio Mews. Le push est silencieux
+                  par choix (la caisse ne s'arrête pas pour le PMS) : sans ce
+                  rappel, l'échec ne vivrait que le temps d'un toast et l'équipe
+                  ressaisirait les consos à la main sans savoir lesquelles. */}
+              {pendingMews.length > 0 && (
+                <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>
+                    <b>{pendingMews.length} addition{pendingMews.length > 1 ? "s" : ""}</b> non transmise{pendingMews.length > 1 ? "s" : ""} à Mews —
+                    les consommations manquent au folio Rooftop.
+                    {date !== today && " Attention : Mews datera la charge d'aujourd'hui, pas du jour du service."}
+                  </span>
+                  <button onClick={rejouerCharges} disabled={replayBusy}
+                    className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                    <RefreshCw className={`w-3.5 h-3.5 ${replayBusy ? "animate-spin" : ""}`} />
+                    {replayBusy ? "Envoi…" : "Renvoyer"}
+                  </button>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
                 {paidOrders.map(o => (
                   <button key={o.id} onClick={() => { setSelId(null); setMode("none"); reopenOrder(o); }}
@@ -966,6 +1041,7 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
                     </span>
                     <span className="text-[13px] font-extrabold tabular-nums text-slate-800">{euro(Number(o.total) || 0)}</span>
                     {o.numero && <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full shrink-0">Facturée</span>}
+                    {chargesEnAttente(o, date) && <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">Pas dans Mews</span>}
                   </button>
                 ))}
               </div>
