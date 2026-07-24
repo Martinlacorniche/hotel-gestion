@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/apiAuth';
 import { hotelConfig } from '@/lib/mailAssistant';
-import { getDraftText, sendDraft, deleteDraft } from '@/lib/graphMailbox';
+import { getDraftText, sendDraft, deleteDraft, moveMessage } from '@/lib/graphMailbox';
 
 // Le brouillon préparé par Junior — lu, envoyé ou jeté DEPUIS l'écran.
 //
@@ -72,9 +72,24 @@ export async function POST(req: Request) {
   const b = await brouillonDe(String(body.id || ''), quel, cfg.mailbox);
   if (b.code !== 200) return NextResponse.json({ ok: false, error: b.err }, { status: b.code });
 
+  let classe = false;
   try {
-    if (decision === 'send') await sendDraft(cfg.mailbox, b.draftId!);
-    else await deleteDraft(cfg.mailbox, b.draftId!);
+    if (decision === 'send') {
+      await sendDraft(cfg.mailbox, b.draftId!);
+      // Répondre, c'est traiter : le mail n'a plus rien à faire en boîte de
+      // réception (Martin 2026-07-24). On CLASSE, on ne supprime pas — c'est un
+      // échange commercial. Le mail au traiteur, lui, ne clôt rien : le fil du
+      // client reste ouvert tant qu'on ne lui a pas répondu à lui.
+      if (quel === 'client') {
+        const { data: ligne } = await supabaseAdmin
+          .from('assistant_mail_log').select('message_id').eq('id', String(body.id)).single();
+        if (ligne?.message_id) {
+          classe = await moveMessage(cfg.mailbox, ligne.message_id, 'archive').then(() => true).catch(() => false);
+        }
+      }
+    } else {
+      await deleteDraft(cfg.mailbox, b.draftId!);
+    }
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'échec' }, { status: 502 });
   }
@@ -86,7 +101,8 @@ export async function POST(req: Request) {
   delete res[`${cle}Id`];
   delete res[quel === 'gaetan' ? 'draftGaetanLink' : 'webLink'];
   res[`${cle}${decision === 'send' ? 'Envoye' : 'Jete'}`] = new Date().toISOString();
+  if (classe) res.movedTo = 'archive';
   await supabaseAdmin.from('assistant_mail_log').update({ result: res }).eq('id', String(body.id));
 
-  return NextResponse.json({ ok: true, decision });
+  return NextResponse.json({ ok: true, decision, classe });
 }

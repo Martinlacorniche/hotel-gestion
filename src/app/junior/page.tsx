@@ -95,6 +95,32 @@ const ACTION_LABEL: Record<string, string> = {
   none: "Je te laisse la main",
 };
 
+// Ce qu'il va FAIRE, geste par geste, avant qu'on clique.
+//
+// « Ouvrir un suivi commercial » ne dit rien à personne : on valide sans savoir ce
+// qui va se passer, donc on hésite (Martin 2026-07-24 : « c'est light comme
+// indication, on comprend pas ce que Junior va faire »). Chaque action annonce
+// donc sa suite — et surtout ce qu'elle ne fait pas.
+const ACTION_DETAIL: Record<string, string[]> = {
+  delete: ["Je le mets à la corbeille", "Récupérable pendant 30 jours"],
+  archive: ["Je le classe hors de la boîte", "Rien n’est supprimé"],
+  resa_control: ["Je lis la réservation et j’écris la note dans le PMS", "Puis je classe le mail"],
+  agency_note: ["Je prépare la note de prise en charge pour l’équipe"],
+  route_pennylane: ["J’envoie la facture à la compta (Pennylane)", "Puis je classe le mail"],
+  invoice_note: ["Je prépare la note « facture à envoyer »"],
+  draft_reply: ["Je rédige une réponse et je te la montre ici", "Rien ne part sans ton clic"],
+  commercial_followup: [
+    "J’ouvre ou je complète la fiche du dossier",
+    "Je relis tout le fil et la fiche, puis je rédige une réponse",
+    "Je te la montre ici — rien ne part sans ton clic",
+    "Je ne bloque aucune chambre",
+  ],
+  presejour_check: ["Je lis le formulaire pré-séjour", "J’en tire une note pour l’équipe"],
+  rooftop_check: ["Je vérifie que la résa est bien dans l’app", "Si tout colle je supprime le mail, sinon je te préviens"],
+  livraison_consigne: ["Je lis le bon de livraison", "Je crée la consigne datée du jour de livraison"],
+  none: ["Rien — je te le laisse"],
+};
+
 // Les trois boutons sont des engagements de JUNIOR, à la première personne comme
 // le reste de la page. « Me demander » laissait planer un doute : qui est « me » ?
 const MODE_LABEL: Record<Mode, string> = {
@@ -386,6 +412,22 @@ export default function MailAssistantPage() {
   };
 
   const estTraite = (r: Row) => r.status === "executed" || r.status === "skipped";
+
+  // ── Ce qui compte comme RÉGLÉ ──────────────────────────────────────────────
+  //
+  // La ligne basculait dans « Réglés » dès la validation. Or à cet instant Junior
+  // a seulement fait SA part : la réponse attend d'être relue, le mail est encore
+  // en boîte. Martin 2026-07-24 : « pour moi il est traité quand le mail est
+  // classé / supprimé ». Une ligne reste donc en attente tant qu'il reste un
+  // geste humain : une question sans réponse, ou un brouillon qui n'est pas parti.
+  const resteAFaire = (r: Row) => {
+    const res = (r.result || {}) as Record<string, unknown>;
+    return !!(res.question || res.draftId || res.draftGaetanId);
+  };
+  const enAttente = useCallback(
+    (r: Row) => (!estTraite(r) && r.proposed_action !== "none" && modes[r.category] !== "off") || (estTraite(r) && resteAFaire(r)),
+    [modes],
+  );
   // Dépend de `modes` (une catégorie en Off ne propose plus rien) → useCallback,
   // sinon les mémos qui s'en servent ne se recalculent pas quand un mode change.
   const estActionnable = useCallback(
@@ -428,8 +470,8 @@ export default function MailAssistantPage() {
     );
   }
 
-  const attendent = visibles.filter(estActionnable);
-  const regles = visibles.filter((r) => !estActionnable(r));
+  const attendent = visibles.filter(enAttente);
+  const regles = visibles.filter((r) => !enAttente(r));
   const ouvert = rows.find((r) => r.id === actif) || attendent[0] || regles[0] || null;
 
   return (
@@ -548,6 +590,7 @@ export default function MailAssistantPage() {
         <p className="px-4 pt-3 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">{titre}</p>
         {liste.map((r) => {
           const actionnable = estActionnable(r);
+          const attend = enAttente(r);
           const apercu = actionnable
             ? (r.reason || ACTION_LABEL[r.proposed_action] || "")
             : (resultSummary(r) || r.reason || "");
@@ -578,7 +621,7 @@ export default function MailAssistantPage() {
               )}
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
-                  <b className={`flex-1 min-w-0 truncate text-[13.5px] ${actionnable ? "font-semibold text-slate-800" : "font-medium text-slate-500"}`}>
+                  <b className={`flex-1 min-w-0 truncate text-[13.5px] ${attend ? "font-semibold text-slate-800" : "font-medium text-slate-500"}`}>
                     {r.subject || "(sans objet)"}
                   </b>
                   <time className="text-[11px] text-slate-400 shrink-0 tabular-nums">
@@ -587,7 +630,7 @@ export default function MailAssistantPage() {
                 </span>
                 <span className="block truncate text-[12.5px] text-slate-400 mt-0.5">{apercu}</span>
               </span>
-              {actionnable && <span className="mt-2 w-2 h-2 rounded-full bg-[var(--brand)] shrink-0" />}
+              {attend && <span className="mt-2 w-2 h-2 rounded-full bg-[var(--brand)] shrink-0" />}
             </button>
           );
         })}
@@ -652,6 +695,15 @@ export default function MailAssistantPage() {
           {actionnable ? (
             <Demande titre="Je te propose">
               <p className="text-[15px] text-slate-800 font-medium">{ACTION_LABEL[r.proposed_action] || r.proposed_action}</p>
+              {(ACTION_DETAIL[r.proposed_action] || []).length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {(ACTION_DETAIL[r.proposed_action] || []).map((d, i) => (
+                    <li key={i} className="text-[13px] text-slate-600 flex gap-2">
+                      <span className="text-[var(--brand)] shrink-0">·</span><span>{d}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               <div className="flex flex-wrap gap-2 mt-3">
                 <button
                   onClick={() => decide(r, "validate")} disabled={!!busyId}
@@ -936,7 +988,7 @@ function Proposition({
     });
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.ok) {
-      toast.success(decision === "send" ? "C’est parti !" : "Brouillon jeté");
+      toast.success(decision === "send" ? (j.classe ? "Envoyé, et le mail est classé" : "Envoyé !") : "Brouillon jeté");
       setReplie(true); onFait();
     } else toast.error(j.error || "Ça a coincé");
     setBusy(false);
