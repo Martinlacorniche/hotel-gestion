@@ -675,41 +675,48 @@ export default function MailAssistantPage() {
             </Demande>
           )}
 
-          {/* La correction : elle nourrit les règles, donc elle vit dans la conversation. */}
+          {/* La correction, c'est TOI qui parles : elle s'écrit donc du côté droit,
+              dans ta bulle. Les listes déroulantes du navigateur cassaient la
+              conversation en plein milieu — on choisit maintenant en cliquant, comme
+              on cocherait une réponse. */}
           {corrige === r.id ? (
-            <Bulle>
-              <p className="text-[13px] font-semibold text-slate-700 mb-2">Qu’est-ce que j’aurais dû faire ?</p>
-              <div className="grid sm:grid-cols-2 gap-2">
-                <select value={corCat} onChange={(e) => setCorCat(e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700">
-                  <option value="">— même famille ({meta(r.category).label}) —</option>
-                  {Object.keys(CAT_META).map((c) => <option key={c} value={c}>{meta(c).label}</option>)}
-                </select>
-                <select value={corAct} onChange={(e) => setCorAct(e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700">
-                  <option value="">— même action —</option>
-                  {Object.keys(ACTION_LABEL).map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}
-                </select>
-              </div>
+            <BulleMoi qui={user?.name}>
               <textarea
-                value={corMot} onChange={(e) => setCorMot(e.target.value)} rows={2}
-                placeholder="Ce que je ne peux pas voir : « déjà remboursé, vu avec Nina », « c’est un habitué »…"
-                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700"
+                value={corMot} onChange={(e) => setCorMot(e.target.value)} rows={2} autoFocus
+                placeholder="Dis-lui ce qu’il ne peut pas voir : « déjà remboursé, vu avec Nina », « c’est un habitué »…"
+                className="w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-[14px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
               />
-              <div className="flex items-center gap-2 mt-2">
+              <Choix
+                label="Ranger plutôt en"
+                defaut={`Laisser « ${meta(r.category).label} »`}
+                options={Object.keys(CAT_META).map((c) => [c, meta(c).label])}
+                valeur={corCat} onChange={setCorCat}
+              />
+              <Choix
+                label="Et faire"
+                defaut="Ne rien relancer"
+                options={Object.keys(ACTION_LABEL).map((a) => [a, ACTION_LABEL[a]])}
+                valeur={corAct} onChange={setCorAct}
+              />
+              <div className="flex items-center gap-2 pt-1">
                 <button
                   onClick={() => envoyerCorrection(r)} disabled={!!busyId}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3 h-8 text-xs font-medium disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3.5 h-9 text-[13px] font-semibold disabled:opacity-50"
                 >
-                  {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  {busyId === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   Envoyer
                 </button>
-                <button onClick={() => { setCorrige(null); setCorCat(""); setCorAct(""); setCorMot(""); }} className="text-xs text-slate-400 hover:text-slate-600">
+                <button
+                  onClick={() => { setCorrige(null); setCorCat(""); setCorAct(""); setCorMot(""); }}
+                  className="text-[13px] text-slate-500 hover:text-slate-700"
+                >
                   Annuler
                 </button>
-                <span className="ml-auto text-[11px] text-slate-400">
-                  {corAct ? "Je retraite le mail tout de suite." : "Sans action choisie, je note sans rien faire."}
+                <span className="ml-auto text-[11px] text-slate-500">
+                  {corAct ? "Il retraite le mail tout de suite." : "Sans action choisie, il note sans rien faire."}
                 </span>
               </div>
-            </Bulle>
+            </BulleMoi>
           ) : null}
         </div>
 
@@ -806,6 +813,56 @@ function Bulle({ children }: { children: React.ReactNode }) {
     <div className="flex gap-2.5 items-end max-w-[92%]">
       <span className="w-7 h-7 shrink-0 rounded-lg bg-[var(--brand)] text-white grid place-items-center text-[11px] font-semibold mb-0.5">J</span>
       <div className="rounded-2xl rounded-bl-md bg-white ring-1 ring-slate-200/70 px-4 py-3 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+// Ta bulle : à droite, à ta couleur. Ce que tu écris ne doit jamais ressembler à
+// ce que Junior dit — sinon on ne sait plus qui parle dans la conversation.
+function BulleMoi({ qui, children }: { qui?: string; children: React.ReactNode }) {
+  const initiale = (qui || "M").trim()[0]?.toUpperCase() || "M";
+  return (
+    <div className="flex gap-2.5 items-end justify-end">
+      <div className="rounded-2xl rounded-br-md bg-[var(--brand-bg)] ring-1 ring-[var(--brand)]/20 px-4 py-3 min-w-0 max-w-[92%] space-y-2.5">
+        {children}
+      </div>
+      <span className="w-7 h-7 shrink-0 rounded-lg bg-white ring-1 ring-slate-200 text-slate-500 grid place-items-center text-[11px] font-semibold mb-0.5">
+        {initiale}
+      </span>
+    </div>
+  );
+}
+
+// Choisir en cliquant plutôt qu'en déroulant : la liste native du navigateur
+// ouvrait un menu gris par-dessus la conversation, et il fallait viser une ligne
+// de 20 pixels. Ici tout est visible, et le choix se voit après coup.
+function Choix({
+  label, defaut, options, valeur, onChange,
+}: {
+  label: string; defaut: string; options: [string, string][];
+  valeur: string; onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">{label}</p>
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          onClick={() => onChange("")}
+          className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
+            valeur === "" ? "bg-slate-700 text-white" : "bg-white/70 text-slate-500 hover:bg-white ring-1 ring-slate-200"}`}
+        >
+          {defaut}
+        </button>
+        {options.map(([v, l]) => (
+          <button
+            key={v} onClick={() => onChange(v)}
+            className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
+              valeur === v ? "bg-[var(--brand)] text-white" : "bg-white/70 text-slate-600 hover:bg-white ring-1 ring-slate-200"}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
