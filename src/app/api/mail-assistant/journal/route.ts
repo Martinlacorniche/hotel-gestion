@@ -21,11 +21,15 @@ export async function GET(req: Request) {
   let q = supabaseAdmin
     .from('assistant_mail_log')
     .select('id, created_at, mailbox, from_addr, from_name, subject, received_at, category, proposed_action, reason, detail, status, dry_run, result, action_error, decided_at')
-    // ⚠️ FENÊTRE 24 H. Le journal s'accumule sans fin : au-delà d'une journée, la
-    // page devient une archive illisible où le travail du jour se noie. Ce qui est
-    // plus vieux reste en base (et dans le PMS), il n'a juste plus à encombrer
-    // l'écran — un mail non traité depuis 24 h relève d'autre chose qu'un tri.
-    .gte('received_at', new Date(Date.now() - 24 * 3600e3).toISOString())
+    // ⚠️ FENÊTRE 7 JOURS (élargie depuis 24 h le 2026-07-24). Le journal s'accumule
+    // sans fin et le travail du jour doit rester lisible — mais depuis que des
+    // familles agissent SANS CLIC, ce journal n'est plus seulement une liste de
+    // tâches : c'est la seule trace de ce que Junior a fait pendant qu'on regardait
+    // ailleurs (Martin : « c'est pour ça que j'ai besoin de l'historique »). Une
+    // fenêtre de 24 h effaçait cet audit de l'écran dès le lendemain.
+    // L'écran ne s'en trouve pas encombré : les lignes traitées restent masquées
+    // tant qu'on ne coche pas « Voir aussi les traités ».
+    .gte('received_at', new Date(Date.now() - 7 * 24 * 3600e3).toISOString())
     .order('received_at', { ascending: false, nullsFirst: false })
     .limit(200);
   if (cfg) q = q.eq('mailbox', cfg.mailbox);

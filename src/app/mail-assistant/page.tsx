@@ -142,7 +142,9 @@ async function authHeaders(): Promise<Record<string, string> | null> {
 function resultSummary(r: Row): string | null {
   const res = r.result || {};
   if (r.status === "skipped") return "Ignoré";
-  if (r.status === "executed") {
+  if (r.status !== "executed") return null;
+
+  const fait = (() => {
     if (res.note) return res.classe ? "Note écrite dans Mews · classé" : "Note écrite dans Mews";
     if (res.movedTo === "deleteditems") return "Mis à la corbeille";
     if (res.movedTo === "archive") return "Classé";
@@ -150,13 +152,23 @@ function resultSummary(r: Row): string | null {
       if (res.mode === "deja_repondu") return "Un collègue avait déjà répondu";
       if (res.mode === "sans_fiche") return res.draftId ? "Brouillon prêt · pas de fiche" : "Pas de fiche pour ce dossier";
       if (res.mode === "rattache") return "Rattaché au dossier";
+      // Dossier perdu : ce qui compte à l'écran, c'est de savoir si le motif a été
+      // enregistré quelque part — sinon la perte ne laisse aucune trace exploitable.
+      if (res.mode === "annule") {
+        return res.ficheId ? "Dossier perdu · passé en Refus · classé" : "Dossier perdu · aucune fiche à mettre à jour · classé";
+      }
       return res.mode === "created" ? "Fiche créée" : "Fiche complétée";
     }
     if (res.kind === "pennylane") return `Envoyé à Pennylane (${String(res.entity)})`;
     if (res.draftId) return "Brouillon créé";
     return "Fait";
-  }
-  return null;
+  })();
+
+  // Ce qui a été fait SANS CLIC doit se distinguer de ce qu'on a validé soi-même :
+  // c'est la seule trace qu'il en reste. Une famille en « Je fais seul » agit pendant
+  // qu'on regarde ailleurs — si l'écran ne le dit pas, un mail supprimé devient un
+  // mail disparu.
+  return res.auto ? `${fait} · sans te demander` : fait;
 }
 
 export default function MailAssistantPage() {

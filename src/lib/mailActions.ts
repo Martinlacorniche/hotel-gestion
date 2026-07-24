@@ -362,17 +362,74 @@ async function qualifyLead(subject: string, body: string, hotelName: string): Pr
 // sinon le lead perdu ressort dans /commercial trois jours plus tard. Brouillon de réponse
 // courtoise à relire (Martin 2026-07-10). Aucune fiche existante → on ne crée rien : un refus
 // sans dossier n'a rien à tracer, on rend la main à l'humain.
+// ── Retrouver LA fiche d'un dossier, sans se tromper de dossier ─────────────
+//
+// ⚠️ JAMAIS PAR L'E-MAIL DE L'EXPÉDITEUR. Sur le canal Best Western, l'expéditeur est
+// le chargé de compte de la centrale : `clemence.estienne@` porte à elle seule trois
+// dossiers sans rapport, et Lila Ayed plusieurs autres. Chercher par e-mail, c'est
+// écrire le refus d'un client sur le dossier d'un autre — accident déjà vécu le
+// 2026-07-23 (une note de BY-1881460 posée sur BY-1789654, avec relance à la clé).
+//
+// Ordre : la référence si on l'a (identifiant le plus sûr), sinon le NOM DU CLIENT
+// FINAL croisé avec la DATE de l'événement (Martin 2026-07-24 : « on vérifie s'il y a
+// une fiche nom + date, du coup ça évite le problème »).
+//
+// ⚠️ UNE SEULE CORRESPONDANCE, sinon on ne touche à RIEN. Deux fiches qui matchent,
+// c'est une chance sur deux de saccager la mauvaise — et le silence coûte moins cher.
+type FicheTrouvee = { id: string; commentaires: string | null };
+
+function motifSql(s: string): string {
+  // Les virgules et parenthèses cassent la syntaxe `.or()` de PostgREST.
+  return s.replace(/[^\p{L}\p{N} .'-]/gu, ' ').trim();
+}
+
+async function trouverFiche(
+  hotelId: string,
+  crit: { ref?: string | null; nom?: string | null; dateEvenement?: string | null },
+): Promise<{ fiche: FicheTrouvee | null; comment: string }> {
+  if (crit.ref) {
+    const ref = motifSql(crit.ref);
+    const { data } = await supabaseAdmin
+      .from('suivi_commercial').select('id, commentaires').eq('hotel_id', hotelId)
+      .or(`nom_client.ilike.%${ref}%,titre_demande.ilike.%${ref}%,commentaires.ilike.%${ref}%`)
+      .limit(3);
+    if (data?.length === 1) return { fiche: data[0], comment: `fiche retrouvée par la référence ${crit.ref}` };
+    if ((data?.length ?? 0) > 1) return { fiche: null, comment: `plusieurs fiches portent ${crit.ref} — je n'en touche aucune` };
+  }
+
+  // Le patronyme porte plus d'information que le prénom : on retient le plus long mot.
+  const token = motifSql(crit.nom || '').split(/\s+/).filter((t) => t.length >= 3)
+    .sort((a, b) => b.length - a.length)[0];
+  if (token) {
+    let q = supabaseAdmin
+      .from('suivi_commercial').select('id, commentaires').eq('hotel_id', hotelId)
+      .or(`nom_client.ilike.%${token}%,societe.ilike.%${token}%`);
+    if (crit.dateEvenement) q = q.eq('date_evenement', crit.dateEvenement);
+    const { data } = await q.limit(3);
+    const quoi = `« ${token} »${crit.dateEvenement ? ` au ${crit.dateEvenement}` : ' (sans date)'}`;
+    if (data?.length === 1) return { fiche: data[0], comment: `fiche retrouvée par ${quoi}` };
+    if ((data?.length ?? 0) > 1) return { fiche: null, comment: `plusieurs fiches correspondent à ${quoi} — je n'en touche aucune` };
+  }
+
+  return { fiche: null, comment: 'aucune fiche ne correspond à ce dossier' };
+}
+
 async function handleRefus(
   cfg: HotelMailConfig, row: LogRow, lead: Lead, email: string | null, today: string,
 ): Promise<ExecOutcome> {
-  if (!email) return { status: 'blocked', error: 'Refus détecté mais expéditeur inconnu.' };
-
-  const { data } = await supabaseAdmin
-    .from('suivi_commercial').select('id, commentaires')
-    .eq('hotel_id', cfg.hotelId).ilike('email', email).limit(1);
-  if (!data?.length) {
-    return { status: 'blocked', error: `Refus détecté (${lead.motif_perte || 'motif non lu'}) mais aucune fiche pour ${email}.` };
+  // ⚠️ La recherche se faisait par ADRESSE E-MAIL de l'expéditeur, ce qui est faux dès
+  // qu'un intermédiaire écrit pour son client : un chargé de compte de centrale porte
+  // plusieurs dossiers, et on passait « Refus » sur le premier trouvé. On passe par
+  // `trouverFiche` (référence, puis nom du client final + date), qui refuse d'agir
+  // quand plusieurs fiches correspondent (2026-07-24).
+  const { fiche, comment } = await trouverFiche(cfg.hotelId, {
+    nom: lead.nom_client || lead.societe || null,
+    dateEvenement: lead.date_evenement || null,
+  });
+  if (!fiche) {
+    return { status: 'blocked', error: `Refus détecté (${lead.motif_perte || 'motif non lu'}) mais ${comment}${email ? ` — expéditeur ${email}` : ''}.` };
   }
+  const data = [fiche];
 
   const motif = (lead.motif_perte || '').slice(0, 300) || null;
   // Note EN TÊTE : l'équipe écrit ses commentaires du plus récent au plus ancien.
@@ -454,9 +511,27 @@ async function sallesEtOccupation(hotelId: string, fil: string): Promise<Occupat
   return { salles: liste, occupation };
 }
 
-type Suivi = { resume: string; draft_html: string; incertitudes?: string[] };
+// 🆕 UN SUIVI DE DOSSIER N'APPELLE PAS TOUJOURS UNE RÉPONSE (Martin 2026-07-24).
+// Le chemin « suivi » supposait que tout suivi était une question à traiter : sur
+// « Demande de devis annulée (BY-1881460) — établissement non retenu », il préparait
+// une réponse à un client parti chez un concurrent. Un suivi est en réalité l'une de
+// trois choses, et chacune appelle un geste différent : une QUESTION (on répond), une
+// ANNULATION (on clôt et on note pourquoi), une CONFIRMATION (le dossier est gagné).
+type IssueSuivi = 'question' | 'annulation' | 'confirmation';
+type Suivi = {
+  resume: string;
+  draft_html: string;
+  incertitudes?: string[];
+  issue?: IssueSuivi;
+  /** Le CLIENT FINAL, jamais le chargé de compte de la centrale. Sert à retrouver la fiche. */
+  client_nom?: string | null;
+  date_evenement?: string | null;
+  motif_perte?: string | null;
+};
 
-async function redigeSuivi(
+// Exportée pour pouvoir l'essayer à blanc sur un vrai fil (aucun effet de bord :
+// elle lit et rédige, elle n'écrit ni en base ni dans la boîte).
+export async function redigeSuivi(
   hotelName: string, ref: string, fil: string, salles: OccupationSalles, prenom: string | null,
 ): Promise<Suivi> {
   const client = new Anthropic();
@@ -472,10 +547,23 @@ async function redigeSuivi(
         `${salles.occupation.length ? salles.occupation.join('\n') : 'aucune salle occupée sur ces dates'}\n` +
         `Toute salle non citée ci-dessus est LIBRE.\n\n` +
         `Rédige la réponse au DERNIER message reçu. Réponds en JSON STRICT (rien autour), clés :\n` +
+        `- issue : "annulation" si le client renonce / n'a pas retenu l'établissement / annule sa ` +
+        `demande de devis · "confirmation" s'il accepte notre proposition · "question" dans tous ` +
+        `les autres cas (il demande, relance, précise)\n` +
+        `- client_nom : le nom du CLIENT FINAL tel qu'il apparaît dans le fil. ⚠️ PAS le nom de ` +
+        `l'expéditeur quand celui-ci est un chargé de compte d'une centrale de réservation : ` +
+        `c'est le nom de la société ou de la personne pour qui l'événement est organisé. null si absent.\n` +
+        `- date_evenement : "yyyy-mm-dd", premier jour de l'événement, null si absent\n` +
+        `- motif_perte : SI issue="annulation", la raison en une phrase (reprends celle donnée ` +
+        `dans le mail si elle y est), sinon null\n` +
         `- resume : une phrase pour la fiche CRM (où en est le dossier)\n` +
         `- incertitudes : ce dont tu n'es pas sûr et qu'un humain doit vérifier avant envoi (liste, souvent vide)\n` +
         `- draft_html : le brouillon de réponse en français.\n\n` +
         `RÈGLES ABSOLUES :\n` +
+        `0. SI issue="annulation" : le dossier est CLOS, on ne défend pas notre offre et on ne ` +
+        `repropose RIEN. Le brouillon tient en deux phrases : on remercie de l'information, on ` +
+        `dit que c'est noté, on reste disponible pour une prochaine occasion. Ne demande pas ` +
+        `pourquoi, ne propose pas d'autres dates, ne relance pas.\n` +
         `1. NE REDEMANDE JAMAIS une information déjà présente dans le fil (participants, dates, ` +
         `budget, prestations, restauration, équipement). Relis-le avant d'écrire.\n` +
         `2. RÉPONDS à la question posée dans le dernier message, en t'appuyant sur l'occupation ` +
@@ -492,6 +580,71 @@ async function redigeSuivi(
   const text = msg.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
   try { return JSON.parse(text.replace(/```json|```/g, '').trim()) as Suivi; }
   catch { return { resume: text.slice(0, 300), draft_html: '' }; }
+}
+
+// ── Le dossier est perdu : on clôt, on note pourquoi, on remercie ───────────
+//
+// Vécu le 2026-07-24 sur BY-1881460 : deux mails de la centrale le même matin, l'un
+// « Demande de devis annulée — établissement non retenu », l'autre « ces solutions ne
+// conviennent pas au client ». Junior préparait deux réponses argumentées à un client
+// déjà parti. Ce que Martin veut à la place : « on vérifie s'il y a une fiche nom +
+// date ; si pas de fiche on ne crée rien, si fiche on met en refus ; les deux mails il
+// faut quand même dire merci c'est noté à Lila, et classer. »
+//
+// Le motif de perte est la seule chose de valeur qui reste dans ces mails : sept des
+// huit dossiers Best Western en base sont en refus et aucun ne dit pourquoi — donc
+// personne ne sait si on perd sur le prix, sur les salles ou sur la réactivité.
+async function cloreDossier(
+  cfg: HotelMailConfig, row: LogRow, ref: string, suivi: Suivi,
+): Promise<ExecOutcome> {
+  const today = new Date().toISOString().slice(0, 10);
+  const motif = (suivi.motif_perte || '').slice(0, 300) || null;
+
+  // On remercie même quand il n'y a rien à mettre à jour : c'est un interlocuteur qui
+  // nous réécrira. Le garde-fou vaut ici comme ailleurs — un brouillon en cours est du
+  // travail humain, et la centrale ouvre une conversation PAR MAIL, donc deux mails du
+  // même dossier ne partagent pas le même fil.
+  const dejaEnCours = await existingReplyDraft(cfg.mailbox, row.message_id).catch(() => null);
+  let draft: { draftId: string; webLink: string } | null = null;
+  if (suivi.draft_html && !dejaEnCours) {
+    const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
+    draft = await createReplyDraft(
+      cfg.mailbox, row.message_id,
+      `${suivi.draft_html}<p>Bien à vous,</p>${signatureHtml(duty?.name || 'La Réception', `Réception — Hôtel ${cfg.nom}`)}`,
+      [signatureAttachment()],
+    ).catch(() => null);
+  }
+
+  const { fiche, comment } = await trouverFiche(cfg.hotelId, {
+    ref, nom: suivi.client_nom, dateEvenement: suivi.date_evenement,
+  });
+
+  // Pas de fiche ⇒ on n'en ouvre pas une (Martin) : un dossier mort n'a pas à naître
+  // dans le pipeline, et une fiche créée au nom de la centrale pollue le CRM.
+  if (fiche) {
+    const note = `${today.slice(8, 10)}/${today.slice(5, 7)} refus ${ref} : ${motif || 'établissement non retenu'} - Junior`;
+    const merged = [note, fiche.commentaires].filter(Boolean).join('\n').slice(0, 4000);
+    await supabaseAdmin.from('suivi_commercial')
+      .update({ statut: 'Refus', motif_perte: motif, date_relance: null, commentaires: merged })
+      .eq('id', fiche.id);
+  }
+
+  // Le mail est classé : le dossier est clos, il n'a plus rien à faire en boîte de
+  // réception. ⚠️ APRÈS la création du brouillon — un déplacement change l'id Graph
+  // du message, et la réponse ne s'y rattacherait plus.
+  await moveMessage(cfg.mailbox, row.message_id, 'archive').catch(() => null);
+
+  return {
+    status: 'executed',
+    result: {
+      kind: 'commercial', mode: 'annule', ref, movedTo: 'archive',
+      ficheId: fiche?.id ?? null, motif_perte: motif, fiche: comment,
+      client: suivi.client_nom ?? null, date_evenement: suivi.date_evenement ?? null,
+      ...(draft || {}),
+      message: (fiche ? `Dossier passé en Refus — ${comment}.` : `${comment[0].toUpperCase()}${comment.slice(1)} : je n'en crée pas.`)
+        + (draft ? ' Remerciement prêt à relire.' : dejaEnCours ? ' Un brouillon existe déjà sur ce fil.' : ''),
+    },
+  };
 }
 
 async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string): Promise<ExecOutcome> {
@@ -523,6 +676,8 @@ async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string
   const salles = await sallesEtOccupation(cfg.hotelId, texteFil);
   const prenom = (row.from_name || '').split(/\s+/)[0] || null;
   const suivi = await redigeSuivi(cfg.nom, ref, texteFil, salles, prenom);
+
+  if (suivi.issue === 'annulation') return await cloreDossier(cfg, row, ref, suivi);
 
   // Quelqu'un rédige déjà (ou Junior est déjà passé) : on ne pose pas un second brouillon.
   const dejaEnCours = await existingReplyDraft(cfg.mailbox, row.message_id).catch(() => null);
