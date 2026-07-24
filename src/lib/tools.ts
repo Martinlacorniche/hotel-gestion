@@ -5,7 +5,7 @@ import {
   CalendarDays, BookOpen, ShoppingCart, Car, Stamp, Package, Wrench,
   Thermometer, CreditCard, Tv2, Wifi, Wind, Monitor, Handshake,
   ListChecks, DoorOpen, Tag, Users, Euro, KeyRound, ConciergeBell, Martini, Wallet,
-  Flower2,
+  Flower2, Mail,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -54,6 +54,9 @@ export const TECHNIQUE_CHILDREN: ToolDef[] = [
   { id: 'wifi-admin',  label: 'Wifi Client', href: '/wifi-admin',  icon: Wifi,    bg: 'bg-sky-50',    text: 'text-sky-700' },
   { id: 'clim',        label: 'Clim',        href: '/clim',        icon: Wind,    bg: 'bg-sky-50',    text: 'text-sky-700',   condition: 'voiles' },
   { id: 'ecran',       label: 'Écran',       href: '/ecran',       icon: Monitor, bg: 'bg-slate-100', text: 'text-slate-700', condition: 'superadmin' },
+  // Junior trie la boîte de l'hôtel courant et enquête sur les dossiers. Réservé au
+  // superadmin le temps de le voir se comporter : il lit toute la boîte et tout le CRM.
+  { id: 'junior',      label: 'Junior',      href: '/junior',      icon: Mail,    bg: 'bg-sky-50',    text: 'text-sky-700',    condition: 'superadmin' },
 ];
 
 // Sous-menu Planning : la grille + la gestion d'équipe (admin → /users).
