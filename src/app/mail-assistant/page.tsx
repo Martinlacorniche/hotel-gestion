@@ -19,13 +19,12 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useSelectedHotel } from "@/context/SelectedHotelContext";
-import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { hotelConfig } from "@/lib/mailAssistant";
 import {
   Mail, Loader2, RefreshCw, Inbox, Check, X, ExternalLink, Copy,
-  SlidersHorizontal, ChevronDown, CheckCheck, CircleCheckBig,
+  SlidersHorizontal, CheckCheck,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -180,74 +179,6 @@ function resultSummary(r: Row): string | null {
   return res.auto ? `${fait} · sans te demander` : fait;
 }
 
-// ── Le bilan d'un dossier commercial : deux zones, jamais mélangées ─────────
-//
-// Tout était au même niveau visuel — « Fiche créée », « À vérifier : … », les liens
-// et le statut — si bien qu'on ne voyait pas ce qui restait à faire (Martin
-// 2026-07-24 : « on dirait un vieux CRM des années 2000 »). Or c'est la seule chose
-// qui compte quand Junior agit à moitié : ce qu'il a fait est derrière lui, ce qui
-// reste est du travail. D'où la séparation en deux : un bilan discret de ce qui est
-// accompli, puis un bloc net de ce qui revient à l'humain, avec les boutons dedans.
-function BilanCommercial({ r }: { r: Row }) {
-  const res = (r.result || {}) as Record<string, unknown>;
-  const fait = res.mode === "deja_repondu" ? "Un collègue avait déjà répondu — je n’ai rien ajouté"
-    : res.mode === "sans_fiche" ? "Aucune fiche ne porte ce dossier — je n’en ai pas créé"
-    : res.mode === "annule" ? (res.ficheId ? "Dossier passé en Refus, motif enregistré" : "Dossier perdu — aucune fiche à mettre à jour")
-    : res.mode === "confirme" ? (res.ficheId ? "Dossier passé en Confirmé, relance annulée" : "Dossier confirmé — aucune fiche")
-    : `Fiche ${res.mode === "rattache" ? "rattachée au dossier" : res.mode === "updated" ? "complétée" : "créée"}`;
-
-  const aVerifier = Array.isArray(res.incertitudes) ? (res.incertitudes as unknown[]).map(String) : [];
-  const liens = [
-    res.id ? { href: `/devis?leadId=${String(res.id)}`, label: "Ouvrir le devis", ext: false } : null,
-    res.webLink ? { href: String(res.webLink), label: "Relire la réponse au client", ext: true } : null,
-    res.draftGaetanLink ? { href: String(res.draftGaetanLink), label: "Le mot pour Gaëtan", ext: true } : null,
-  ].filter(Boolean) as { href: string; label: string; ext: boolean }[];
-  const consigne = res.consigne ? "Consigne posée pour l’équipe" : null;
-  const aFaire = res.message ? String(res.message) : null;
-
-  return (
-    <div className="mt-3 space-y-2">
-      {/* CE QUI EST FAIT — discret, au passé, sans bouton : c'est un accusé. */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-        <CircleCheckBig className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-        <span>{fait}</span>
-        {consigne ? <span className="text-slate-400">· {consigne}</span> : null}
-        {res.ref ? <span className="text-slate-400">· {String(res.ref)}</span> : null}
-      </div>
-
-      {/* CE QUI TE REVIENT — le seul bloc qui attire l'œil, avec les actions dedans. */}
-      {(aFaire || aVerifier.length || liens.length) && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">À toi de jouer</p>
-          {aFaire ? <p className="text-sm text-slate-800 leading-snug">{aFaire}</p> : null}
-          {aVerifier.length ? (
-            <ul className="space-y-1">
-              {aVerifier.map((x, i) => (
-                <li key={i} className="text-xs text-amber-900/80 flex gap-1.5">
-                  <span className="shrink-0">⚠️</span><span>{x}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {liens.length ? (
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              {liens.map((l) => (
-                <a
-                  key={l.href} href={l.href}
-                  {...(l.ext ? { target: "_blank", rel: "noreferrer" } : {})}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-white ring-1 ring-amber-300 hover:bg-amber-100 text-amber-900 px-3 h-8 text-xs font-semibold transition"
-                >
-                  {l.label} <ExternalLink className="w-3 h-3" />
-                </a>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function MailAssistantPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
@@ -279,9 +210,21 @@ export default function MailAssistantPage() {
   // elle retraite le mail tout de suite ET s'accumule pour devenir une règle plus
   // tard. Sans elle, une erreur de Junior disparaît dans l'oubli.
   const [corrige, setCorrige] = useState<string | null>(null);
+  // Le dossier ouvert à droite, et — sur petit écran, où les deux colonnes ne
+  // tiennent pas — laquelle des deux on regarde.
+  const [actif, setActif] = useState<string | null>(null);
+  const [vue, setVue] = useState<"liste" | "conv">("conv");
   const [corCat, setCorCat] = useState("");
   const [corAct, setCorAct] = useState("");
   const [corMot, setCorMot] = useState("");
+
+  const initiales = (r: Row) => {
+    const n = (r.from_name || r.from_addr || "?").replace(/[<>"]/g, " ").trim();
+    const mots = n.split(/[\s.@_-]+/).filter(Boolean);
+    return ((mots[0]?.[0] || "") + (mots[1]?.[0] || "")).toUpperCase() || "?";
+  };
+  const toggleSel = (id: string) =>
+    setSelection((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   useEffect(() => {
     if (authLoading) return;
@@ -424,7 +367,6 @@ export default function MailAssistantPage() {
     [modes],
   );
 
-  const aFaire = useMemo(() => rows.filter(estActionnable), [rows, estActionnable]);
   const garde = useCallback(
     (r: Row) => voirTraites || !estTraite(r) || fraichementTraites.has(r.id),
     [voirTraites, fraichementTraites],
@@ -440,22 +382,15 @@ export default function MailAssistantPage() {
     return c;
   }, [rows, garde]);
 
-  const selectionnables = visibles.filter(estActionnable);
-  const toutSelectionne = selectionnables.length > 0 && selectionnables.every((r) => selection.has(r.id));
 
   if (authLoading || !isSuperadmin) {
     return <div className="p-10 text-center text-slate-400">Chargement…</div>;
   }
 
-  return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-6 pb-28">
-      <PageHeader
-        icon={Mail}
-        title="Junior"
-        subtitle={cfg ? `Ton collègue qui trie les mails · ${cfg.nom}` : "Ton collègue qui trie les mails"}
-      />
-
-      {!cfg ? (
+  if (!cfg) {
+    return (
+      <div className="max-w-6xl mx-auto p-4 sm:p-6">
+        <PageHeader icon={Mail} title="Junior" subtitle="Ton collègue qui trie les mails" />
         <div className="mt-6">
           <EmptyState
             icon={Inbox}
@@ -463,367 +398,432 @@ export default function MailAssistantPage() {
             subtitle="Je ne m’occupe que des Voiles et de La Corniche. Bascule d’hôtel via le menu."
           />
         </div>
-      ) : (
-        <>
-          {/* Barre d'action : le tri, et l'état en un coup d'œil. */}
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Button onClick={runNow} disabled={running} variant="brand" className="h-11 gap-2">
-              {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              {running ? "Je regarde…" : "Junior, au boulot !"}
-            </Button>
-            <div className="text-sm text-slate-500">
-              {aFaire.length > 0
-                ? <>J’ai <span className="font-semibold text-slate-800">{aFaire.length} truc{aFaire.length > 1 ? "s" : ""}</span> pour toi — tu valides, je m’en occupe.</>
-                : rows.length > 0 ? "Boîte à jour, rien ne traîne 👌" : "Je n’ai pas encore mis le nez dans la boîte."}
+      </div>
+    );
+  }
+
+  const attendent = visibles.filter(estActionnable);
+  const regles = visibles.filter((r) => !estActionnable(r));
+  const ouvert = rows.find((r) => r.id === actif) || attendent[0] || regles[0] || null;
+
+  return (
+    <div className="p-3 sm:p-5">
+      <div className="flex h-[calc(100vh-7rem)] min-h-[520px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+        {/* ── La liste : courte, deux lignes par dossier, on ouvre pour traiter ── */}
+        <aside className={`w-full sm:w-[330px] shrink-0 border-r border-slate-200 flex-col min-h-0 ${vue === "liste" ? "flex" : "hidden sm:flex"}`}>
+          <div className="px-4 pt-4 pb-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[var(--brand)] text-white grid place-items-center font-semibold shrink-0">J</div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-slate-800 leading-tight">Junior</p>
+              <p className="text-xs text-slate-400 truncate">
+                {attendent.length ? `${attendent.length} pour toi` : "rien ne t’attend"}
+                {regles.length ? ` · ${regles.length} réglé${regles.length > 1 ? "s" : ""}` : ""}
+              </p>
             </div>
             {peutRegler && (
-            <button
-              onClick={() => setReglages((v) => !v)}
-              className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 px-2.5 h-8 rounded-lg border border-slate-200 hover:bg-slate-50"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" /> Réglages
-              <ChevronDown className={`w-3.5 h-3.5 transition ${reglages ? "rotate-180" : ""}`} />
-            </button>
+              <button
+                onClick={() => { setReglages((v) => !v); setVue("conv"); }}
+                title="Jusqu’où je vais tout seul"
+                className={`w-9 h-9 rounded-lg border grid place-items-center transition ${
+                  reglages ? "border-[var(--brand)] text-[var(--brand)] bg-[var(--brand-bg)]" : "border-slate-200 text-slate-400 hover:text-slate-600"}`}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
             )}
+            <button
+              onClick={runNow} disabled={running} title="Relever la boîte"
+              className="w-9 h-9 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white grid place-items-center disabled:opacity-60"
+            >
+              {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            </button>
           </div>
 
-          {/* Réglages. Le panneau ne demande plus « off / suggest / auto » : il dit,
-              famille par famille, CE QUE JUNIOR FAIT et CE QUI SE PASSERA sans toi.
-              Les familles sensibles (répondre à un client, envoyer une facture en
-              compta) portent un avertissement quand elles passent en autonomie. */}
-          {peutRegler && reglages && Object.keys(modes).length > 0 && (
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/60">
-                <p className="text-sm font-semibold text-slate-800">Jusqu’où tu me laisses aller</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Pour chaque famille de mails, dis-moi jusqu’où je vais. Commence par « Je te demande » :
-                  quand une famille ne te surprend plus, passe-la en autonomie et tu ne la verras plus.
-                </p>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {Object.keys(modes)
-                  .sort((a, b) => meta(a).label.localeCompare(meta(b).label))
-                  .map((cat) => {
-                    const m = modes[cat];
-                    const e = effet(cat);
-                    return (
-                      <div key={cat} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${meta(cat).badge}`}>
-                              {meta(cat).label}
-                            </span>
-                            {e.risque === "sensible" && (
-                              <span className="text-[11px] text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded-full px-2 py-0.5">
-                                à surveiller
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-slate-700 mt-1">{e.geste}</p>
-                          <p className={`text-xs mt-0.5 ${m === "auto" ? "text-amber-700" : "text-slate-400"}`}>
-                            {MODE_SENS[m]}
-                            {m === "auto" && e.risque === "sensible" && " ⚠️ rien ne repassera devant toi."}
-                          </p>
-                        </div>
-                        <div className="inline-flex rounded-xl ring-1 ring-slate-200 overflow-hidden shrink-0 self-start">
-                          {(["off", "suggest", "auto"] as Mode[]).map((mm) => (
-                            <button
-                              key={mm}
-                              onClick={() => changeMode(cat, mm)}
-                              title={MODE_SENS[mm]}
-                              className={`px-3 py-1.5 text-xs font-medium transition whitespace-nowrap ${
-                                m === mm
-                                  ? mm === "off" ? "bg-slate-700 text-white"
-                                    : mm === "auto" ? "bg-amber-500 text-white"
-                                    : "bg-[var(--brand)] text-white"
-                                  : "bg-white text-slate-500 hover:bg-slate-50"
-                              }`}
-                            >
-                              {MODE_LABEL[mm]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-
-          {/* Filtres : par famille, et bascule traités / à faire. */}
           {rows.length > 0 && (
-            <div className="mt-4 flex flex-wrap items-center gap-1.5">
-              <button
-                onClick={() => setFiltre(null)}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 transition ${
-                  filtre === null ? "bg-slate-800 text-white ring-slate-800" : "bg-white text-slate-500 ring-slate-200 hover:bg-slate-50"}`}
-              >
-                Tout · {Object.values(compteurs).reduce((a, b) => a + b, 0)}
-              </button>
-              {Object.entries(compteurs).sort((a, b) => b[1] - a[1]).map(([cat, n]) => (
+            <div className="px-4 pb-3 flex gap-1.5 flex-wrap">
+              {[null, ...Object.keys(compteurs).sort()].map((c) => (
                 <button
-                  key={cat}
-                  onClick={() => setFiltre(filtre === cat ? null : cat)}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 transition ${
-                    filtre === cat ? "bg-slate-800 text-white ring-slate-800" : `${meta(cat).badge} hover:brightness-95`}`}
+                  key={c ?? "tout"}
+                  onClick={() => setFiltre(c)}
+                  className={`rounded-full px-2.5 py-1 text-[11.5px] font-medium transition ${
+                    filtre === c ? "bg-[var(--brand)] text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
                 >
-                  {meta(cat).label} · {n}
+                  {c === null ? `Tout · ${visibles.length}` : `${meta(c).label} · ${compteurs[c]}`}
                 </button>
               ))}
-              <label className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
-                <input type="checkbox" checked={voirTraites} onChange={(e) => setVoirTraites(e.target.checked)} className="w-3.5 h-3.5 accent-slate-600" />
-                Voir aussi les traités
-              </label>
+              <button
+                onClick={() => setVoirTraites((v) => !v)}
+                className={`rounded-full px-2.5 py-1 text-[11.5px] font-medium transition ${
+                  voirTraites ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
+              >
+                {voirTraites ? "Masquer l’historique" : "Ce que j’ai fait"}
+              </button>
             </div>
           )}
 
-          {loading ? (
-            <div className="p-16 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></div>
-          ) : visibles.length === 0 ? (
-            <div className="mt-6">
-              <EmptyState
-                icon={rows.length ? CircleCheckBig : Inbox}
-                title={rows.length ? "Tout est propre" : "Je n’ai encore rien regardé"}
-                subtitle={rows.length
-                  ? "J’ai passé la boîte en revue, il n’y a plus rien qui traîne."
-                  : "Clique sur « Junior, au boulot ! » et je te dis ce qu’il y a dans la boîte."}
-              />
+          <div className="flex-1 overflow-y-auto pb-3">
+            {loading ? (
+              <p className="p-4 text-sm text-slate-400">Je regarde…</p>
+            ) : !visibles.length ? (
+              <p className="p-4 text-sm text-slate-400">
+                {rows.length ? "Rien dans ce filtre." : "Je n’ai pas encore mis le nez dans la boîte."}
+              </p>
+            ) : (
+              <>
+                <Groupe titre="Ils t’attendent" liste={attendent} />
+                <Groupe titre="Réglés" liste={regles} />
+              </>
+            )}
+          </div>
+        </aside>
+
+        {/* ── La conversation : on traite ici, et nulle part ailleurs ── */}
+        <main className={`flex-1 min-w-0 flex-col bg-slate-50/60 ${vue === "conv" ? "flex" : "hidden sm:flex"}`}>
+          {reglages && peutRegler ? (
+            <Reglages />
+          ) : !ouvert ? (
+            <div className="flex-1 grid place-items-center text-sm text-slate-400 px-6 text-center">
+              Choisis un dossier à gauche — ou clique sur la flèche pour que j’aille relever la boîte.
             </div>
           ) : (
-            <>
-              {/* Sélection : cocher la ligne d'en-tête sélectionne tout le visible. */}
-              {selectionnables.length > 0 && (
-                <label className="mt-4 mb-1 flex items-center gap-2 text-xs text-slate-500 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={toutSelectionne}
-                    onChange={(e) => setSelection(e.target.checked ? new Set(selectionnables.map((r) => r.id)) : new Set())}
-                    className="w-4 h-4 accent-[var(--brand)]"
-                  />
-                  Tout sélectionner ({selectionnables.length})
-                </label>
-              )}
-
-              <div className="mt-2 space-y-2">
-                {visibles.map((r) => {
-                  const actionnable = estActionnable(r);
-                  const summary = resultSummary(r);
-                  const note = r.result?.note ? String(r.result.note) : null;
-                  const resa = (r.result?.resa as Record<string, unknown> | undefined) || null;
-                  const choisi = selection.has(r.id);
-                  return (
-                    <div
-                      key={r.id}
-                      className={`rounded-xl border bg-white p-3 sm:p-4 transition ${
-                        choisi ? "border-[var(--brand)] ring-1 ring-[var(--brand)]/20" : "border-slate-200 hover:border-slate-300"}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        {actionnable ? (
-                          <input
-                            type="checkbox"
-                            checked={choisi}
-                            onChange={(e) => setSelection((s) => {
-                              const n = new Set(s); if (e.target.checked) n.add(r.id); else n.delete(r.id); return n;
-                            })}
-                            className="mt-1 w-4 h-4 accent-[var(--brand)] shrink-0"
-                          />
-                        ) : <span className="w-4 shrink-0" />}
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${meta(r.category).badge}`}>
-                              {meta(r.category).label}
-                            </span>
-                            <span className="text-xs text-slate-400 tabular-nums">
-                              {r.received_at ? format(parseISO(r.received_at), "dd/MM · HH:mm", { locale: fr }) : "—"}
-                            </span>
-                            <span className="text-xs text-slate-500 truncate">{r.from_name || r.from_addr}</span>
-                          </div>
-
-                          {/* Ce qui parle à un réceptionniste, c'est le NOM du client et
-                              ses dates — pas « 1B97MF ». On ne l'a qu'après traitement
-                              (le parseur lit le corps du mail), d'où le repli sur l'objet. */}
-                          {resa ? (
-                            <>
-                              <p className="mt-1 text-sm font-semibold text-slate-800 break-words">
-                                {String(resa.guest)}
-                                {resa.room ? <span className="font-normal text-slate-500"> · {String(resa.room)}</span> : null}
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                {String(resa.arrival)}{resa.departure ? ` → ${String(resa.departure)}` : ""}
-                                {resa.nights ? ` · ${resa.nights} nuit${Number(resa.nights) > 1 ? "s" : ""}` : ""}
-                                {resa.amount ? ` · ${String(resa.amount)}` : ""}
-                                {resa.ref ? <span className="text-slate-300"> · {String(resa.ref)}</span> : null}
-                              </p>
-                            </>
-                          ) : (
-                            <p className="mt-1 text-sm font-medium text-slate-800 break-words">{r.subject || "(sans objet)"}</p>
-                          )}
-
-                          <p className="mt-1.5 text-sm text-slate-600">
-                            <span className="text-slate-400">Je propose :</span>{" "}
-                            <span className="font-medium">{ACTION_LABEL[r.proposed_action] || r.proposed_action}</span>
-                          </p>
-                          {r.reason && <p className="text-xs text-slate-400 mt-0.5">{r.reason}</p>}
-
-                          {note && (
-                            <div className="mt-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
-                              <p className="text-sm text-slate-800 font-mono break-words">{note}</p>
-                              <button
-                                onClick={() => copyNote(note)}
-                                className="mt-1.5 inline-flex items-center gap-1 text-xs text-[var(--brand)] hover:underline"
-                              >
-                                <Copy className="w-3 h-3" /> Copier la note
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Checklist commerciale. Un lead n'est pas UNE action mais une
-                              petite séquence — fiche, devis, réponse — avec une DÉCISION
-                              HUMAINE au milieu (le prix, la faisabilité). Enchaîner les
-                              trois d'un clic produirait un devis inventé et une promesse
-                              intenable : Junior fait ce qu'il sait faire seul et ouvre la
-                              porte pour le reste. La ligne reste visible tant que la
-                              séquence n'est pas finie. */}
-                          {r.result?.kind === "commercial" && <BilanCommercial r={r} />}
-
-                          {/* Correction : ouverte à tous ceux qui traitent, parce que c'est
-                              celui qui voit le mail qui sait ce qu'il fallait en faire. */}
-                          {corrige === r.id ? (
-                            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
-                              <p className="text-xs font-semibold text-slate-600">Qu’est-ce que j’aurais dû faire ?</p>
-                              <div className="grid sm:grid-cols-2 gap-2">
-                                <select
-                                  value={corCat} onChange={(e) => setCorCat(e.target.value)}
-                                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
-                                >
-                                  <option value="">— même famille ({meta(r.category).label}) —</option>
-                                  {Object.keys(CAT_META).map((c) => <option key={c} value={c}>{meta(c).label}</option>)}
-                                </select>
-                                <select
-                                  value={corAct} onChange={(e) => setCorAct(e.target.value)}
-                                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
-                                >
-                                  <option value="">— même action —</option>
-                                  {Object.keys(ACTION_LABEL).map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}
-                                </select>
-                              </div>
-                              <textarea
-                                value={corMot} onChange={(e) => setCorMot(e.target.value)}
-                                rows={2}
-                                placeholder="Ce que je ne peux pas voir : « déjà remboursé, vu avec Nina », « c’est un habitué »…"
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700"
-                              />
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => envoyerCorrection(r)} disabled={!!busyId}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3 h-8 text-xs font-medium disabled:opacity-50"
-                                >
-                                  {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                                  Envoyer la correction
-                                </button>
-                                <button
-                                  onClick={() => { setCorrige(null); setCorCat(""); setCorAct(""); setCorMot(""); }}
-                                  className="text-xs text-slate-400 hover:text-slate-600"
-                                >
-                                  Annuler
-                                </button>
-                                <span className="ml-auto text-[11px] text-slate-400">
-                                  {corAct ? "Je retraite le mail tout de suite." : "Sans action choisie, je note sans rien faire."}
-                                </span>
-                              </div>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => { setCorrige(r.id); setCorCat(""); setCorAct(""); setCorMot(""); }}
-                              className="mt-2 text-xs text-slate-400 hover:text-[var(--brand)] underline underline-offset-2"
-                            >
-                              Non, c’est plutôt…
-                            </button>
-                          )}
-
-                          {r.action_error && (
-                            <p className="mt-2 text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-2.5 py-1.5">
-                              {r.action_error}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="shrink-0 flex flex-col items-end gap-1.5">
-                          {actionnable ? (
-                            <>
-                              <button
-                                onClick={() => decide(r, "validate")}
-                                disabled={!!busyId}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3 h-8 text-xs font-medium disabled:opacity-50"
-                              >
-                                {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                                Valider
-                              </button>
-                              <button
-                                onClick={() => decide(r, "skip")}
-                                disabled={!!busyId}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-white ring-1 ring-slate-200 hover:bg-slate-50 text-slate-500 px-3 h-8 text-xs font-medium disabled:opacity-50"
-                              >
-                                <X className="w-3.5 h-3.5" /> Ignorer
-                              </button>
-                            </>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-xs text-slate-400 whitespace-nowrap">
-                              {summary || (modes[r.category] === "off" ? "désactivé" : "—")}
-                              {r.result?.webLink ? (
-                                <a href={String(r.result.webLink)} target="_blank" rel="noreferrer" className="text-[var(--brand)] hover:underline inline-flex items-center gap-0.5 ml-1">
-                                  <ExternalLink className="w-3 h-3" /> Ouvrir
-                                </a>
-                              ) : null}
-                              {/* La ligne qu'on vient de traiter ne part que quand on le dit. */}
-                              {fraichementTraites.has(r.id) ? (
-                                <button
-                                  onClick={() => setFraichementTraites((s) => { const n = new Set(s); n.delete(r.id); return n; })}
-                                  className="ml-1 text-slate-400 hover:text-slate-600 underline underline-offset-2"
-                                >
-                                  ranger
-                                </button>
-                              ) : null}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
+            <Conversation r={ouvert} />
           )}
+        </main>
+      </div>
 
-          {/* Barre de lot, collée en bas : elle n'apparaît que s'il y a une sélection. */}
-          {selection.size > 0 && (
-            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-2xl bg-slate-900 text-white shadow-xl px-4 py-3">
-              <span className="text-sm">
-                <b>{selection.size}</b> sélectionné{selection.size > 1 ? "s" : ""}
-              </span>
-              <button
-                onClick={() => decideLot("validate")}
-                disabled={!!busyId}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 px-3 h-9 text-sm font-medium disabled:opacity-50"
-              >
-                {busyId === "lot" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCheck className="w-4 h-4" />}
-                Je fais tout
-              </button>
-              <button
-                onClick={() => decideLot("skip")}
-                disabled={!!busyId}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 px-3 h-9 text-sm font-medium disabled:opacity-50"
-              >
-                <X className="w-4 h-4" /> Tout laisser
-              </button>
-              <button onClick={() => setSelection(new Set())} className="text-white/50 hover:text-white p-1">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </>
+      {/* Le lot reste : sept pubs à jeter, c’est un clic, pas sept. */}
+      {selection.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-2xl bg-slate-900 text-white shadow-xl px-4 py-3">
+          <span className="text-sm"><b>{selection.size}</b> sélectionné{selection.size > 1 ? "s" : ""}</span>
+          <button
+            onClick={() => decideLot("validate")} disabled={!!busyId}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 px-3 h-9 text-sm font-medium disabled:opacity-50"
+          >
+            {busyId === "lot" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCheck className="w-4 h-4" />}
+            Je fais tout
+          </button>
+          <button
+            onClick={() => decideLot("skip")} disabled={!!busyId}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 px-3 h-9 text-sm font-medium disabled:opacity-50"
+          >
+            <X className="w-4 h-4" /> Tout laisser
+          </button>
+          <button onClick={() => setSelection(new Set())} className="text-white/50 hover:text-white p-1"><X className="w-4 h-4" /></button>
+        </div>
       )}
+    </div>
+  );
+
+  // ── Un groupe de la liste ────────────────────────────────────────────────
+  function Groupe({ titre, liste }: { titre: string; liste: Row[] }) {
+    if (!liste.length) return null;
+    return (
+      <>
+        <p className="px-4 pt-3 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">{titre}</p>
+        {liste.map((r) => {
+          const actionnable = estActionnable(r);
+          const apercu = actionnable
+            ? (r.reason || ACTION_LABEL[r.proposed_action] || "")
+            : (resultSummary(r) || r.reason || "");
+          return (
+            <button
+              key={r.id}
+              onClick={() => { setActif(r.id); setVue("conv"); setCorrige(null); }}
+              className={`w-full text-left flex gap-2.5 px-3 py-2.5 items-start relative transition ${
+                ouvert?.id === r.id ? "bg-[var(--brand-bg)]" : "hover:bg-slate-50"}`}
+            >
+              {ouvert?.id === r.id && <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-[var(--brand)]" />}
+              {actionnable ? (
+                <span
+                  role="checkbox" aria-checked={selection.has(r.id)} tabIndex={0}
+                  onClick={(e) => { e.stopPropagation(); toggleSel(r.id); }}
+                  onKeyDown={(e) => { if (e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleSel(r.id); } }}
+                  className={`mt-0.5 w-8 h-8 shrink-0 rounded-lg grid place-items-center text-[11px] font-semibold transition ${
+                    selection.has(r.id)
+                      ? "bg-[var(--brand)] text-white"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
+                >
+                  {selection.has(r.id) ? <Check className="w-4 h-4" /> : initiales(r)}
+                </span>
+              ) : (
+                <span className="mt-0.5 w-8 h-8 shrink-0 rounded-lg bg-slate-50 text-emerald-600 grid place-items-center">
+                  <Check className="w-4 h-4" />
+                </span>
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-2">
+                  <b className={`flex-1 min-w-0 truncate text-[13.5px] ${actionnable ? "font-semibold text-slate-800" : "font-medium text-slate-500"}`}>
+                    {r.subject || "(sans objet)"}
+                  </b>
+                  <time className="text-[11px] text-slate-400 shrink-0 tabular-nums">
+                    {r.received_at ? format(parseISO(r.received_at), "HH:mm") : ""}
+                  </time>
+                </span>
+                <span className="block truncate text-[12.5px] text-slate-400 mt-0.5">{apercu}</span>
+              </span>
+              {actionnable && <span className="mt-2 w-2 h-2 rounded-full bg-[var(--brand)] shrink-0" />}
+            </button>
+          );
+        })}
+      </>
+    );
+  }
+
+  // ── La conversation d'un dossier ─────────────────────────────────────────
+  function Conversation({ r }: { r: Row }) {
+    const actionnable = estActionnable(r);
+    const res = (r.result || {}) as Record<string, unknown>;
+    const note = (res.note as string) || (r.detail?.note as string) || null;
+    const resume = resultSummary(r);
+    const aVerifier = Array.isArray(res.incertitudes) ? (res.incertitudes as unknown[]).map(String) : [];
+    const aFaire = res.message ? String(res.message) : null;
+    const liens = [
+      res.id ? { href: `/devis?leadId=${String(res.id)}`, label: "Ouvrir le devis", ext: false } : null,
+      res.webLink ? { href: String(res.webLink), label: "Relire la réponse", ext: true } : null,
+      res.draftGaetanLink ? { href: String(res.draftGaetanLink), label: "Le mot pour Gaëtan", ext: true } : null,
+    ].filter(Boolean) as { href: string; label: string; ext: boolean }[];
+
+    return (
+      <>
+        <div className="px-4 sm:px-5 py-3 border-b border-slate-200 bg-white flex items-center gap-3">
+          <button onClick={() => setVue("liste")} className="sm:hidden w-8 h-8 rounded-lg border border-slate-200 text-slate-400 grid place-items-center">←</button>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-slate-800 truncate leading-tight">{r.subject || "(sans objet)"}</p>
+            <p className="text-xs text-slate-400 truncate">
+              {r.from_name || r.from_addr}
+              {r.received_at ? ` · ${format(parseISO(r.received_at), "d MMM à HH:mm", { locale: fr })}` : ""}
+            </p>
+          </div>
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${meta(r.category).badge}`}>
+            {meta(r.category).label}
+          </span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-5 space-y-3">
+          {/* Ce qu'il a compris du mail — sa première bulle. */}
+          <Bulle>
+            <p className="text-[14.5px] text-slate-700">{r.reason || "Je n’ai rien de particulier à en dire."}</p>
+            {resume && !actionnable && (
+              <ul className="mt-2.5 space-y-1">
+                <li className="text-[13px] text-slate-500 flex gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />{resume}
+                </li>
+              </ul>
+            )}
+          </Bulle>
+
+          {note && (
+            <Bulle>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">La note pour l’équipe</p>
+              <p className="text-sm text-slate-800 font-mono whitespace-pre-wrap break-words">{note}</p>
+              <button onClick={() => copyNote(note)} className="mt-2 inline-flex items-center gap-1 text-xs text-[var(--brand)] hover:underline">
+                <Copy className="w-3 h-3" /> Copier
+              </button>
+            </Bulle>
+          )}
+
+          {/* Ce qu'il propose, ou ce qui te revient : le seul bloc avec des boutons. */}
+          {actionnable ? (
+            <Demande titre="Je te propose">
+              <p className="text-[15px] text-slate-800 font-medium">{ACTION_LABEL[r.proposed_action] || r.proposed_action}</p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button
+                  onClick={() => decide(r, "validate")} disabled={!!busyId}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3.5 h-9 text-[13px] font-semibold disabled:opacity-50"
+                >
+                  {busyId === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Vas-y
+                </button>
+                <button
+                  onClick={() => decide(r, "skip")} disabled={!!busyId}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-white ring-1 ring-slate-200 hover:bg-slate-50 text-slate-500 px-3.5 h-9 text-[13px] font-medium disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" /> Laisse tomber
+                </button>
+              </div>
+            </Demande>
+          ) : (aFaire || aVerifier.length || liens.length) ? (
+            <Demande titre="C’est à toi">
+              {aFaire && <p className="text-[14.5px] text-slate-800">{aFaire}</p>}
+              {aVerifier.length > 0 && (
+                <ul className="mt-2 space-y-1.5">
+                  {aVerifier.map((x, i) => (
+                    <li key={i} className="text-[13px] text-amber-800 flex gap-2">
+                      <span className="shrink-0">⚠️</span><span>{x}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {liens.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {liens.map((l) => (
+                    <a
+                      key={l.href} href={l.href} {...(l.ext ? { target: "_blank", rel: "noreferrer" } : {})}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-white ring-1 ring-slate-200 hover:bg-slate-50 text-slate-700 px-3 h-9 text-[13px] font-semibold"
+                    >
+                      {l.label} <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </Demande>
+          ) : null}
+
+          {r.action_error && (
+            <Demande titre="Je me suis arrêté là" ton="alerte">
+              <p className="text-[14px] text-slate-800">{r.action_error}</p>
+            </Demande>
+          )}
+
+          {/* La correction : elle nourrit les règles, donc elle vit dans la conversation. */}
+          {corrige === r.id ? (
+            <Bulle>
+              <p className="text-[13px] font-semibold text-slate-700 mb-2">Qu’est-ce que j’aurais dû faire ?</p>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <select value={corCat} onChange={(e) => setCorCat(e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700">
+                  <option value="">— même famille ({meta(r.category).label}) —</option>
+                  {Object.keys(CAT_META).map((c) => <option key={c} value={c}>{meta(c).label}</option>)}
+                </select>
+                <select value={corAct} onChange={(e) => setCorAct(e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700">
+                  <option value="">— même action —</option>
+                  {Object.keys(ACTION_LABEL).map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}
+                </select>
+              </div>
+              <textarea
+                value={corMot} onChange={(e) => setCorMot(e.target.value)} rows={2}
+                placeholder="Ce que je ne peux pas voir : « déjà remboursé, vu avec Nina », « c’est un habitué »…"
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700"
+              />
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  onClick={() => envoyerCorrection(r)} disabled={!!busyId}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3 h-8 text-xs font-medium disabled:opacity-50"
+                >
+                  {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Envoyer
+                </button>
+                <button onClick={() => { setCorrige(null); setCorCat(""); setCorAct(""); setCorMot(""); }} className="text-xs text-slate-400 hover:text-slate-600">
+                  Annuler
+                </button>
+                <span className="ml-auto text-[11px] text-slate-400">
+                  {corAct ? "Je retraite le mail tout de suite." : "Sans action choisie, je note sans rien faire."}
+                </span>
+              </div>
+            </Bulle>
+          ) : null}
+        </div>
+
+        {/* Le pied : la place de la conversation, quand l'agent arrivera. */}
+        <div className="border-t border-slate-200 bg-white px-4 sm:px-5 py-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setCorrige(r.id); setCorCat(""); setCorAct(""); setCorMot(""); }}
+              className="text-[13px] text-slate-500 hover:text-[var(--brand)] underline underline-offset-2"
+            >
+              Non, c’est plutôt…
+            </button>
+            {!estActionnable(r) && fraichementTraites.has(r.id) && (
+              <button
+                onClick={() => setFraichementTraites((s) => { const n = new Set(s); n.delete(r.id); return n; })}
+                className="text-[13px] text-slate-400 hover:text-slate-600 underline underline-offset-2"
+              >
+                ranger
+              </button>
+            )}
+            <span className="ml-auto text-[11.5px] text-slate-400">
+              Lui écrire arrivera avec l’agent — pour l’instant, dis-moi ce qui n’allait pas.
+            </span>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Réglages : dans la zone de droite, pas en surimpression de la liste ──
+  function Reglages() {
+    return (
+      <>
+        <div className="px-4 sm:px-5 py-3 border-b border-slate-200 bg-white flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-slate-800 leading-tight">Jusqu’où tu me laisses aller</p>
+            <p className="text-xs text-slate-400">
+              Commence par « Je te demande ». Quand une famille ne te surprend plus, passe-la en autonomie.
+            </p>
+          </div>
+          <button onClick={() => setReglages(false)} className="w-8 h-8 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-600 grid place-items-center">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white">
+          {Object.keys(modes).sort((a, b) => meta(a).label.localeCompare(meta(b).label)).map((cat) => {
+            const m = modes[cat];
+            const e = effet(cat);
+            return (
+              <div key={cat} className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${meta(cat).badge}`}>{meta(cat).label}</span>
+                    {e.risque === "sensible" && (
+                      <span className="text-[11px] text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded-full px-2 py-0.5">à surveiller</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-700 mt-1">{e.geste}</p>
+                  <p className={`text-xs mt-0.5 ${m === "auto" ? "text-amber-700" : "text-slate-400"}`}>
+                    {MODE_SENS[m]}{m === "auto" && e.risque === "sensible" && " ⚠️ rien ne repassera devant toi."}
+                  </p>
+                </div>
+                <div className="inline-flex rounded-xl ring-1 ring-slate-200 overflow-hidden shrink-0 self-start">
+                  {(["off", "suggest", "auto"] as Mode[]).map((mm) => (
+                    <button
+                      key={mm} onClick={() => changeMode(cat, mm)} title={MODE_SENS[mm]}
+                      className={`px-3 py-1.5 text-xs font-medium transition whitespace-nowrap ${
+                        m === mm
+                          ? mm === "off" ? "bg-slate-700 text-white"
+                            : mm === "auto" ? "bg-amber-500 text-white"
+                            : "bg-[var(--brand)] text-white"
+                          : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                    >
+                      {MODE_LABEL[mm]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+}
+
+// ── Briques de la conversation ──────────────────────────────────────────────
+// Junior parle à gauche, dans une bulle neutre : ce qu'il dit n'appelle pas
+// d'action. Une « demande » est visuellement autre chose — c'est la seule forme
+// qui porte des boutons, pour qu'on ne confonde jamais un compte rendu avec du
+// travail qui attend.
+function Bulle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2.5 items-end max-w-[92%]">
+      <span className="w-7 h-7 shrink-0 rounded-lg bg-[var(--brand)] text-white grid place-items-center text-[11px] font-semibold mb-0.5">J</span>
+      <div className="rounded-2xl rounded-bl-md bg-white ring-1 ring-slate-200/70 px-4 py-3 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function Demande({ titre, ton = "action", children }: { titre: string; ton?: "action" | "alerte"; children: React.ReactNode }) {
+  const alerte = ton === "alerte";
+  return (
+    <div className="flex gap-2.5 items-end max-w-[92%]">
+      <span className="w-7 h-7 shrink-0 rounded-lg bg-[var(--brand)] text-white grid place-items-center text-[11px] font-semibold mb-0.5">J</span>
+      <div
+        className={`rounded-2xl rounded-bl-md px-4 py-3 min-w-0 border-l-[3px] ${
+          alerte ? "bg-rose-50 border-rose-400 ring-1 ring-rose-100" : "bg-[var(--brand-bg)] border-[var(--brand)]"}`}
+      >
+        <p className={`text-[10.5px] font-bold uppercase tracking-wider mb-1.5 ${alerte ? "text-rose-600" : "text-[var(--brand)]"}`}>
+          {titre}
+        </p>
+        {children}
+      </div>
     </div>
   );
 }
