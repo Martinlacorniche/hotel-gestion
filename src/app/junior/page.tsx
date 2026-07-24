@@ -1,6 +1,8 @@
 "use client";
 
-// Assistant mails — poste de travail (superadmin, Phase 2).
+// Junior — poste de travail de l’assistant mails (superadmin, Phase 2).
+// La page vit sur /junior : c’est son nom, celui que l’équipe emploie.
+// Les routes gardent le préfixe /api/mail-assistant (historique, sans effet visible).
 //
 // L'assistant CLASSE la boîte de l'hôtel courant ; l'humain VALIDE. Rien ne part
 // sans un clic tant que la catégorie est en mode « Valider ».
@@ -579,7 +581,7 @@ export default function MailAssistantPage() {
     const aVerifier = Array.isArray(res.incertitudes) ? (res.incertitudes as unknown[]).map(String) : [];
     const aFaire = res.message ? String(res.message) : null;
     const liens = [
-      res.id ? { href: `/devis?leadId=${String(res.id)}`, label: "Ouvrir le devis" } : null,
+      res.id ? { href: `/devis?leadId=${String(res.id)}`, label: "Chiffrer le devis" } : null,
       // Les brouillons ne sont plus des liens : ils s'affichent en entier plus bas.
     ].filter(Boolean) as { href: string; label: string }[];
 

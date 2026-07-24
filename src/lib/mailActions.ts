@@ -1107,8 +1107,14 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
   // commercial » anonyme (Martin 2026-07-23) : c'est elle qui recevra la réponse,
   // et un interlocuteur qui a un prénom obtient de meilleurs retours qu'une boîte.
   // Repli sur le service si personne n'est en shift (nuit, creux entre deux postes).
+  // ⚠️ LA RÉPONSE SE POSE DÈS QU'ELLE EST ÉCRITE (2026-07-24). La condition était
+  // `missing.length && draft_html` : le brouillon ne servait qu'à RÉCLAMER des
+  // informations manquantes. Depuis que Junior sait répondre sur le fond — la
+  // saison des Voiles, le refus des plateformes, le tarif — il jetait sa propre
+  // réponse quand il ne manquait rien. Vécu sur la demande HotelPlanner : un mail
+  // complet en anglais, rédigé puis perdu, et l'écran n'affichait qu'un devis vide.
   let draft: { draftId: string; webLink: string } | null = null;
-  if (missing.length && lead.draft_html) {
+  if (lead.draft_html) {
     const enPoste = await receptionOnDuty(cfg.hotelId).catch(() => null);
     draft = await createReplyDraft(
       cfg.mailbox, row.message_id,
@@ -1176,7 +1182,17 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
     commentaires: stampedNote, date_relance: relance,
   }).select('id').single();
   if (error) return { status: 'blocked', error: `Insert suivi_commercial: ${error.message}` };
-  return { status: 'executed', result: { kind: 'commercial', mode: 'created', id: ins?.id, missing, ...(draft || {}), lead } };
+  return {
+    status: 'executed',
+    result: {
+      kind: 'commercial', mode: 'created', id: ins?.id, missing, ...(draft || {}), lead,
+      // Ce qui reste, dit en clair : un bouton « Ouvrir le devis » laissait croire
+      // qu'un devis existait, alors qu'il est vide tant que personne ne l'a chiffré.
+      message: (draft ? 'Relis ma réponse et envoie-la si elle te va. ' : '')
+        + 'Le devis reste à chiffrer — je ne fixe pas les prix.'
+        + (missing.length ? ` Il manque encore : ${missing.join(', ')}.` : ''),
+    },
+  };
 }
 
 // route_pennylane : lit l'entité FACTURÉE dans le PDF (bloc « facturé à », pas l'adresse)
