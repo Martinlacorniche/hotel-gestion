@@ -53,6 +53,9 @@ type Row = {
 
 type Mode = "off" | "suggest" | "auto";
 
+// Un aller-retour gardé sur la ligne : sa question, ta réponse, et qui l'a donnée.
+type Echange = { question?: string | null; reponse: string; par?: string; le?: string };
+
 // Toutes les catégories du classifieur, pour qu'aucune ne retombe sur « Autre » —
 // c'est ce qui faisait apparaître deux fois le même libellé dans les réglages.
 const CAT_META: Record<string, { label: string; badge: string }> = {
@@ -215,6 +218,9 @@ export default function MailAssistantPage() {
   // Le dossier ouvert à droite, et — sur petit écran, où les deux colonnes ne
   // tiennent pas — laquelle des deux on regarde.
   const [actif, setActif] = useState<string | null>(null);
+  // Ce qu'on est en train de lui répondre quand il a posé une question.
+  const [rep, setRep] = useState("");
+  const [repBusy, setRepBusy] = useState(false);
   const [vue, setVue] = useState<"liste" | "conv">("conv");
   const [corCat, setCorCat] = useState("");
   const [corAct, setCorAct] = useState("");
@@ -354,6 +360,24 @@ export default function MailAssistantPage() {
       await load(cfg.key);
     } else toast.error(j.error || "Ça a coincé");
     setBusyId(null);
+  };
+
+  const repondre = async (row: Row) => {
+    if (!cfg || !rep.trim()) return;
+    setRepBusy(true);
+    const headers = await authHeaders();
+    if (!headers) { setRepBusy(false); return; }
+    const resp = await fetch(`/api/mail-assistant/repondre?hotel=${cfg.key}`, {
+      method: "POST", headers, body: JSON.stringify({ id: row.id, texte: rep.trim() }),
+    });
+    const j = await resp.json().catch(() => ({}));
+    if (resp.ok && j.ok) {
+      toast.success("Il a réécrit avec ta réponse");
+      setRep("");
+      setFraichementTraites((s) => new Set(s).add(row.id));
+      await load(cfg.key);
+    } else toast.error(j.error || "Ça a coincé");
+    setRepBusy(false);
   };
 
   const copyNote = async (note: string) => {
@@ -676,6 +700,46 @@ export default function MailAssistantPage() {
               <p className="text-[14px] text-slate-800">{r.action_error}</p>
             </Demande>
           )}
+
+          {/* Ce qu'on s'est déjà dit sur ce dossier : sa question, ta réponse. */}
+          {Array.isArray(res.echanges) && (res.echanges as Echange[]).map((e, i) => (
+            <div key={i} className="space-y-3">
+              {e.question ? <Bulle><p className="text-[14.5px] text-slate-700">{e.question}</p></Bulle> : null}
+              <BulleMoi qui={e.par}>
+                <p className="text-[14.5px] text-slate-800">{e.reponse}</p>
+              </BulleMoi>
+            </div>
+          ))}
+
+          {/* Il attend une décision : tant qu'il ne l'a pas, il ne rédige rien. */}
+          {res.question ? (
+            <>
+              <Demande titre="J’ai besoin de toi">
+                <p className="text-[15px] text-slate-800">{String(res.question)}</p>
+                <p className="text-[12.5px] text-slate-500 mt-1.5">
+                  Je préfère demander plutôt qu’inventer un chiffre. Dis-le-moi et je rédige.
+                </p>
+              </Demande>
+              <BulleMoi qui={user?.name}>
+                <textarea
+                  value={rep} onChange={(e) => setRep(e.target.value)} rows={2} autoFocus
+                  placeholder="Ta réponse — « 800 € la nuit pour l’ensemble », « on ne prend pas », …"
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); repondre(r); } }}
+                  className="w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-[14px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => repondre(r)} disabled={repBusy || !rep.trim()}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3.5 h-9 text-[13px] font-semibold disabled:opacity-40"
+                  >
+                    {repBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Répondre
+                  </button>
+                  <span className="text-[11.5px] text-slate-500">Il réécrira sa réponse avec ça.</span>
+                </div>
+              </BulleMoi>
+            </>
+          ) : null}
 
           {/* Ce qu'il propose d'envoyer — lisible et décidable ici même. */}
           {res.draftId ? (

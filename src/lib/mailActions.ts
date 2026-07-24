@@ -10,7 +10,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { moveMessage, createReplyDraft, createDraftTo, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox, searchMessages, dossierThread, existingReplyDraft } from '@/lib/graphMailbox';
+import { moveMessage, createReplyDraft, createDraftTo, deleteDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox, searchMessages, dossierThread, existingReplyDraft } from '@/lib/graphMailbox';
 
 // Le traiteur partenaire (Gaëtan Dupuis, Monsieur Cocktail). Son autre adresse
 // `dupuisgaetan@orange.fr` sert à le reconnaître à la lecture, pas à lui écrire.
@@ -64,6 +64,9 @@ export type LogRow = {
   category: string;
   proposed_action: string;
   detail: Record<string, unknown>;
+  /** Ce que Junior a déjà produit sur cette ligne — utile quand il reprend son
+   *  travail après une réponse humaine (sa question, le brouillon à remplacer). */
+  result?: Record<string, unknown> | null;
 };
 
 export type ExecOutcome = {
@@ -317,6 +320,9 @@ type LeadIssue = 'nouvelle_demande' | 'refus' | 'confirmation' | 'autre';
 
 type Lead = {
   issue?: LeadIssue; motif_perte?: string;
+  /** Ce qu'il ne peut pas décider seul (un tarif, un arbitrage). Tant que c'est
+   *  rempli, il ne rédige pas : il attend une réponse humaine. */
+  question?: string | null;
   nom_client?: string; societe?: string; telephone?: string; titre_demande?: string;
   date_evenement?: string; nb_personnes?: string; budget_estime?: number;
   resume?: string; missing?: string[]; draft_html?: string;
@@ -359,7 +365,7 @@ const saisonDe = (cle: string) => SAISON[cle] || '';
 // Exposée pour l'essai à blanc : elle lit et rédige, elle n'écrit nulle part.
 export const qualifyLeadTest = (s: string, b: string, h: string, cle: string) => qualifyLead(s, b, h, saisonDe(cle));
 
-async function qualifyLead(subject: string, body: string, hotelName: string, saison = ''): Promise<Lead> {
+async function qualifyLead(subject: string, body: string, hotelName: string, saison = '', precision = ''): Promise<Lead> {
   const client = new Anthropic();
   const msg = await client.messages.create({
     model: LLM_MODEL, max_tokens: 1100,
@@ -382,6 +388,11 @@ async function qualifyLead(subject: string, body: string, hotelName: string, sai
         `- missing : SI issue="nouvelle_demande", les infos MANQUANTES à demander (parmi : dates ` +
         `exactes, nombre de participants, budget indicatif, type de prestation, restauration, ` +
         `hébergement) ; sinon liste vide\n` +
+        `- question : SI une décision t'échappe — un TARIF que tu ne connais pas, un ` +
+        `arbitrage de disponibilité, une remise — pose-la en UNE phrase directe et ` +
+        `laisse draft_html VIDE. Tu ne rédiges pas une réponse en inventant un chiffre, ` +
+        `et tu n'écris pas non plus « notre direction reviendra vers vous » : tu ` +
+        `demandes, on te répond, tu rédiges ensuite. null si tu n'as besoin de rien.\n` +
         `- draft_html : un brouillon de réponse RÉDIGÉ DANS LA LANGUE DU MAIL REÇU ` +
         `(si le client écrit en anglais, réponds en anglais). Si issue="refus" : remercier, ` +
         `accuser réception sans insister ni renégocier, et laisser la porte ouverte pour une ` +
@@ -390,7 +401,9 @@ async function qualifyLead(subject: string, body: string, hotelName: string, sai
         `⚠️ Si la demande vient d'une PLATEFORME qui réclame de déposer l'offre sur son site ` +
         `(HotelPlanner, place de marché, mise en concurrence), on n'y va pas : on répond par ` +
         `mail et on l'annonce poliment en ouverture.\n\n` +
-        `Sujet: ${subject}\n\n${body.slice(0, 6000)}`,
+        (precision ? `\n⚠️ LA DIRECTION VIENT DE TE RÉPONDRE : « ${precision} ». Tiens-en compte, ` +
+          `rédige maintenant la réponse définitive et laisse question à null.\n` : '') +
+        `\nSujet: ${subject}\n\n${body.slice(0, 6000)}`,
     }],
   });
   const text = msg.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
@@ -512,7 +525,7 @@ async function handleRefus(
 
   // Réponse CLIENT → signée par la personne en shift (cf reference_signature_htbm).
   let draft: { draftId: string; webLink: string } | null = null;
-  if (lead.draft_html) {
+  if (lead.draft_html && !lead.question) {
     const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
     draft = await createReplyDraft(
       cfg.mailbox, row.message_id,
@@ -601,6 +614,7 @@ type Suivi = {
   draft_html: string;
   incertitudes?: string[];
   issue?: IssueSuivi;
+  question?: string | null;
   /** Le CLIENT FINAL, jamais le chargé de compte de la centrale. Sert à retrouver la fiche. */
   client_nom?: string | null;
   date_evenement?: string | null;
@@ -631,7 +645,7 @@ function contexteFiche(f: FicheTrouvee | null): string {
 
 export async function redigeSuivi(
   hotelName: string, ref: string, fil: string, salles: OccupationSalles, prenom: string | null,
-  fiche: FicheTrouvee | null = null, saison = '',
+  fiche: FicheTrouvee | null = null, saison = '', precision = '',
 ): Promise<Suivi> {
   const client = new Anthropic();
   const msg = await client.messages.create({
@@ -643,6 +657,8 @@ export async function redigeSuivi(
         `du dossier ${ref}, du plus ancien au plus récent, nos réponses comprises.\n\n${fil.slice(0, 14000)}\n\n` +
         `${contexteFiche(fiche)}\n\n` +
         (saison ? `${saison}\n\n` : '') +
+        (precision ? `⚠️ LA DIRECTION VIENT DE TE RÉPONDRE : « ${precision} ». Tiens-en compte, ` +
+          `rédige maintenant la réponse définitive et laisse question à null.\n\n` : '') +
         `NOS SALLES : ${salles.salles.join(' · ') || 'non renseignées'}\n` +
         `OCCUPATION RÉELLE sur la période (source : notre planning) :\n` +
         `${salles.occupation.length ? salles.occupation.join('\n') : 'aucune salle occupée sur ces dates'}\n` +
@@ -659,6 +675,11 @@ export async function redigeSuivi(
         `dans le mail si elle y est), sinon null\n` +
         `- resume : une phrase pour la fiche CRM (où en est le dossier)\n` +
         `- incertitudes : ce dont tu n'es pas sûr et qu'un humain doit vérifier avant envoi (liste, souvent vide)\n` +
+        `- question : SI une décision t'échappe — un TARIF que tu ne connais pas, un ` +
+        `arbitrage de disponibilité, une remise — pose-la en UNE phrase directe et ` +
+        `laisse draft_html VIDE. Tu ne rédiges pas une réponse en inventant un chiffre, ` +
+        `et tu n'écris pas non plus « notre direction reviendra vers vous » : tu ` +
+        `demandes, on te répond, tu rédiges ensuite. null si tu n'as besoin de rien.\n` +
         `- draft_html : le brouillon de réponse, RÉDIGÉ DANS LA LANGUE DU DERNIER MESSAGE ` +
         `reçu (client anglophone ⇒ réponse en anglais).\n\n` +
         `RÈGLES ABSOLUES :\n` +
@@ -715,7 +736,7 @@ async function cloreDossier(
   // même dossier ne partagent pas le même fil.
   const dejaEnCours = await existingReplyDraft(cfg.mailbox, row.message_id).catch(() => null);
   let draft: { draftId: string; webLink: string } | null = null;
-  if (suivi.draft_html && !dejaEnCours) {
+  if (suivi.draft_html && !suivi.question && !dejaEnCours) {
     const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
     draft = await createReplyDraft(
       cfg.mailbox, row.message_id,
@@ -874,7 +895,7 @@ async function confirmerDossier(
 
   const dejaEnCours = await existingReplyDraft(cfg.mailbox, row.message_id).catch(() => null);
   let draft: { draftId: string; webLink: string } | null = null;
-  if (suivi.draft_html && !dejaEnCours) {
+  if (suivi.draft_html && !suivi.question && !dejaEnCours) {
     const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
     draft = await createReplyDraft(
       cfg.mailbox, row.message_id,
@@ -1021,7 +1042,7 @@ async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string
   const dejaEnCours = await existingReplyDraft(cfg.mailbox, row.message_id).catch(() => null);
 
   let draft: { draftId: string; webLink: string } | null = null;
-  if (suivi.draft_html && !dejaEnCours) {
+  if (suivi.draft_html && !suivi.question && !dejaEnCours) {
     const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
     draft = await createReplyDraft(
       cfg.mailbox, row.message_id,
@@ -1046,7 +1067,7 @@ async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string
     return {
       status: 'executed',
       result: {
-        kind: 'commercial', mode: 'sans_fiche', ref, ...(draft || {}),
+        kind: 'commercial', mode: 'sans_fiche', ref, question: suivi.question || null, ...(draft || {}),
         incertitudes: suivi.incertitudes || [], resume: suivi.resume,
         message: `Aucune fiche ne porte ${ref} — je n'en ouvre pas une au nom de la centrale.`
           + (dejaEnCours ? ' Un brouillon existe déjà sur ce fil, je n’en ajoute pas un second.' : ' Le brouillon est prêt.'),
@@ -1062,7 +1083,7 @@ async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string
   return {
     status: 'executed',
     result: {
-      kind: 'commercial', mode: 'rattache', ref, id: data[0].id, ...(draft || {}),
+      kind: 'commercial', mode: 'rattache', ref, id: data[0].id, question: suivi.question || null, ...(draft || {}),
       incertitudes: suivi.incertitudes || [], resume: suivi.resume,
     },
   };
@@ -1114,7 +1135,7 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
   // réponse quand il ne manquait rien. Vécu sur la demande HotelPlanner : un mail
   // complet en anglais, rédigé puis perdu, et l'écran n'affichait qu'un devis vide.
   let draft: { draftId: string; webLink: string } | null = null;
-  if (lead.draft_html) {
+  if (lead.draft_html && !lead.question) {
     const enPoste = await receptionOnDuty(cfg.hotelId).catch(() => null);
     draft = await createReplyDraft(
       cfg.mailbox, row.message_id,
@@ -1186,6 +1207,7 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
     status: 'executed',
     result: {
       kind: 'commercial', mode: 'created', id: ins?.id, missing, ...(draft || {}), lead,
+      question: lead.question || null,
       // Ce qui reste, dit en clair : un bouton « Ouvrir le devis » laissait croire
       // qu'un devis existait, alors qu'il est vide tant que personne ne l'a chiffré.
       message: (draft ? 'Relis ma réponse et envoie-la si elle te va. ' : '')
@@ -1636,6 +1658,80 @@ async function actRooftopCheck(cfg: HotelMailConfig, row: LogRow): Promise<ExecO
       movedTo: 'deleteditems',
       resaId: match.id,
       guest: p.nom, date: p.dateISO, heure: p.heure, couverts: p.couverts, statut: match.statut,
+    },
+  };
+}
+
+// ── Tu lui réponds, il reprend son travail ──────────────────────────────────
+//
+// Le premier vrai aller-retour. Jusqu'ici Junior faisait au mieux avec ce qu'il
+// avait : il inventait un ordre de grandeur, ou il écrivait « notre direction
+// reviendra vers vous » — une réponse qui ne répond rien. Martin 2026-07-24 :
+// « si Junior a besoin d'un prix, il me le demande, il peut. »
+//
+// Il s'arrête donc AVANT de rédiger quand une décision lui échappe, et reprend
+// avec ce qu'on lui dit. L'échange reste sur la ligne : la question, la réponse,
+// et qui l'a donnée — c'est la trace de la décision, pas seulement du mail.
+export async function repondreAJunior(
+  cfg: HotelMailConfig, row: LogRow, reponse: string, parQui: string | null,
+): Promise<ExecOutcome> {
+  const texte = reponse.trim();
+  if (!texte) return { status: 'blocked', error: 'Dis-lui quelque chose, sinon il ne peut rien en faire.' };
+
+  const res = (row.result || {}) as Record<string, unknown>;
+  const ref = res.ref ? String(res.ref) : null;
+  const echanges = Array.isArray(res.echanges) ? (res.echanges as unknown[]) : [];
+  const question = res.question ? String(res.question) : null;
+
+  // Un brouillon posé avant la question n'a plus lieu d'être : il sera réécrit.
+  const ancien = res.draftId ? String(res.draftId) : null;
+  if (ancien) await deleteDraft(cfg.mailbox, ancien).catch(() => null);
+
+  const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
+  const signe = (html: string) =>
+    `${html}<p>Bien à vous,</p>${signatureHtml(duty?.name || parQui || 'La Réception', `Réception — Hôtel ${cfg.nom}`)}`;
+
+  let html = '';
+  let resume = '';
+  let incertitudes: string[] = [];
+
+  if (ref) {
+    // Suivi de dossier : on relit tout le fil, la fiche fait foi sur l'état.
+    const fil = await dossierThread(cfg.mailbox, ref);
+    const texteFil = fil.map((m) =>
+      `--- ${m.date.slice(0, 16).replace('T', ' ')} · ${m.deNous ? 'NOUS' : m.fromName || m.fromAddr}\n${m.text}`,
+    ).join('\n\n');
+    const { fiche } = await trouverFiche(cfg.hotelId, { ref });
+    const salles = await sallesEtOccupation(cfg.hotelId, texteFil, fiche?.id);
+    const s = await redigeSuivi(
+      cfg.nom, ref, texteFil, salles, (row.from_name || '').split(/\s+/)[0] || null,
+      fiche, saisonDe(cfg.key), texte,
+    );
+    html = s.draft_html; resume = s.resume || ''; incertitudes = s.incertitudes || [];
+  } else {
+    const corps = await getMessageText(cfg.mailbox, row.message_id).catch(() => row.subject || '');
+    const lead = await qualifyLead(row.subject || '', corps, cfg.nom, saisonDe(cfg.key), texte);
+    html = lead.draft_html || ''; resume = lead.resume || '';
+  }
+
+  if (!html) {
+    return { status: 'blocked', error: 'Je n’ai pas réussi à rédiger avec ça — reformule, ou écris la réponse toi-même.' };
+  }
+
+  const draft = await createReplyDraft(cfg.mailbox, row.message_id, signe(html), [signatureAttachment()])
+    .catch(() => null);
+  if (!draft) return { status: 'blocked', error: 'Réponse écrite, mais le brouillon n’a pas pu être créé.' };
+
+  return {
+    status: 'executed',
+    result: {
+      ...res,
+      question: null,
+      echanges: [...echanges, { question, reponse: texte, par: parQui || 'la direction', le: new Date().toISOString() }],
+      draftId: draft.draftId, webLink: draft.webLink,
+      resume: resume || res.resume,
+      incertitudes,
+      message: 'J’ai réécrit avec ce que tu m’as dit — relis et envoie.',
     },
   };
 }
