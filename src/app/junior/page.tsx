@@ -746,6 +746,7 @@ export default function MailAssistantPage() {
             <Proposition
               logId={r.id} hotel={cle} quel="client" titre="Ma réponse au client"
               lien={res.webLink ? String(res.webLink) : undefined}
+              sansSignature={res.signature === false}
               onFait={() => load(cle)}
             />
           ) : null}
@@ -903,9 +904,10 @@ function Bulle({ children }: { children: React.ReactNode }) {
 // purgés le 17/07, dont une réponse à un client qui n'a jamais rien reçu. Le texte
 // s'affiche donc ici, et l'envoi tient en un clic (Martin 2026-07-24).
 function Proposition({
-  logId, hotel, quel, titre, lien, onFait,
+  logId, hotel, quel, titre, lien, sansSignature, onFait,
 }: {
-  logId: string; hotel: string; quel: "client" | "gaetan"; titre: string; lien?: string; onFait: () => void;
+  logId: string; hotel: string; quel: "client" | "gaetan"; titre: string; lien?: string;
+  sansSignature?: boolean; onFait: () => void;
 }) {
   const [texte, setTexte] = useState<string | null>(null);
   const [absent, setAbsent] = useState(false);
@@ -973,7 +975,9 @@ function Proposition({
               >
                 Non, jette-le
               </button>
-              <span className="ml-auto text-[11px] text-slate-400">Signé et prêt à partir.</span>
+              <span className={`ml-auto text-[11px] ${sansSignature ? "text-amber-700 font-medium" : "text-slate-400"}`}>
+                {sansSignature ? "⚠️ La bannière n’a pas pu être jointe — le logo sera cassé." : "Signature et bannière comprises."}
+              </span>
             </div>
           </>
         )}

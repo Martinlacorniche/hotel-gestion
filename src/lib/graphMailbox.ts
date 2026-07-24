@@ -311,6 +311,30 @@ export async function forwardMessage(mailbox: string, id: string, to: string, co
 // avec une signature texte au rabais — « signature incomplète » (Martin 2026-07-23).
 // Graph n'accepte pas les pièces jointes dans le PATCH : il faut les POSTer une à une sur
 // le brouillon créé.
+// Joindre la bannière, et DIRE si ça a raté.
+//
+// ⚠️ L'échec était avalé (`.catch(() => null)`, « signature absente vaut mieux que
+// brouillon perdu ») : un brouillon référence la bannière en `cid:`, donc sans la
+// pièce jointe le destinataire reçoit une image cassée — et personne ne le voyait.
+// Vécu le 2026-07-24 sur la réponse HotelPlanner. On réessaie une fois, puis on
+// remonte l'information jusqu'à l'écran : mieux vaut envoyer sans signature en le
+// sachant que croire qu'elle y est.
+async function joindre(
+  mailbox: string, draftId: string, attachments: Record<string, unknown>[],
+): Promise<boolean> {
+  let toutesOk = true;
+  for (const a of attachments) {
+    const essai = async () =>
+      gm(mailbox, `/messages/${draftId}/attachments`, { method: 'POST', body: JSON.stringify(a) });
+    const ok = await essai().then(() => true).catch(async () => {
+      await new Promise((r) => setTimeout(r, 600));   // Graph refuse parfois juste après la création
+      return essai().then(() => true).catch(() => false);
+    });
+    if (!ok) toutesOk = false;
+  }
+  return toutesOk;
+}
+
 // Envoyer un brouillon déjà écrit, et le lire pour l'afficher avant de l'envoyer.
 //
 // Un brouillon relu dans Outlook, c'est deux applications, deux allers-retours, et
@@ -347,7 +371,7 @@ export async function deleteDraft(mailbox: string, draftId: string): Promise<voi
 export async function createDraftTo(
   mailbox: string, to: string, subject: string, html: string,
   attachments: Record<string, unknown>[] = [],
-): Promise<{ draftId: string; webLink: string }> {
+): Promise<{ draftId: string; webLink: string; signature: boolean }> {
   const draft = await gm<{ id: string; webLink?: string }>(mailbox, '/messages', {
     method: 'POST',
     body: JSON.stringify({
@@ -356,17 +380,14 @@ export async function createDraftTo(
       toRecipients: [{ emailAddress: { address: to } }],
     }),
   });
-  for (const a of attachments) {
-    await gm(mailbox, `/messages/${draft.id}/attachments`, { method: 'POST', body: JSON.stringify(a) })
-      .catch(() => null);
-  }
-  return { draftId: draft.id, webLink: draft.webLink || '' };
+  const signature = await joindre(mailbox, draft.id, attachments);
+  return { draftId: draft.id, webLink: draft.webLink || '', signature };
 }
 
 export async function createReplyDraft(
   mailbox: string, id: string, htmlPrepend: string,
   attachments: Record<string, unknown>[] = [],
-): Promise<{ draftId: string; webLink: string }> {
+): Promise<{ draftId: string; webLink: string; signature: boolean }> {
   const draft = await gm<{ id: string; webLink?: string; body?: { content?: string } }>(
     mailbox, `/messages/${id}/createReply`, { method: 'POST' },
   );
@@ -375,9 +396,6 @@ export async function createReplyDraft(
     method: 'PATCH',
     body: JSON.stringify({ body: { contentType: 'HTML', content: `${htmlPrepend}${quoted}` } }),
   });
-  for (const a of attachments) {
-    await gm(mailbox, `/messages/${draft.id}/attachments`, { method: 'POST', body: JSON.stringify(a) })
-      .catch(() => null);   // signature absente vaut mieux que brouillon perdu
-  }
-  return { draftId: draft.id, webLink: draft.webLink || '' };
+  const signature = await joindre(mailbox, draft.id, attachments);
+  return { draftId: draft.id, webLink: draft.webLink || '', signature };
 }
