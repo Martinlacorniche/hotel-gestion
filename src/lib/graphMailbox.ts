@@ -311,6 +311,30 @@ export async function forwardMessage(mailbox: string, id: string, to: string, co
 // avec une signature texte au rabais — « signature incomplète » (Martin 2026-07-23).
 // Graph n'accepte pas les pièces jointes dans le PATCH : il faut les POSTer une à une sur
 // le brouillon créé.
+// Brouillon d'un message NEUF vers un tiers — pas une réponse à un fil existant.
+// Sert à prévenir un partenaire (le traiteur, quand un événement se confirme) : sa
+// conversation n'a rien à voir avec le fil du client, et lui répondre « en citation »
+// lui enverrait l'échange commercial complet. Le brouillon reste dans Brouillons :
+// écrire à un tiers extérieur ne se déclenche jamais sans qu'un humain ait relu.
+export async function createDraftTo(
+  mailbox: string, to: string, subject: string, html: string,
+  attachments: Record<string, unknown>[] = [],
+): Promise<{ draftId: string; webLink: string }> {
+  const draft = await gm<{ id: string; webLink?: string }>(mailbox, '/messages', {
+    method: 'POST',
+    body: JSON.stringify({
+      subject,
+      body: { contentType: 'HTML', content: html },
+      toRecipients: [{ emailAddress: { address: to } }],
+    }),
+  });
+  for (const a of attachments) {
+    await gm(mailbox, `/messages/${draft.id}/attachments`, { method: 'POST', body: JSON.stringify(a) })
+      .catch(() => null);
+  }
+  return { draftId: draft.id, webLink: draft.webLink || '' };
+}
+
 export async function createReplyDraft(
   mailbox: string, id: string, htmlPrepend: string,
   attachments: Record<string, unknown>[] = [],

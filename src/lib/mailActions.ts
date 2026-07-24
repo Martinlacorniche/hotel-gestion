@@ -10,7 +10,11 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { moveMessage, createReplyDraft, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox, searchMessages, dossierThread, existingReplyDraft } from '@/lib/graphMailbox';
+import { moveMessage, createReplyDraft, createDraftTo, getMessageText, getMessageHtml, listFileAttachments, forwardMessage, listInbox, searchMessages, dossierThread, existingReplyDraft } from '@/lib/graphMailbox';
+
+// Le traiteur partenaire (Gaëtan Dupuis, Monsieur Cocktail). Son autre adresse
+// `dupuisgaetan@orange.fr` sert à le reconnaître à la lecture, pas à lui écrire.
+const GAETAN_EMAIL = 'gaetan@monsieurcocktail.com';
 import { signatureHtml, signatureAttachment } from '@/lib/mailSignature';
 import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, parseConferma, agencyTsBlock, shortRoom, ddmm, resaDiff, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
@@ -821,14 +825,39 @@ async function confirmerDossier(
   const corps = await getMessageText(cfg.mailbox, row.message_id).catch(() => row.subject || '');
   const el = await elementsConfirmation(corps, fiche);
 
+  // Prévenir le traiteur : sa prestation dépend d'un événement qui vient d'être acté,
+  // et personne ne le lui dira si ce n'est pas préparé. Brouillon, jamais un envoi —
+  // écrire à un partenaire extérieur se relit avant de partir.
+  let draftGaetan: { draftId: string; webLink: string } | null = null;
+  if (fiche?.besoin_gaetan && !/^non|^aucun/i.test(String(fiche.besoin_gaetan))) {
+    const quand = fiche.date_evenement
+      ? `${fiche.date_evenement.slice(8, 10)}/${fiche.date_evenement.slice(5, 7)}/${fiche.date_evenement.slice(0, 4)}`
+      : 'la date prévue';
+    draftGaetan = await createDraftTo(
+      cfg.mailbox, GAETAN_EMAIL,
+      `Confirmé — ${fiche.nom_client || row.subject} du ${quand}`,
+      `<p>Bonjour Gaëtan,</p><p>L'événement du <strong>${quand}</strong> à l'Hôtel ${cfg.nom} ` +
+      `vient d'être confirmé par le client${el.participants ? ` (${el.participants} personnes)` : ''}. ` +
+      `On compte donc sur toi comme convenu.</p>` +
+      (el.regimes.length ? `<p>À noter côté régimes : ${el.regimes.join(' · ')}.</p>` : '') +
+      `<p>Je reviens vers toi pour caler les détails.</p><p>Bien à toi,</p>` +
+      signatureHtml((await receptionOnDuty(cfg.hotelId).catch(() => null))?.name || 'La Réception', `Réception — Hôtel ${cfg.nom}`),
+      [signatureAttachment()],
+    ).catch(() => null);
+  }
+
   if (fiche) {
-    // Note COURTE (Martin) : la fiche n'est pas un journal, elle dit où on en est.
+    // Note COURTE (Martin 2026-07-24) : « mail conf reçu le --/--, deux sans viandes,
+    // gaetan & hotsoft ok ». La fiche dit où on en est, elle ne raconte pas le détail —
+    // celui-ci vit dans la consigne et dans le mail.
     const bref = [
-      el.participants ? `rooming ${el.participants} pax` : null,
+      el.participants ? `${el.participants} pax` : null,
       el.ecart_vente ? `⚠️ ${el.ecart_vente}` : null,
-      el.regimes.length ? `${el.regimes.length} régime(s) signalé(s)` : null,
+      el.regimes.length ? `${el.regimes.length} sans viande/régime` : null,
+      draftGaetan ? 'Gaëtan prévenu' : null,
+      'Hotsoft en consigne',
     ].filter(Boolean).join(', ');
-    const note = `${today.slice(8, 10)}/${today.slice(5, 7)} CONFIRMÉ par le client${bref ? ` (${bref})` : ''}. À saisir dans Hotsoft. - Junior`;
+    const note = `${today.slice(8, 10)}/${today.slice(5, 7)} mail de confirmation reçu — ${bref} - Junior`;
     const merged = [note, fiche.commentaires].filter(Boolean).join('\n').slice(0, 4000);
     // Relance annulée : c'est tout l'intérêt — un dossier acté ne se relance pas.
     await supabaseAdmin.from('suivi_commercial')
@@ -863,10 +892,19 @@ async function confirmerDossier(
       participants: el.participants, regimes: el.regimes, ecart_vente: el.ecart_vente,
       client: suivi.client_nom ?? null, date_evenement: suivi.date_evenement ?? null,
       incertitudes: suivi.incertitudes || [],
+      draftGaetanId: draftGaetan?.draftId ?? null, draftGaetanLink: draftGaetan?.webLink ?? null,
       ...(draft || {}),
-      message: (fiche ? `Dossier passé en Confirmé, relance annulée — ${comment}.` : `${comment[0].toUpperCase()}${comment.slice(1)}.`)
-        + (consigne ? ' Consigne posée pour la saisie dans Hotsoft.' : '')
-        + (el.ecart_vente ? ` ⚠️ ${el.ecart_vente}` : ''),
+      // ⚠️ CE MESSAGE DIT QUOI FAIRE, il ne raconte pas ce qui a été fait (Martin
+      // 2026-07-24 : « là c'est pas clair »). Ce que Junior a fait est déjà visible
+      // dans la fiche et la consigne ; ce que l'écran doit porter, c'est la part qui
+      // reste à un humain — sinon on lit un compte rendu et on ne fait rien.
+      message: [
+        'Rentre la rooming list dans Hotsoft',
+        draft ? 'valide le brouillon de réponse au client' : null,
+        draftGaetan ? 'et celui pour Gaëtan' : null,
+      ].filter(Boolean).join(', ') + '.'
+        + (el.ecart_vente ? ` ⚠️ ${el.ecart_vente}` : '')
+        + (fiche ? '' : ` ⚠️ ${comment} — la fiche n'a pas été mise à jour.`),
     },
   };
 }

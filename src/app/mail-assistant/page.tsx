@@ -660,6 +660,17 @@ export default function MailAssistantPage() {
                                     Brouillon : dis-moi le prix ci-dessous et je le rédige.
                                   </span>
                                 )}
+                                {/* Le mot au traiteur est un SECOND brouillon, vers un autre
+                                    destinataire : sans son propre bouton, il resterait
+                                    invisible dans Brouillons et ne partirait jamais. */}
+                                {r.result.draftGaetanLink ? (
+                                  <a
+                                    href={String(r.result.draftGaetanLink)} target="_blank" rel="noreferrer"
+                                    className="inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-amber-200 hover:bg-amber-50 text-amber-800 px-2.5 h-7 text-xs font-medium"
+                                  >
+                                    Le mot pour Gaëtan <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                ) : null}
                               </div>
                             </div>
                           )}
