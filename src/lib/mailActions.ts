@@ -346,8 +346,11 @@ type Lead = {
 // un séminaire promet des services qui n'existeront pas à cette date.
 // Vécu sur la demande HotelPlanner du 24/07 (anniversaire, 10 chambres, 26-28
 // mars 2027), qui serait partie en proposition hôtelière classique.
-// ⚠️ Le nom reste `SAISON` par habitude, mais ce bloc porte toutes les règles
-// maison d'un hôtel : ce qu'on vend, et ce qu'on ne fait plus.
+// ⚠️ CES RÈGLES VIVENT MAINTENANT EN BASE (`junior_regles`, migration 104).
+// Elles restent ici en REPLI : si la base est injoignable, mieux vaut un Junior
+// qui connaît la saison qu'un Junior qui promet un hôtel fermé. Toute NOUVELLE
+// règle s'écrit en base, pas ici — sinon l'agent qui enquête ne la verra jamais,
+// et il faudra un déploiement pour changer une phrase.
 const SAISON: Record<string, string> = {
   corniche:
     `BACK YOU — NOUS N'Y SOMMES PLUS (Martin 2026-07-24).\n` +
@@ -378,10 +381,26 @@ const SAISON: Record<string, string> = {
     `dans tes incertitudes : c'est la direction qui tranchera le prix.\n` +
     `· De mai à octobre, l'hôtel fonctionne normalement : cette règle ne s'applique pas.`,
 };
-const saisonDe = (cle: string) => SAISON[cle] || '';
+// Les règles maison de l'hôtel, lues en base, avec repli sur ce qui est écrit
+// au-dessus. `portee` évite de charger dans une rédaction ce qui ne sert qu'à
+// l'agent, et inversement : sans ça les deux prompts gonflent à chaque ajout.
+async function reglesMaison(cle: string): Promise<string> {
+  try {
+    const { data } = await supabaseAdmin
+      .from('junior_regles')
+      .select('titre, regle, hotel_key')
+      .eq('actif', true)
+      .in('portee', ['redaction', 'les_deux'])
+      .or(`hotel_key.eq.${cle},hotel_key.is.null`);
+    if (data?.length) {
+      return data.map((r) => `${r.titre.toUpperCase()} :\n${r.regle}`).join('\n\n');
+    }
+  } catch { /* base injoignable : on retombe sur le repli */ }
+  return SAISON[cle] || '';
+}
 
 // Exposée pour l'essai à blanc : elle lit et rédige, elle n'écrit nulle part.
-export const qualifyLeadTest = (s: string, b: string, h: string, cle: string) => qualifyLead(s, b, h, saisonDe(cle));
+export const qualifyLeadTest = async (s: string, b: string, h: string, cle: string) => qualifyLead(s, b, h, await reglesMaison(cle));
 
 async function qualifyLead(subject: string, body: string, hotelName: string, saison = '', precision = ''): Promise<Lead> {
   const client = new Anthropic();
@@ -1060,7 +1079,7 @@ async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string
   // qu'après lecture du fil, et un mauvais rapprochement coûte plus cher qu'un
   // rapprochement manquant.
   const ficheRef = ficheAvant;
-  const suivi = await redigeSuivi(cfg.nom, ref, texteFil, salles, prenom, ficheRef, saisonDe(cfg.key));
+  const suivi = await redigeSuivi(cfg.nom, ref, texteFil, salles, prenom, ficheRef, await reglesMaison(cfg.key));
 
   if (suivi.issue === 'annulation') return await cloreDossier(cfg, row, ref, suivi, ficheRef);
   if (suivi.issue === 'confirmation') return await confirmerDossier(cfg, row, ref, suivi, ficheRef);
@@ -1125,7 +1144,7 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
   if (detail.suivi && refSuivi) return await actCommercialSuivi(cfg, row, refSuivi);
 
   const body = await getMessageText(cfg.mailbox, row.message_id);
-  const lead = await qualifyLead(row.subject || '', body, cfg.nom, saisonDe(cfg.key));
+  const lead = await qualifyLead(row.subject || '', body, cfg.nom, await reglesMaison(cfg.key));
   const email = row.from_addr || null;
   const today = new Date().toISOString().slice(0, 10);
 
@@ -1735,12 +1754,12 @@ export async function repondreAJunior(
     const salles = await sallesEtOccupation(cfg.hotelId, texteFil, fiche?.id);
     const s = await redigeSuivi(
       cfg.nom, ref, texteFil, salles, (row.from_name || '').split(/\s+/)[0] || null,
-      fiche, saisonDe(cfg.key), texte,
+      fiche, await reglesMaison(cfg.key), texte,
     );
     html = s.draft_html; resume = s.resume || ''; incertitudes = s.incertitudes || [];
   } else {
     const corps = await getMessageText(cfg.mailbox, row.message_id).catch(() => row.subject || '');
-    const lead = await qualifyLead(row.subject || '', corps, cfg.nom, saisonDe(cfg.key), texte);
+    const lead = await qualifyLead(row.subject || '', corps, cfg.nom, await reglesMaison(cfg.key), texte);
     html = lead.draft_html || ''; resume = lead.resume || '';
   }
 

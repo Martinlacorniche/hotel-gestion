@@ -31,6 +31,11 @@ export const TOOLS: ToolDef[] = [
   { id: 'planning',     label: 'Planning',     href: '/planning',                           icon: CalendarDays, bg: 'bg-indigo-50',  text: 'text-indigo-600' },
   { id: 'infos',        label: 'Infos',        href: '/infos',                              icon: BookOpen,     bg: 'bg-indigo-50',  text: 'text-indigo-700' },
   { id: 'commercial',   label: 'Commercial',   href: (id) => `/commercial?hotel_id=${id}`,  icon: Handshake,    bg: 'bg-violet-50',  text: 'text-violet-700' },
+  // Junior trie la boîte de l'hôtel courant et enquête sur les dossiers. Sa place est
+  // ici, entre le commercial et les clients : il traite du courrier, pas de la
+  // plomberie — il n'a rien à faire dans « Technique ». Réservé au superadmin le temps
+  // de le voir se comporter : il lit toute la boîte et tout le CRM.
+  { id: 'junior',       label: 'Junior',       href: '/junior',                             icon: Mail,         bg: 'bg-sky-50',     text: 'text-sky-700',    condition: 'superadmin' },
   { id: 'clients',      label: 'Clients',      href: '/parking',                            icon: ConciergeBell, bg: 'bg-teal-50',   text: 'text-teal-700' },
   { id: 'technique',    label: 'Technique',    href: '/technique',                          icon: Wrench,       bg: 'bg-yellow-50',  text: 'text-yellow-700' },
   { id: 'commandes',    label: 'Commandes',    href: '/commandes',                          icon: ShoppingCart, bg: 'bg-orange-50',  text: 'text-orange-700' },
@@ -54,9 +59,6 @@ export const TECHNIQUE_CHILDREN: ToolDef[] = [
   { id: 'wifi-admin',  label: 'Wifi Client', href: '/wifi-admin',  icon: Wifi,    bg: 'bg-sky-50',    text: 'text-sky-700' },
   { id: 'clim',        label: 'Clim',        href: '/clim',        icon: Wind,    bg: 'bg-sky-50',    text: 'text-sky-700',   condition: 'voiles' },
   { id: 'ecran',       label: 'Écran',       href: '/ecran',       icon: Monitor, bg: 'bg-slate-100', text: 'text-slate-700', condition: 'superadmin' },
-  // Junior trie la boîte de l'hôtel courant et enquête sur les dossiers. Réservé au
-  // superadmin le temps de le voir se comporter : il lit toute la boîte et tout le CRM.
-  { id: 'junior',      label: 'Junior',      href: '/junior',      icon: Mail,    bg: 'bg-sky-50',    text: 'text-sky-700',    condition: 'superadmin' },
 ];
 
 // Sous-menu Planning : la grille + la gestion d'équipe (admin → /users).

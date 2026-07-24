@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/apiAuth';
 import { hotelConfig } from '@/lib/mailAssistant';
+import { receptionOnDuty } from '@/lib/onDuty';
 
 // Relais vers l'agent qui enquête, sur le serveur de La Corniche.
 //
@@ -43,6 +44,23 @@ export async function POST(req: Request) {
   // repasse le fil, sinon une question de suivi repartirait de zéro.
   const fil = Array.isArray(body.fil) ? body.fil.slice(-3) : [];
 
+  // À QUI IL PARLE. Junior tutoie un collègue par son prénom depuis le début — mais
+  // l'agent, lui, répondait à la cantonade (Martin 2026-07-24 : « il s'adapte pas à
+  // la personne en shift »). On lui donne donc qui l'interroge, et qui tient le desk
+  // en ce moment : ce n'est pas toujours la même personne, et ce que l'un demande
+  // concerne souvent le travail de l'autre.
+  const { data: moi } = await supabaseAdmin
+    .from('users').select('name').eq('id_auth', auth.userId).maybeSingle();
+  const duty = await receptionOnDuty(cfg.hotelId).catch(() => null);
+  const qui = [
+    moi?.name ? `Tu parles à ${moi.name}.` : null,
+    duty?.name
+      ? (duty.name === moi?.name
+          ? `${duty.name} est en poste à la réception en ce moment.`
+          : `À la réception en ce moment, c'est ${duty.name} — c'est elle ou lui qui appliquera ce que tu dis.`)
+      : 'Personne n’est en poste à la réception à cette heure-ci.',
+  ].filter(Boolean).join(' ');
+
   // Le dossier ouvert à l'écran lui évite de chercher ce qu'on a déjà sous les
   // yeux : on ne discute pas dans le vide, on discute DE quelque chose.
   let contexte = '';
@@ -67,7 +85,7 @@ export async function POST(req: Request) {
     const r = await fetch(base, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-agent-secret': secret },
-      body: JSON.stringify({ question, hotel: cfg.key, contexte, fil }),
+      body: JSON.stringify({ question, hotel: cfg.key, contexte, fil, qui }),
       signal: AbortSignal.timeout(280_000),
     });
     const j = await r.json().catch(() => ({}));

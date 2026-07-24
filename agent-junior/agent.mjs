@@ -191,6 +191,27 @@ async function executer(nom, args, hotel) {
   throw new Error(`outil inconnu : ${nom}`);
 }
 
+// ── Ce que la maison sait, et qu'aucun mail ne dit ──────────────────────────
+//
+// Les faits métier vivaient en dur dans le code de l'app : l'agent ignorait donc
+// que Back You est résilié ou que Les Voiles ferment en format hôtel l'hiver
+// (Martin 2026-07-24 : « il ne peut pas être aussi efficace que toi alors »).
+// Ils sont désormais en base — table `junior_regles`, migration 104 — et lus par
+// le classifieur ET par l'agent. Une règle s'écrit à un seul endroit.
+async function reglesMaison(hotel) {
+  const h = HOTELS[hotel] || HOTELS.corniche;
+  const cle = HOTELS.voiles === h ? 'voiles' : 'corniche';
+  try {
+    const r = await sb('junior_regles',
+      `select=titre,regle&actif=eq.true&portee=in.(agent,les_deux)&or=(hotel_key.eq.${cle},hotel_key.is.null)`);
+    if (!r.length) return '';
+    return `\n\nCE QUE LA MAISON SAIT (et qu'aucun mail ne dira) :\n\n`
+      + r.map((x) => `${x.titre.toUpperCase()} :\n${x.regle}`).join('\n\n');
+  } catch {
+    return '';   // base injoignable : il enquête sans, plutôt que de ne pas répondre
+  }
+}
+
 // ── La boucle ───────────────────────────────────────────────────────────────
 const SYSTEME = `Tu es Junior, l'assistant de la réception de l'hôtel. Quelqu'un de
 l'équipe te sollicite sur un dossier précis : tu enquêtes, puis tu réponds.
@@ -215,15 +236,21 @@ la référence du dossier si elle existe, le nom du client final ou son e-mail, 
 DATE de l'événement seule — très discriminante. N'annonce « aucune fiche » qu'après
 avoir essayé la date.
 
+À QUI TU PARLES : on te dit le prénom de la personne qui t'interroge et de celle qui
+tient la réception. Tutoie-la, appelle-la par son prénom, et adapte ce que tu dis à
+ce qu'ELLE peut faire : si le geste revient à quelqu'un d'autre en poste, dis-le
+(« c'est Louane qui est au desk, elle pourra… »). N'invente jamais un prénom.
+
 COMMENT TU RÉPONDS : court et direct, en français, comme un collègue au comptoir.
 Donne d'abord la réponse, ensuite ce sur quoi tu t'appuies (date du mail, statut de
 la fiche). Si tu n'as pas trouvé, dis-le franchement — une hypothèse présentée comme
 un fait coûte plus cher qu'un « je ne sais pas ». Ne cite jamais le nom d'un autre
 client dans un texte qui pourrait partir chez un tiers.`;
 
-async function enqueter({ question, hotel, contexte, fil }) {
+async function enqueter({ question, hotel, contexte, fil, qui }) {
   const client = new Anthropic();
   const t0 = Date.now();
+  const regles = await reglesMaison(hotel);
   // ⚠️ LE SERVICE N'A AUCUNE MÉMOIRE — c'est voulu : rien ne s'accumule entre deux
   // enquêtes. Le fil de la conversation est donc renvoyé par l'écran à chaque fois,
   // sinon « et pour l'autre dossier ? » repartirait de zéro et il redemanderait ce
@@ -237,14 +264,16 @@ async function enqueter({ question, hotel, contexte, fil }) {
   }
   messages.push({
     role: 'user',
-    content: (contexte && !messages.length ? `Contexte du dossier ouvert à l'écran :\n${contexte}\n\n` : '') + `Question : ${question}`,
+    content: (qui && !messages.length ? `${qui}\n\n` : '')
+      + (contexte && !messages.length ? `Contexte du dossier ouvert à l'écran :\n${contexte}\n\n` : '')
+      + `Question : ${question}`,
   });
   const traces = [];
 
   for (let tour = 0; tour < MAX_TOURS; tour++) {
     if (Date.now() - t0 > MAX_MS) return { reponse: 'J’ai cherché trop longtemps sans conclure — repose-moi la question autrement.', traces };
     const rep = await client.messages.create({
-      model: MODEL, max_tokens: 4000, system: SYSTEME, tools: OUTILS, messages,
+      model: MODEL, max_tokens: 4000, system: SYSTEME + regles, tools: OUTILS, messages,
       thinking: { type: 'adaptive' },
     });
     messages.push({ role: 'assistant', content: rep.content });
@@ -289,10 +318,10 @@ createServer(async (req, res) => {
   req.on('data', (c) => { brut += c; if (brut.length > 200000) req.destroy(); });
   req.on('end', async () => {
     try {
-      const { question, hotel, contexte, fil } = JSON.parse(brut || '{}');
+      const { question, hotel, contexte, fil, qui } = JSON.parse(brut || '{}');
       if (!question) return fin(400, { ok: false, error: 'question requise' });
       const t0 = Date.now();
-      const r = await enqueter({ question, hotel, contexte, fil });
+      const r = await enqueter({ question, hotel, contexte, fil, qui });
       console.log(`[${new Date().toISOString()}] ${hotel} · ${Math.round((Date.now() - t0) / 1000)}s · ${r.traces.length} outils · ${String(question).slice(0, 70)}`);
       fin(200, { ok: true, ...r });
     } catch (e) {
