@@ -6,7 +6,6 @@ import { SelectedHotelProvider } from '@/context/SelectedHotelContext';
 import { ShiftProvider } from '@/context/ShiftContext';
 import { Toaster } from 'react-hot-toast';
 import { ConfirmHost } from '@/components/ConfirmDialog';
-import CaptureBar from '@/components/CaptureBar';
 import AppShell from '@/components/AppShell';
 
 // Polices chargées en parallèle, chaque exposée via une variable CSS
@@ -43,7 +42,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SelectedHotelProvider>
           <ShiftProvider>
             <AppShell>{children}</AppShell>
-            <CaptureBar />
+            {/* Capture universelle retirée de l'écran le 2026-07-24 : personne ne
+                s'en servait. Le composant et sa route restent en place — le flag
+                NEXT_PUBLIC_CAPTURE_ENABLED suffit à la remettre si l'envie revient. */}
           </ShiftProvider>
           <ConfirmHost />
           <Toaster

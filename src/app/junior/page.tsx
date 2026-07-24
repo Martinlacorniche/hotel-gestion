@@ -26,7 +26,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { hotelConfig } from "@/lib/mailAssistant";
 import {
   Mail, Loader2, RefreshCw, Inbox, Check, X, ExternalLink, Copy,
-  SlidersHorizontal, CheckCheck, ChevronDown,
+  SlidersHorizontal, CheckCheck, ChevronDown, Sparkles,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -246,6 +246,12 @@ export default function MailAssistantPage() {
   const [actif, setActif] = useState<string | null>(null);
   // Ce qu'on est en train de lui répondre quand il a posé une question.
   const [rep, setRep] = useState("");
+  // La conversation avec l'agent, par ligne : ce qu'on lui a demandé, ce qu'il a
+  // répondu. Elle ne survit pas au rechargement — c'est une aide à la décision,
+  // pas un dossier. Ce qui doit rester va dans la fiche ou dans une correction.
+  const [causerie, setCauserie] = useState<Record<string, { moi: string; lui?: string; outils?: string[] }[]>>({});
+  const [question, setQuestion] = useState("");
+  const [cherche, setCherche] = useState(false);
   const [repBusy, setRepBusy] = useState(false);
   const [vue, setVue] = useState<"liste" | "conv">("conv");
   const [corCat, setCorCat] = useState("");
@@ -424,6 +430,29 @@ export default function MailAssistantPage() {
     setRepBusy(false);
   };
 
+  const demanderAJunior = async (row: Row) => {
+    if (!cfg || !question.trim() || cherche) return;
+    const q = question.trim();
+    setQuestion(""); setCherche(true);
+    setCauserie((c) => ({ ...c, [row.id]: [...(c[row.id] || []), { moi: q }] }));
+    const headers = await authHeaders();
+    if (!headers) { setCherche(false); return; }
+    const resp = await fetch(`/api/junior/agent?hotel=${cfg.key}`, {
+      method: "POST", headers, body: JSON.stringify({ id: row.id, question: q }),
+    });
+    const j = await resp.json().catch(() => ({}));
+    setCauserie((c) => {
+      const fil = [...(c[row.id] || [])];
+      const dernier = fil[fil.length - 1];
+      if (dernier) {
+        dernier.lui = resp.ok && j.ok ? String(j.reponse) : `Je n’y arrive pas : ${j.error || "réessaie"}`;
+        dernier.outils = (j.traces || []).map((t: { outil: string }) => t.outil);
+      }
+      return { ...c, [row.id]: fil };
+    });
+    setCherche(false);
+  };
+
   const copyNote = async (note: string) => {
     try { await navigator.clipboard.writeText(note); toast.success("Note copiée"); }
     catch { toast.error("Copie impossible"); }
@@ -499,7 +528,7 @@ export default function MailAssistantPage() {
         {/* ── La liste : courte, deux lignes par dossier, on ouvre pour traiter ── */}
         <aside className={`w-full sm:w-[330px] shrink-0 border-r border-slate-200 flex-col min-h-0 ${vue === "liste" ? "flex" : "hidden sm:flex"}`}>
           <div className="px-4 pt-4 pb-3 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[var(--brand)] text-white grid place-items-center font-semibold shrink-0">J</div>
+            <Junior taille={40} occupe={running || cherche} />
             <div className="min-w-0 flex-1">
               <p className="font-semibold text-slate-800 leading-tight">Junior</p>
               <p className="text-xs text-slate-400 truncate">
@@ -828,6 +857,27 @@ export default function MailAssistantPage() {
             />
           ) : null}
 
+          {/* Ce qu'on lui a demandé d'aller chercher, et ce qu'il a trouvé. */}
+          {(causerie[r.id] || []).map((e, i) => (
+            <div key={i} className="space-y-3">
+              <BulleMoi qui={user?.name}><p className="text-[14.5px] text-slate-800">{e.moi}</p></BulleMoi>
+              {e.lui ? (
+                <Bulle>
+                  <p className="text-[14.5px] text-slate-700 whitespace-pre-line leading-relaxed">{e.lui}</p>
+                  {e.outils?.length ? (
+                    <p className="mt-2 text-[11px] text-slate-400">
+                      J’ai regardé : {e.outils.map((o) => o.replace(/_/g, " ")).join(" · ")}
+                    </p>
+                  ) : null}
+                </Bulle>
+              ) : (
+                <Bulle><p className="text-[14px] text-slate-400 flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Je cherche…
+                </p></Bulle>
+              )}
+            </div>
+          ))}
+
           {/* La correction, c'est TOI qui parles : elle s'écrit donc du côté droit,
               dans ta bulle. Les listes déroulantes du navigateur cassaient la
               conversation en plein milieu — on choisit maintenant en cliquant, comme
@@ -868,9 +918,25 @@ export default function MailAssistantPage() {
           ) : null}
         </div>
 
-        {/* Le pied : la place de la conversation, quand l'agent arrivera. */}
-        <div className="border-t border-slate-200 bg-white px-4 sm:px-5 py-3">
-          <div className="flex items-center gap-2">
+        {/* Le pied : on lui parle. Il va chercher lui-même dans la boîte, les
+            fiches et le planning — mais il ne peut RIEN modifier depuis là. */}
+        <div className="border-t border-slate-200 bg-white px-4 sm:px-5 py-3 space-y-2">
+          <div className="flex items-end gap-2 rounded-xl border border-slate-200 focus-within:border-[var(--brand)] px-3 py-1.5">
+            <textarea
+              value={question} onChange={(e) => setQuestion(e.target.value)} rows={1}
+              placeholder="Demande-lui d’aller vérifier — « a-t-on déjà répondu ? », « la salle est libre ? »"
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); demanderAJunior(r); } }}
+              className="flex-1 border-0 resize-none bg-transparent text-[14px] text-slate-800 placeholder:text-slate-400 focus:outline-none py-1.5 max-h-28"
+            />
+            <button
+              onClick={() => demanderAJunior(r)} disabled={cherche || !question.trim()}
+              className="mb-1 inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3 h-8 text-[13px] font-semibold disabled:opacity-40"
+            >
+              {cherche ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              Demander
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
             <button
               onClick={() => { setCorrige(r.id); setCorCat(""); setCorAct(""); setCorMot(""); }}
               className="text-[13px] text-slate-500 hover:text-[var(--brand)] underline underline-offset-2"
@@ -886,7 +952,7 @@ export default function MailAssistantPage() {
               </button>
             )}
             <span className="ml-auto text-[11.5px] text-slate-400">
-              Lui écrire arrivera avec l’agent — pour l’instant, dis-moi ce qui n’allait pas.
+              Il lit la boîte, les fiches et le planning. Il ne modifie rien depuis ici.
             </span>
           </div>
         </div>
@@ -951,6 +1017,33 @@ export default function MailAssistantPage() {
   }
 }
 
+// ── Son visage ──────────────────────────────────────────────────────────────
+//
+// Un « J » dans un carré, c'est une initiale de base de données. Junior est un
+// collègue : il lui faut une tête (Martin 2026-07-24 : « on personnifie Junior »).
+// Dessin volontairement minimal — deux yeux et un sourire — parce qu'un avatar
+// trop illustré vieillit mal et détonne dans un outil de travail. Il regarde à
+// droite quand il cherche : c'est le seul mouvement, il dit qu'il est occupé.
+function Junior({ taille = 32, occupe = false }: { taille?: number; occupe?: boolean }) {
+  return (
+    <span
+      className="shrink-0 grid place-items-center rounded-[30%] bg-[var(--brand)] text-white"
+      style={{ width: taille, height: taille }}
+      aria-label="Junior"
+    >
+      <svg viewBox="0 0 24 24" width={taille * 0.62} height={taille * 0.62} fill="none" aria-hidden="true">
+        <circle cx={occupe ? 9.8 : 8.6} cy="10" r="1.7" fill="currentColor">
+          {occupe && <animate attributeName="cx" values="9.8;8.2;9.8" dur="1.8s" repeatCount="indefinite" />}
+        </circle>
+        <circle cx={occupe ? 16.6 : 15.4} cy="10" r="1.7" fill="currentColor">
+          {occupe && <animate attributeName="cx" values="16.6;15;16.6" dur="1.8s" repeatCount="indefinite" />}
+        </circle>
+        <path d="M8 15.2c1.1 1.5 2.5 2.2 4 2.2s2.9-.7 4-2.2" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 // ── Briques de la conversation ──────────────────────────────────────────────
 // Junior parle à gauche, dans une bulle neutre : ce qu'il dit n'appelle pas
 // d'action. Une « demande » est visuellement autre chose — c'est la seule forme
@@ -959,7 +1052,7 @@ export default function MailAssistantPage() {
 function Bulle({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex gap-2.5 items-end max-w-[92%]">
-      <span className="w-7 h-7 shrink-0 rounded-lg bg-[var(--brand)] text-white grid place-items-center text-[11px] font-semibold mb-0.5">J</span>
+      <span className="mb-0.5"><Junior taille={28} /></span>
       <div className="rounded-2xl rounded-bl-md bg-white ring-1 ring-slate-200/70 px-4 py-3 min-w-0">{children}</div>
     </div>
   );
@@ -1016,7 +1109,7 @@ function Proposition({
 
   return (
     <div className="flex gap-2.5 items-end max-w-[92%]">
-      <span className="w-7 h-7 shrink-0 rounded-lg bg-[var(--brand)] text-white grid place-items-center text-[11px] font-semibold mb-0.5">J</span>
+      <span className="mb-0.5"><Junior taille={28} /></span>
       <div className="rounded-2xl rounded-bl-md bg-white ring-1 ring-slate-200 overflow-hidden min-w-0">
         <div className="px-4 pt-3 pb-2 flex items-center gap-2">
           <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">{titre}</p>
@@ -1159,7 +1252,7 @@ function Demande({ titre, ton = "action", children }: { titre: string; ton?: "ac
   const alerte = ton === "alerte";
   return (
     <div className="flex gap-2.5 items-end max-w-[92%]">
-      <span className="w-7 h-7 shrink-0 rounded-lg bg-[var(--brand)] text-white grid place-items-center text-[11px] font-semibold mb-0.5">J</span>
+      <span className="mb-0.5"><Junior taille={28} /></span>
       <div
         className={`rounded-2xl rounded-bl-md px-4 py-3 min-w-0 border-l-[3px] ${
           alerte ? "bg-rose-50 border-rose-400 ring-1 ring-rose-100" : "bg-[var(--brand-bg)] border-[var(--brand)]"}`}
