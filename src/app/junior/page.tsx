@@ -585,8 +585,8 @@ export default function MailAssistantPage() {
               </p>
             ) : (
               <>
-                <Groupe titre="Ils t’attendent" liste={attendent} />
-                <Groupe titre="Réglés" liste={regles} />
+                {Groupe({ titre: "Ils t’attendent", liste: attendent })}
+                {Groupe({ titre: "Réglés", liste: regles })}
               </>
             )}
           </div>
@@ -595,13 +595,13 @@ export default function MailAssistantPage() {
         {/* ── La conversation : on traite ici, et nulle part ailleurs ── */}
         <main className={`flex-1 min-w-0 flex-col bg-slate-50/60 ${vue === "conv" ? "flex" : "hidden sm:flex"}`}>
           {reglages && peutRegler ? (
-            <Reglages />
+            Reglages()
           ) : !ouvert ? (
             <div className="flex-1 grid place-items-center text-sm text-slate-400 px-6 text-center">
               Choisis un dossier à gauche — ou clique sur la flèche pour que j’aille relever la boîte.
             </div>
           ) : (
-            <Conversation r={ouvert} />
+            Conversation({ r: ouvert })
           )}
         </main>
       </div>
