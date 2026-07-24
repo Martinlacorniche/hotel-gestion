@@ -53,6 +53,12 @@ type Row = {
 
 type Mode = "off" | "suggest" | "auto";
 
+type Regle = {
+  id: string; hotel_key: string | null; titre: string; regle: string;
+  portee: "redaction" | "agent" | "les_deux"; actif: boolean;
+  origine: string | null; updated_at?: string; updated_by?: string | null;
+};
+
 // Un aller-retour gardé sur la ligne : sa question, ta réponse, et qui l'a donnée.
 type Echange = { question?: string | null; reponse: string; par?: string; le?: string };
 
@@ -227,6 +233,11 @@ export default function MailAssistantPage() {
   const [running, setRunning] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reglages, setReglages] = useState(false);
+  // Ce que Junior sait du métier (table junior_regles). Éditable ici : une règle
+  // écrite depuis cet écran s'applique au tri du jour même, sans déploiement.
+  const [savoir, setSavoir] = useState<Regle[]>([]);
+  const [reglesVues, setReglesVues] = useState(false);
+  const [brouillon, setBrouillon] = useState<Record<string, Partial<Regle>>>({});
   const [filtre, setFiltre] = useState<string | null>(null);
   const [voirTraites, setVoirTraites] = useState(false);
   const [selection, setSelection] = useState<Set<string>>(new Set());
@@ -430,6 +441,45 @@ export default function MailAssistantPage() {
     setRepBusy(false);
   };
 
+  const chargerRegles = useCallback(async () => {
+    const headers = await authHeaders();
+    if (!headers) return;
+    const r = await fetch("/api/junior/regles", { headers });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) { setSavoir(j.regles as Regle[]); setReglesVues(true); }
+  }, []);
+
+  const enregistrerRegle = async (id: string) => {
+    const modif = brouillon[id];
+    if (!modif) return;
+    const headers = await authHeaders();
+    if (!headers) return;
+    const r = await fetch("/api/junior/regles", {
+      method: "PATCH", headers, body: JSON.stringify({ id, ...modif }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) {
+      setSavoir((rs) => rs.map((x) => (x.id === id ? (j.regle as Regle) : x)));
+      setBrouillon((b) => { const n = { ...b }; delete n[id]; return n; });
+      toast.success("C’est noté — il en tient compte dès le prochain tri");
+    } else toast.error(j.error || "Ça a coincé");
+  };
+
+  const ajouterRegle = async () => {
+    const headers = await authHeaders();
+    if (!headers) return;
+    const r = await fetch("/api/junior/regles", {
+      method: "POST", headers,
+      body: JSON.stringify({
+        titre: "Nouvelle règle", regle: "Écris ici ce que Junior doit savoir.",
+        hotel_key: cfg?.key ?? null, origine: "",
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) setSavoir((rs) => [j.regle as Regle, ...rs]);
+    else toast.error(j.error || "Ça a coincé");
+  };
+
   const demanderAJunior = async (row: Row) => {
     if (!cfg || !question.trim() || cherche) return;
     const q = question.trim();
@@ -545,7 +595,7 @@ export default function MailAssistantPage() {
             </div>
             {peutRegler && (
               <button
-                onClick={() => { setReglages((v) => !v); setVue("conv"); }}
+                onClick={() => { setReglages((v) => !v); setVue("conv"); if (!reglesVues) void chargerRegles(); }}
                 title="Jusqu’où je vais tout seul"
                 className={`w-9 h-9 rounded-lg border grid place-items-center transition ${
                   reglages ? "border-[var(--brand)] text-[var(--brand)] bg-[var(--brand-bg)]" : "border-slate-200 text-slate-400 hover:text-slate-600"}`}
@@ -982,7 +1032,8 @@ export default function MailAssistantPage() {
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white">
+        <div className="flex-1 overflow-y-auto bg-white">
+        <div className="divide-y divide-slate-100">
           {Object.keys(modes).sort((a, b) => meta(a).label.localeCompare(meta(b).label)).map((cat) => {
             const m = modes[cat];
             const e = effet(cat);
@@ -1018,6 +1069,88 @@ export default function MailAssistantPage() {
               </div>
             );
           })}
+        </div>
+
+        {/* ── Ce qu'il sait du métier ────────────────────────────────────────
+            Ces règles sont lues par le tri ET par l'agent quand il enquête. Les
+            écrire ici, c'est lui apprendre quelque chose sans développeur ni
+            déploiement — jusqu'ici il fallait me réveiller pour changer une phrase. */}
+        <div className="border-t-8 border-slate-100">
+          <div className="px-4 sm:px-5 py-3 flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-slate-800 leading-tight">Ce que je sais du métier</p>
+              <p className="text-xs text-slate-400">
+                Ce qu’aucun mail ne dit et que je ne peux pas deviner. J’en tiens compte quand je trie et quand je cherche.
+              </p>
+            </div>
+            <button onClick={ajouterRegle} className="shrink-0 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3 h-9 text-[13px] font-semibold">
+              Apprends-moi
+            </button>
+          </div>
+
+          {!reglesVues ? (
+            <p className="px-4 sm:px-5 pb-4 text-sm text-slate-400">Je relis mes notes…</p>
+          ) : !savoir.length ? (
+            <p className="px-4 sm:px-5 pb-4 text-sm text-slate-400">Rien encore. « Apprends-moi » pour commencer.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {savoir.map((r) => {
+                const b = brouillon[r.id] || {};
+                const val = <T extends keyof Regle>(k: T): Regle[T] => (b[k] !== undefined ? (b[k] as Regle[T]) : r[k]);
+                const modifie = Object.keys(b).length > 0;
+                return (
+                  <div key={r.id} className={`px-4 sm:px-5 py-3 ${r.actif ? "" : "bg-slate-50/70"}`}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <input
+                        value={String(val("titre"))}
+                        onChange={(e) => setBrouillon((x) => ({ ...x, [r.id]: { ...x[r.id], titre: e.target.value } }))}
+                        className="flex-1 min-w-0 bg-transparent text-[14px] font-semibold text-slate-800 border-0 border-b border-transparent hover:border-slate-200 focus:border-[var(--brand)] focus:outline-none py-0.5"
+                      />
+                      <span className="shrink-0 text-[11px] text-slate-400">
+                        {r.hotel_key ? (r.hotel_key === "voiles" ? "Les Voiles" : "La Corniche") : "les deux hôtels"}
+                      </span>
+                      <button
+                        onClick={() => setBrouillon((x) => ({ ...x, [r.id]: { ...x[r.id], actif: !val("actif") } }))}
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                          val("actif") ? "bg-[var(--brand-bg)] text-[var(--brand)]" : "bg-slate-200 text-slate-500"}`}
+                      >
+                        {val("actif") ? "j’applique" : "en pause"}
+                      </button>
+                    </div>
+                    <textarea
+                      value={String(val("regle"))}
+                      onChange={(e) => setBrouillon((x) => ({ ...x, [r.id]: { ...x[r.id], regle: e.target.value } }))}
+                      rows={Math.min(10, String(val("regle")).split("\n").length + 1)}
+                      className="w-full rounded-lg border border-slate-200 focus:border-[var(--brand)] focus:outline-none px-3 py-2 text-[13.5px] text-slate-700 leading-relaxed"
+                    />
+                    <input
+                      value={String(val("origine") ?? "")}
+                      onChange={(e) => setBrouillon((x) => ({ ...x, [r.id]: { ...x[r.id], origine: e.target.value } }))}
+                      placeholder="Pourquoi cette règle ? (sans ça, quelqu’un la « corrigera » un jour en croyant bien faire)"
+                      className="mt-1.5 w-full bg-transparent text-[12px] text-slate-500 border-0 border-b border-transparent hover:border-slate-200 focus:border-[var(--brand)] focus:outline-none py-1"
+                    />
+                    {modifie && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          onClick={() => enregistrerRegle(r.id)}
+                          className="rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3 h-8 text-[12.5px] font-semibold"
+                        >
+                          Retiens ça
+                        </button>
+                        <button
+                          onClick={() => setBrouillon((x) => { const n = { ...x }; delete n[r.id]; return n; })}
+                          className="text-[12.5px] text-slate-400 hover:text-slate-600"
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
         </div>
       </>
     );
