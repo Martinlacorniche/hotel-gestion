@@ -323,6 +323,8 @@ type Lead = {
   /** Ce qu'il ne peut pas décider seul (un tarif, un arbitrage). Tant que c'est
    *  rempli, il ne rédige pas : il attend une réponse humaine. */
   question?: string | null;
+  /** La ligne qui ira dans la fiche : télégraphique, pas une phrase. */
+  note?: string;
   nom_client?: string; societe?: string; telephone?: string; titre_demande?: string;
   date_evenement?: string; nb_personnes?: string; budget_estime?: number;
   resume?: string; missing?: string[]; draft_html?: string;
@@ -344,7 +346,23 @@ type Lead = {
 // un séminaire promet des services qui n'existeront pas à cette date.
 // Vécu sur la demande HotelPlanner du 24/07 (anniversaire, 10 chambres, 26-28
 // mars 2027), qui serait partie en proposition hôtelière classique.
+// ⚠️ Le nom reste `SAISON` par habitude, mais ce bloc porte toutes les règles
+// maison d'un hôtel : ce qu'on vend, et ce qu'on ne fait plus.
 const SAISON: Record<string, string> = {
+  corniche:
+    `BACK YOU — NOUS N'Y SOMMES PLUS (Martin 2026-07-24).\n` +
+    `Back You est la plateforme semi-interne de Best Western. Notre abonnement est ` +
+    `RÉSILIÉ : nous n'avons plus aucun accès, nous avons notre propre outil de devis.\n` +
+    `· Ne promets JAMAIS d'y créer un devis, d'y déposer une offre ou d'y répondre. ` +
+    `Ce serait un engagement intenable.\n` +
+    `· Si la centrale le demande — elle le fait régulièrement — dis-le simplement et ` +
+    `sans polémique : nous n'utilisons plus cette plateforme, notre proposition a été ` +
+    `envoyée par mail, et nous établirons le contrat directement avec le client.\n` +
+    `· On continue de RECEVOIR les demandes par Best Western : c'est le canal, pas ` +
+    `l'outil, qui reste.\n` +
+    `· Annonce-le comme une information NEUVE. Pas de « comme indiqué précédemment » ` +
+    `si ça n'a pas été dit dans le fil : ce serait reprocher à l'interlocuteur de ne ` +
+    `pas savoir ce qu'on ne lui a jamais écrit.`,
   voiles:
     `SAISON — À LIRE AVANT DE RÉPONDRE À UNE DEMANDE DE GROUPE :\n` +
     `De NOVEMBRE à AVRIL, Les Voiles ne fonctionne PAS en hôtel. L'établissement se ` +
@@ -384,7 +402,11 @@ async function qualifyLead(subject: string, body: string, hotelName: string, sai
         `- date_evenement : "yyyy-mm-dd" si une date précise est donnée, sinon omets\n` +
         `- nb_personnes : le nombre de participants si donné (texte), sinon omets\n` +
         `- budget_estime : nombre en € si donné, sinon omets\n` +
-        `- resume : 2 phrases max pour la fiche CRM\n` +
+        `- note : LA LIGNE QUI IRA DANS LA FICHE. Télégraphique, comme la réception ` +
+        `l'écrit entre collègues : « dmd groupe 10# 26-28/03/27, hiver = loc autonome, ` +
+        `propal envoyée ». 120 caractères MAXIMUM, pas de phrase complète, pas de ` +
+        `politesse, pas de redite du sujet. Ce qui est demandé, et où on en est.\n` +
+        `- resume : 2 phrases max pour l'écran\n` +
         `- missing : SI issue="nouvelle_demande", les infos MANQUANTES à demander (parmi : dates ` +
         `exactes, nombre de participants, budget indicatif, type de prestation, restauration, ` +
         `hébergement) ; sinon liste vide\n` +
@@ -615,6 +637,7 @@ type Suivi = {
   incertitudes?: string[];
   issue?: IssueSuivi;
   question?: string | null;
+  note?: string;
   /** Le CLIENT FINAL, jamais le chargé de compte de la centrale. Sert à retrouver la fiche. */
   client_nom?: string | null;
   date_evenement?: string | null;
@@ -673,7 +696,11 @@ export async function redigeSuivi(
         `- date_evenement : "yyyy-mm-dd", premier jour de l'événement, null si absent\n` +
         `- motif_perte : SI issue="annulation", la raison en une phrase (reprends celle donnée ` +
         `dans le mail si elle y est), sinon null\n` +
-        `- resume : une phrase pour la fiche CRM (où en est le dossier)\n` +
+        `- note : LA LIGNE QUI IRA DANS LA FICHE. Télégraphique, comme la réception ` +
+        `l'écrit entre collègues : « dmd groupe 10# 26-28/03/27, hiver = loc autonome, ` +
+        `propal envoyée ». 120 caractères MAXIMUM, pas de phrase complète, pas de ` +
+        `politesse, pas de redite du sujet. Ce qui est demandé, et où on en est.\n` +
+        `- resume : une phrase pour l'écran (où en est le dossier)\n` +
         `- incertitudes : ce dont tu n'es pas sûr et qu'un humain doit vérifier avant envoi (liste, souvent vide)\n` +
         `- question : SI une décision t'échappe — un TARIF que tu ne connais pas, un ` +
         `arbitrage de disponibilité, une remise — pose-la en UNE phrase directe et ` +
@@ -1057,7 +1084,7 @@ async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string
   // excursion de mai 2027, classée en refus) et lui a reprogrammé une relance. Pas de fiche
   // pour la référence ⇒ on ne touche à RIEN et on le dit.
   const today = new Date().toISOString().slice(0, 10);
-  const note = `${today.slice(8, 10)}/${today.slice(5, 7)} ${suivi.resume || row.subject || ''} - Junior`.slice(0, 600);
+  const note = `${today.slice(8, 10)}/${today.slice(5, 7)} ${(suivi.note || suivi.resume || row.subject || '').slice(0, 160)} - Junior`;
   const { data } = await supabaseAdmin
     .from('suivi_commercial').select('id, commentaires').eq('hotel_id', cfg.hotelId)
     .or(`nom_client.ilike.%${ref}%,titre_demande.ilike.%${ref}%,commentaires.ilike.%${ref}%`)
@@ -1118,10 +1145,13 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
 
   const relance = new Date(Date.now() + RELANCE_DAYS * 24 * 3600e3).toISOString().slice(0, 10);
   const missing = Array.isArray(lead.missing) ? lead.missing : [];
-  const stampedNote = [
-    `[${today}] Demande reçue par mail : ${lead.resume || row.subject || ''}`,
-    missing.length ? `À qualifier : ${missing.join(', ')}.` : 'Complet à première lecture.',
-  ].join(' ').slice(0, 1000);
+  // ⚠️ COURTE (Martin 2026-07-24 : « beaucoup trop long »). La fiche n'est pas un
+  // compte rendu : elle dit ce qui est demandé et où on en est, comme la réception
+  // l'écrit entre collègues — « 01/07 dmd @ pour loc # 11PAX BB + salle sèche. MD ».
+  // Le détail vit dans le mail et dans la conversation, pas en triple.
+  const jj = `${today.slice(8, 10)}/${today.slice(5, 7)}`;
+  const stampedNote = `${jj} ${(lead.note || lead.titre_demande || row.subject || '').slice(0, 160)}`
+    + (missing.length ? ` — manque : ${missing.join(', ')}` : '') + ' - Junior';
 
   // Brouillon de pré-qualif (si des infos manquent) — reste dans Brouillons, rien n'est envoyé.
   // Le brouillon est signé du PRÉNOM de la personne en poste, pas d'un « Service
