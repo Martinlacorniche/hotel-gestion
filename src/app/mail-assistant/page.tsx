@@ -14,7 +14,7 @@
 // ⚠️ Périmètre : Voiles + Corniche uniquement, barrière posée dans graphMailbox.
 // ⚠️ Mews (déjà venu / taxe de séjour) = Voiles uniquement.
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
@@ -24,7 +24,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { hotelConfig } from "@/lib/mailAssistant";
 import {
   Mail, Loader2, RefreshCw, Inbox, Check, X, ExternalLink, Copy,
-  SlidersHorizontal, CheckCheck,
+  SlidersHorizontal, CheckCheck, ChevronDown,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -687,16 +687,11 @@ export default function MailAssistantPage() {
                 className="w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-[14px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
               />
               <Choix
-                label="Ranger plutôt en"
-                defaut={`Laisser « ${meta(r.category).label} »`}
-                options={Object.keys(CAT_META).map((c) => [c, meta(c).label])}
-                valeur={corCat} onChange={setCorCat}
-              />
-              <Choix
-                label="Et faire"
-                defaut="Ne rien relancer"
-                options={Object.keys(ACTION_LABEL).map((a) => [a, ACTION_LABEL[a]])}
-                valeur={corAct} onChange={setCorAct}
+                valeur={corAct ? `${corCat}|${corAct}` : ""}
+                onChange={(v) => {
+                  const [c, a] = v.split("|");
+                  setCorCat(c || ""); setCorAct(a || "");
+                }}
               />
               <div className="flex items-center gap-2 pt-1">
                 <button
@@ -833,36 +828,87 @@ function BulleMoi({ qui, children }: { qui?: string; children: React.ReactNode }
   );
 }
 
-// Choisir en cliquant plutôt qu'en déroulant : la liste native du navigateur
-// ouvrait un menu gris par-dessus la conversation, et il fallait viser une ligne
-// de 20 pixels. Ici tout est visible, et le choix se voit après coup.
-function Choix({
-  label, defaut, options, valeur, onChange,
-}: {
-  label: string; defaut: string; options: [string, string][];
-  valeur: string; onChange: (v: string) => void;
-}) {
+// ── Ce qu'il aurait dû en faire, dit comme à la réception ───────────────────
+//
+// On demandait deux choses — une « famille » et une « action » — dans le
+// vocabulaire du code : Résa Swile, Note de prise en charge, Rapport PMS. Trente
+// étiquettes à l'écran, et rien qui parle à quelqu'un qui tient le desk (Martin
+// 2026-07-24 : « pense aux équipes, est-ce que ça va leur parler »).
+//
+// On ne pose donc plus qu'UNE question, avec les réponses que quelqu'un donnerait
+// à voix haute. Chacune porte le couple famille/action que Junior comprend : la
+// traduction se fait ici, pas dans la tête de la personne.
+const REPONSES: { v: string; label: string; sous: string }[] = [
+  { v: "spam_alert|delete",           label: "C’était de la pub",            sous: "à la corbeille" },
+  { v: "client_msg|draft_reply",      label: "Un client écrit",              sous: "il faut lui répondre" },
+  { v: "commercial|commercial_followup", label: "Une demande de groupe",     sous: "séminaire, mariage, devis" },
+  { v: "resa_ota|resa_control",       label: "Une réservation",              sous: "à contrôler avant de classer" },
+  { v: "facture|route_pennylane",     label: "Une facture fournisseur",      sous: "à envoyer en compta" },
+  { v: "facture_ota|invoice_note",    label: "On nous réclame une facture",  sous: "à préparer pour l’agence" },
+  { v: "candidature|draft_reply",     label: "Une candidature",              sous: "réponse « effectifs au complet »" },
+  { v: "autre|archive",               label: "Rien à faire, juste à classer", sous: "on le garde, sans suite" },
+  { v: "autre|none",                  label: "Laisse, on s’en occupe",       sous: "il n’y touche pas" },
+];
+
+function Choix({ valeur, onChange }: { valeur: string; onChange: (v: string) => void }) {
+  const [ouvert, setOuvert] = useState(false);
+  const boite = useRef<HTMLDivElement>(null);
+  const choisi = REPONSES.find((o) => o.v === valeur);
+
+  useEffect(() => {
+    if (!ouvert) return;
+    const dehors = (e: MouseEvent) => { if (!boite.current?.contains(e.target as Node)) setOuvert(false); };
+    const echap = (e: KeyboardEvent) => { if (e.key === "Escape") setOuvert(false); };
+    document.addEventListener("mousedown", dehors);
+    document.addEventListener("keydown", echap);
+    return () => { document.removeEventListener("mousedown", dehors); document.removeEventListener("keydown", echap); };
+  }, [ouvert]);
+
   return (
-    <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">{label}</p>
-      <div className="flex flex-wrap gap-1.5">
-        <button
-          onClick={() => onChange("")}
-          className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
-            valeur === "" ? "bg-slate-700 text-white" : "bg-white/70 text-slate-500 hover:bg-white ring-1 ring-slate-200"}`}
-        >
-          {defaut}
-        </button>
-        {options.map(([v, l]) => (
-          <button
-            key={v} onClick={() => onChange(v)}
-            className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
-              valeur === v ? "bg-[var(--brand)] text-white" : "bg-white/70 text-slate-600 hover:bg-white ring-1 ring-slate-200"}`}
-          >
-            {l}
-          </button>
-        ))}
-      </div>
+    <div className="relative" ref={boite}>
+      <button
+        onClick={() => setOuvert((v) => !v)}
+        className="w-full flex items-center gap-2 rounded-xl bg-white/80 ring-1 ring-slate-200 hover:ring-slate-300 px-3.5 h-11 text-left transition"
+      >
+        <span className="flex-1 min-w-0">
+          {choisi ? (
+            <>
+              <span className="block text-[14px] font-medium text-slate-800 truncate">{choisi.label}</span>
+              <span className="block text-[11.5px] text-slate-400 truncate -mt-0.5">{choisi.sous}</span>
+            </>
+          ) : (
+            <span className="text-[14px] text-slate-400">Qu’est-ce qu’il aurait dû en faire ?</span>
+          )}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition ${ouvert ? "rotate-180" : ""}`} />
+      </button>
+
+      {ouvert && (
+        <div className="absolute z-20 left-0 right-0 mt-1.5 rounded-xl bg-white ring-1 ring-slate-200 shadow-lg overflow-hidden py-1">
+          {choisi && (
+            <button
+              onClick={() => { onChange(""); setOuvert(false); }}
+              className="w-full text-left px-3.5 py-2 text-[13px] text-slate-400 hover:bg-slate-50"
+            >
+              Aucune de ces réponses — je lui explique juste
+            </button>
+          )}
+          {REPONSES.map((o) => (
+            <button
+              key={o.v}
+              onClick={() => { onChange(o.v); setOuvert(false); }}
+              className={`w-full text-left px-3.5 py-2 flex items-center gap-2 transition ${
+                o.v === valeur ? "bg-[var(--brand-bg)]" : "hover:bg-slate-50"}`}
+            >
+              <span className="flex-1 min-w-0">
+                <span className="block text-[14px] text-slate-800">{o.label}</span>
+                <span className="block text-[11.5px] text-slate-400 -mt-0.5">{o.sous}</span>
+              </span>
+              {o.v === valeur && <Check className="w-4 h-4 text-[var(--brand)] shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
