@@ -328,7 +328,38 @@ type Lead = {
 // « devis » suffisait à déclencher la pré-qualif + une relance à J+3 — y compris sur le mail où
 // Céline Grosso (Biogroup) nous annonçait qu'elle retenait une AUTRE proposition. On relançait
 // une cliente qui venait de dire non. L'issue se lit dans le sens du mail, pas dans ses mots.
-async function qualifyLead(subject: string, body: string, hotelName: string): Promise<Lead> {
+// ── Ce que l'hôtel vend selon la saison ─────────────────────────────────────
+//
+// 🆕 LES VOILES NE SONT PAS UN HÔTEL TOUTE L'ANNÉE (Martin 2026-07-24). De
+// novembre à avril, l'établissement se loue EN ENTIER, sans service : pas de
+// réception, pas de petit-déjeuner, pas de ménage quotidien — le client est
+// autonome, comme dans une location de vacances. Rien dans les mails ne le dit,
+// et personne ne peut le deviner : une demande de groupe pour mars traitée comme
+// un séminaire promet des services qui n'existeront pas à cette date.
+// Vécu sur la demande HotelPlanner du 24/07 (anniversaire, 10 chambres, 26-28
+// mars 2027), qui serait partie en proposition hôtelière classique.
+const SAISON: Record<string, string> = {
+  voiles:
+    `SAISON — À LIRE AVANT DE RÉPONDRE À UNE DEMANDE DE GROUPE :\n` +
+    `De NOVEMBRE à AVRIL, Les Voiles ne fonctionne PAS en hôtel. L'établissement se ` +
+    `loue en entier, en formule autonome : AUCUN service hôtelier (pas de réception, ` +
+    `pas de petit-déjeuner, pas de ménage quotidien), le client a un accès autonome, ` +
+    `comme dans une location de vacances.\n` +
+    `· Si les dates demandées tombent dans cette période, dis-le CLAIREMENT et sans ` +
+    `détour : on peut accueillir, mais dans ce format-là. Ne promets jamais un ` +
+    `service qui n'existera pas à cette date.\n` +
+    `· Ordre de grandeur pratiqué : environ 800 € la nuit pour l'ensemble, sur une ` +
+    `dizaine de chambres. N'invente aucun autre tarif. Si le volume demandé s'écarte ` +
+    `nettement d'une dizaine de chambres, annonce le format sans chiffrer et signale-le ` +
+    `dans tes incertitudes : c'est la direction qui tranchera le prix.\n` +
+    `· De mai à octobre, l'hôtel fonctionne normalement : cette règle ne s'applique pas.`,
+};
+const saisonDe = (cle: string) => SAISON[cle] || '';
+
+// Exposée pour l'essai à blanc : elle lit et rédige, elle n'écrit nulle part.
+export const qualifyLeadTest = (s: string, b: string, h: string, cle: string) => qualifyLead(s, b, h, saisonDe(cle));
+
+async function qualifyLead(subject: string, body: string, hotelName: string, saison = ''): Promise<Lead> {
   const client = new Anthropic();
   const msg = await client.messages.create({
     model: LLM_MODEL, max_tokens: 1100,
@@ -337,6 +368,7 @@ async function qualifyLead(subject: string, body: string, hotelName: string): Pr
       content:
         `Tu es l'assistant commercial de l'Hôtel ${hotelName}. Analyse ce mail ` +
         `(séminaire / groupe / devis / privatisation) et réponds en JSON STRICT (rien autour), clés :\n` +
+        (saison ? `\n${saison}\n\n` : '') +
         `- issue : "nouvelle_demande" (le client demande ou relance), "refus" (il décline notre ` +
         `offre / retient un concurrent / annule), "confirmation" (il accepte), ou "autre"\n` +
         `- motif_perte : SI issue="refus", la raison en une phrase courte (ex. "salle de réunion ` +
@@ -350,10 +382,14 @@ async function qualifyLead(subject: string, body: string, hotelName: string): Pr
         `- missing : SI issue="nouvelle_demande", les infos MANQUANTES à demander (parmi : dates ` +
         `exactes, nombre de participants, budget indicatif, type de prestation, restauration, ` +
         `hébergement) ; sinon liste vide\n` +
-        `- draft_html : un brouillon de réponse en français. Si issue="refus" : remercier, ` +
+        `- draft_html : un brouillon de réponse RÉDIGÉ DANS LA LANGUE DU MAIL REÇU ` +
+        `(si le client écrit en anglais, réponds en anglais). Si issue="refus" : remercier, ` +
         `accuser réception sans insister ni renégocier, et laisser la porte ouverte pour une ` +
         `prochaine fois. Sinon : remercier et poser UNIQUEMENT les questions de "missing". ` +
-        `PAS de signature (ajoutée après). Balises <p>/<ul><li> autorisées.\n\n` +
+        `PAS de signature (ajoutée après). Balises <p>/<ul><li> autorisées.\n` +
+        `⚠️ Si la demande vient d'une PLATEFORME qui réclame de déposer l'offre sur son site ` +
+        `(HotelPlanner, place de marché, mise en concurrence), on n'y va pas : on répond par ` +
+        `mail et on l'annonce poliment en ouverture.\n\n` +
         `Sujet: ${subject}\n\n${body.slice(0, 6000)}`,
     }],
   });
@@ -595,7 +631,7 @@ function contexteFiche(f: FicheTrouvee | null): string {
 
 export async function redigeSuivi(
   hotelName: string, ref: string, fil: string, salles: OccupationSalles, prenom: string | null,
-  fiche: FicheTrouvee | null = null,
+  fiche: FicheTrouvee | null = null, saison = '',
 ): Promise<Suivi> {
   const client = new Anthropic();
   const msg = await client.messages.create({
@@ -606,6 +642,7 @@ export async function redigeSuivi(
         `Tu écris à la place de la réception de l'Hôtel ${hotelName}. Voici l'INTÉGRALITÉ du fil ` +
         `du dossier ${ref}, du plus ancien au plus récent, nos réponses comprises.\n\n${fil.slice(0, 14000)}\n\n` +
         `${contexteFiche(fiche)}\n\n` +
+        (saison ? `${saison}\n\n` : '') +
         `NOS SALLES : ${salles.salles.join(' · ') || 'non renseignées'}\n` +
         `OCCUPATION RÉELLE sur la période (source : notre planning) :\n` +
         `${salles.occupation.length ? salles.occupation.join('\n') : 'aucune salle occupée sur ces dates'}\n` +
@@ -622,8 +659,12 @@ export async function redigeSuivi(
         `dans le mail si elle y est), sinon null\n` +
         `- resume : une phrase pour la fiche CRM (où en est le dossier)\n` +
         `- incertitudes : ce dont tu n'es pas sûr et qu'un humain doit vérifier avant envoi (liste, souvent vide)\n` +
-        `- draft_html : le brouillon de réponse en français.\n\n` +
+        `- draft_html : le brouillon de réponse, RÉDIGÉ DANS LA LANGUE DU DERNIER MESSAGE ` +
+        `reçu (client anglophone ⇒ réponse en anglais).\n\n` +
         `RÈGLES ABSOLUES :\n` +
+        `0bis. Si la demande vient d'une PLATEFORME qui réclame de déposer l'offre sur son ` +
+        `site (HotelPlanner, place de marché, mise en concurrence), on n'y va pas : on répond ` +
+        `par mail et on l'annonce poliment en ouverture.\n` +
         `0. SI issue="annulation" : le dossier est CLOS, on ne défend pas notre offre et on ne ` +
         `repropose RIEN. Le brouillon tient en deux phrases : on remercie de l'information, on ` +
         `dit que c'est noté, on reste disponible pour une prochaine occasion. Ne demande pas ` +
@@ -787,12 +828,13 @@ export async function elementsConfirmation(corps: string, fiche: FicheTrouvee | 
 // « il y a eu une confirmation ».
 export function texteConsigneConfirmation(
   fiche: FicheTrouvee | null, el: ElementsConfirmation, titre: string, ref: string | null,
+  pms = 'HOTSOFT',
 ): string {
   const l: string[] = [];
   const quoi = fiche?.nom_client || titre;
   const quand = fiche?.date_evenement ? ` du ${fiche.date_evenement.slice(8, 10)}/${fiche.date_evenement.slice(5, 7)}` : '';
   l.push(`✅ ÉVÉNEMENT CONFIRMÉ PAR LE CLIENT — ${quoi}${quand}${ref ? ` (${ref})` : ''}`);
-  l.push(`→ À SAISIR DANS HOTSOFT (chambres + salle) : le dossier n'y est pas tant que personne ne l'a fait.`);
+  l.push(`→ À SAISIR DANS ${pms} (chambres + salle) : le dossier n'y est pas tant que personne ne l'a fait.`);
   // La liste EN ENTIER dans la consigne : le mail est classé, c'est ici qu'on lit les
   // noms pour les saisir. Une consigne qui dit « rooming list reçue : 11 personnes »
   // oblige à retourner chercher le mail — donc personne ne saisit.
@@ -881,7 +923,7 @@ async function confirmerDossier(
       el.ecart_vente ? `⚠️ ${el.ecart_vente}` : null,
       el.regimes.length ? `${el.regimes.length} sans viande/régime` : null,
       draftGaetan ? 'Gaëtan prévenu' : null,
-      'Hotsoft en consigne',
+      `${cfg.mews ? 'Mews' : 'Hotsoft'} en consigne`,
     ].filter(Boolean).join(', ');
     const note = `${today.slice(8, 10)}/${today.slice(5, 7)} mail de confirmation reçu — ${bref} - Junior`;
     const merged = [note, fiche.commentaires].filter(Boolean).join('\n').slice(0, 4000);
@@ -900,7 +942,7 @@ async function confirmerDossier(
     .eq('hotel_id', cfg.hotelId).eq('date_creation', today).ilike('texte', `%${marqueur}%`).limit(1);
   if (!dejaPosee?.length) {
     const { error } = await supabaseAdmin.from('consignes').insert({
-      texte: texteConsigneConfirmation(fiche, el, row.subject || '', ref),
+      texte: texteConsigneConfirmation(fiche, el, row.subject || '', ref, cfg.mews ? 'MEWS' : 'HOTSOFT'),
       auteur: 'Junior', date_creation: today, hotel_id: cfg.hotelId, valide: false,
     });
     consigne = !error;
@@ -970,7 +1012,7 @@ async function actCommercialSuivi(cfg: HotelMailConfig, row: LogRow, ref: string
   // qu'après lecture du fil, et un mauvais rapprochement coûte plus cher qu'un
   // rapprochement manquant.
   const ficheRef = ficheAvant;
-  const suivi = await redigeSuivi(cfg.nom, ref, texteFil, salles, prenom, ficheRef);
+  const suivi = await redigeSuivi(cfg.nom, ref, texteFil, salles, prenom, ficheRef, saisonDe(cfg.key));
 
   if (suivi.issue === 'annulation') return await cloreDossier(cfg, row, ref, suivi, ficheRef);
   if (suivi.issue === 'confirmation') return await confirmerDossier(cfg, row, ref, suivi, ficheRef);
@@ -1035,7 +1077,7 @@ async function actCommercialFollowup(cfg: HotelMailConfig, row: LogRow): Promise
   if (detail.suivi && refSuivi) return await actCommercialSuivi(cfg, row, refSuivi);
 
   const body = await getMessageText(cfg.mailbox, row.message_id);
-  const lead = await qualifyLead(row.subject || '', body, cfg.nom);
+  const lead = await qualifyLead(row.subject || '', body, cfg.nom, saisonDe(cfg.key));
   const email = row.from_addr || null;
   const today = new Date().toISOString().slice(0, 10);
 

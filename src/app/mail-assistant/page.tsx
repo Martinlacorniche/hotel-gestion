@@ -571,6 +571,7 @@ export default function MailAssistantPage() {
 
   // ── La conversation d'un dossier ─────────────────────────────────────────
   function Conversation({ r }: { r: Row }) {
+    const cle = cfg!.key;
     const actionnable = estActionnable(r);
     const res = (r.result || {}) as Record<string, unknown>;
     const note = (res.note as string) || (r.detail?.note as string) || null;
@@ -579,8 +580,7 @@ export default function MailAssistantPage() {
     const aFaire = res.message ? String(res.message) : null;
     const liens = [
       res.id ? { href: `/devis?leadId=${String(res.id)}`, label: "Ouvrir le devis", ext: false } : null,
-      res.webLink ? { href: String(res.webLink), label: "Relire la réponse", ext: true } : null,
-      res.draftGaetanLink ? { href: String(res.draftGaetanLink), label: "Le mot pour Gaëtan", ext: true } : null,
+      // Les brouillons ne sont plus des liens : ils s'affichent en entier plus bas.
     ].filter(Boolean) as { href: string; label: string; ext: boolean }[];
 
     return (
@@ -674,6 +674,22 @@ export default function MailAssistantPage() {
               <p className="text-[14px] text-slate-800">{r.action_error}</p>
             </Demande>
           )}
+
+          {/* Ce qu'il propose d'envoyer — lisible et décidable ici même. */}
+          {res.draftId ? (
+            <Proposition
+              logId={r.id} hotel={cle} quel="client" titre="Ma réponse au client"
+              lien={res.webLink ? String(res.webLink) : undefined}
+              onFait={() => load(cle)}
+            />
+          ) : null}
+          {res.draftGaetanId ? (
+            <Proposition
+              logId={r.id} hotel={cle} quel="gaetan" titre="Mon mot pour Gaëtan"
+              lien={res.draftGaetanLink ? String(res.draftGaetanLink) : undefined}
+              onFait={() => load(cle)}
+            />
+          ) : null}
 
           {/* La correction, c'est TOI qui parles : elle s'écrit donc du côté droit,
               dans ta bulle. Les listes déroulantes du navigateur cassaient la
@@ -814,6 +830,92 @@ function Bulle({ children }: { children: React.ReactNode }) {
 
 // Ta bulle : à droite, à ta couleur. Ce que tu écris ne doit jamais ressembler à
 // ce que Junior dit — sinon on ne sait plus qui parle dans la conversation.
+// ── La réponse qu'il propose : lisible et envoyable sans quitter l'écran ────
+//
+// Le lien « Relire le brouillon » ouvrait Outlook : deux applications, un
+// aller-retour, et des réponses qui ne partaient jamais — neuf brouillons oubliés
+// purgés le 17/07, dont une réponse à un client qui n'a jamais rien reçu. Le texte
+// s'affiche donc ici, et l'envoi tient en un clic (Martin 2026-07-24).
+function Proposition({
+  logId, hotel, quel, titre, lien, onFait,
+}: {
+  logId: string; hotel: string; quel: "client" | "gaetan"; titre: string; lien?: string; onFait: () => void;
+}) {
+  const [texte, setTexte] = useState<string | null>(null);
+  const [absent, setAbsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [replie, setReplie] = useState(false);
+
+  useEffect(() => {
+    let vivant = true;
+    (async () => {
+      const headers = await authHeaders();
+      if (!headers) return;
+      const r = await fetch(`/api/mail-assistant/draft?hotel=${hotel}&id=${logId}&quel=${quel}`, { headers });
+      const j = await r.json().catch(() => ({}));
+      if (!vivant) return;
+      if (r.ok && j.ok) setTexte(j.texte as string); else setAbsent(true);
+    })();
+    return () => { vivant = false; };
+  }, [logId, hotel, quel]);
+
+  const decider = async (decision: "send" | "discard") => {
+    setBusy(true);
+    const headers = await authHeaders();
+    if (!headers) { setBusy(false); return; }
+    const r = await fetch(`/api/mail-assistant/draft?hotel=${hotel}`, {
+      method: "POST", headers, body: JSON.stringify({ id: logId, quel, decision }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) {
+      toast.success(decision === "send" ? "C’est parti !" : "Brouillon jeté");
+      setReplie(true); onFait();
+    } else toast.error(j.error || "Ça a coincé");
+    setBusy(false);
+  };
+
+  if (absent || replie) return null;
+
+  return (
+    <div className="flex gap-2.5 items-end max-w-[92%]">
+      <span className="w-7 h-7 shrink-0 rounded-lg bg-[var(--brand)] text-white grid place-items-center text-[11px] font-semibold mb-0.5">J</span>
+      <div className="rounded-2xl rounded-bl-md bg-white ring-1 ring-slate-200 overflow-hidden min-w-0">
+        <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+          <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">{titre}</p>
+          {lien && (
+            <a href={lien} target="_blank" rel="noreferrer" className="ml-auto text-[11.5px] text-slate-400 hover:text-slate-600 inline-flex items-center gap-1">
+              Modifier <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+        {texte === null ? (
+          <p className="px-4 pb-3 text-[13px] text-slate-400">Je relis ce que j’ai écrit…</p>
+        ) : (
+          <>
+            <p className="px-4 pb-3 text-[14px] text-slate-700 whitespace-pre-line leading-relaxed">{texte}</p>
+            <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
+              <button
+                onClick={() => decider("send")} disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white px-3.5 h-9 text-[13px] font-semibold disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                Envoie-le
+              </button>
+              <button
+                onClick={() => decider("discard")} disabled={busy}
+                className="text-[13px] text-slate-500 hover:text-rose-600 px-2"
+              >
+                Non, jette-le
+              </button>
+              <span className="ml-auto text-[11px] text-slate-400">Signé et prêt à partir.</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BulleMoi({ qui, children }: { qui?: string; children: React.ReactNode }) {
   const initiale = (qui || "M").trim()[0]?.toUpperCase() || "M";
   return (

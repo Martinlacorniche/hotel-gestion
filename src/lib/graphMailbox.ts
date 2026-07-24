@@ -311,6 +311,34 @@ export async function forwardMessage(mailbox: string, id: string, to: string, co
 // avec une signature texte au rabais — « signature incomplète » (Martin 2026-07-23).
 // Graph n'accepte pas les pièces jointes dans le PATCH : il faut les POSTer une à une sur
 // le brouillon créé.
+// Envoyer un brouillon déjà écrit, et le lire pour l'afficher avant de l'envoyer.
+//
+// Un brouillon relu dans Outlook, c'est deux applications, deux allers-retours, et
+// des réponses qui ne partent jamais (neuf brouillons oubliés purgés le 17/07, dont
+// une réponse à un client qui n'a jamais rien reçu). Martin 2026-07-24 : « la propal
+// de mail on la fait direct dans mail assistant et comme ça on te dit d'envoyer ou
+// non ». Le texte remonte donc à l'écran, et l'envoi tient en un clic.
+export async function getDraftText(mailbox: string, draftId: string): Promise<string> {
+  const j = await gm<{ body?: { content?: string } }>(mailbox, `/messages/${draftId}?$select=body`);
+  const html = j.body?.content || '';
+  // On coupe au fil cité : la réponse commence avant, le reste est l'historique.
+  const propre = html.split(/<div[^>]*id=["']?appendonsend/i)[0]
+    .replace(/<img[^>]*>/gi, '')
+    .replace(/<\/(p|div|br|li|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, '’')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+  return propre.split(/\n(?:De\s?:|From:)\s/)[0].replace(/\n{3,}/g, '\n\n').trim();
+}
+
+export async function sendDraft(mailbox: string, draftId: string): Promise<void> {
+  await gm(mailbox, `/messages/${draftId}/send`, { method: 'POST' });
+}
+
+export async function deleteDraft(mailbox: string, draftId: string): Promise<void> {
+  await gm(mailbox, `/messages/${draftId}`, { method: 'DELETE' });
+}
+
 // Brouillon d'un message NEUF vers un tiers — pas une réponse à un fil existant.
 // Sert à prévenir un partenaire (le traiteur, quand un événement se confirme) : sa
 // conversation n'a rien à voir avec le fil du client, et lui répondre « en citation »
