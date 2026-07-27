@@ -16,7 +16,7 @@ import { moveMessage, createReplyDraft, createDraftTo, deleteDraft, getMessageTe
 // `dupuisgaetan@orange.fr` sert à le reconnaître à la lecture, pas à lui écrire.
 const GAETAN_EMAIL = 'gaetan@monsieurcocktail.com';
 import { signatureHtml, signatureAttachment } from '@/lib/mailSignature';
-import { parseOtaResa, parseSwile, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, parseConferma, agencyTsBlock, shortRoom, ddmm, resaDiff, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
+import { parseOtaResa, parseSwile, parseAgoda, controlNote, cancellationNote, parseAgencyTakeover, parseGoelett, parseCds, parseCdsBooking, parseUvet, parseConferma, agencyTsBlock, shortRoom, ddmm, resaDiff, type AgencyTakeover, type OtaResa } from '@/lib/otaResa';
 import { findGuest, hasPastStay, findReservation, cityTaxForReservation } from '@/lib/mews';
 import { parsePreSejour, preSejourNote, preSejourFlags, isPreSejourActionable } from '@/lib/preSejour';
 import { parseRooftopMail, normalizeHeure, normName } from '@/lib/rooftopMail';
@@ -142,9 +142,13 @@ async function actDraftReply(cfg: HotelMailConfig, row: LogRow): Promise<ExecOut
 // ni ne déplace : « traiter d'abord, classer ensuite »). ⚠️ Mews gated sur cfg.mews.
 async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOutcome> {
   const body = await getMessageText(cfg.mailbox, row.message_id);
-  // Swile a son propre format (pas D-Edge) → parseur dédié ; sinon parseur D-Edge/Booking.
-  const isSwile = /swile/i.test(row.from_addr || '');
-  const r = isSwile ? parseSwile(row.subject || '', body) : parseOtaResa(row.subject || '', body);
+  // Chaque canal qui écrit en direct à l'hôtel a son format : Swile et Agoda ne
+  // ressemblent en rien aux mails D-Edge. Sans parseur dédié, rien n'est reconnu et la
+  // note tombe au squelette vide « #chambre # / RSP TS » (vécu le 27/07 sur Agoda).
+  const expediteur = row.from_addr || '';
+  const r = /swile/i.test(expediteur) ? parseSwile(row.subject || '', body)
+    : /agoda/i.test(expediteur) ? parseAgoda(row.subject || '', body)
+    : parseOtaResa(row.subject || '', body);
 
   // ANNULATION : pas de « déjà venu / TS » — on vérifie s'il faut FACTURER (hors délai).
   if (r.kind === 'annulation') {

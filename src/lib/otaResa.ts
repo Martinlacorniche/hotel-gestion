@@ -625,6 +625,105 @@ export function parseSwile(subject: string, body: string): OtaResa {
   };
 }
 
+// Agoda écrit EN DIRECT à l'hôtel, dans son propre format — rien à voir avec D-Edge.
+// `parseOtaResa` n'y reconnaissait aucun champ et la note tombait au squelette vide
+// « #chambre # / RSP TS » (Martin 2026-07-27). Or le mail dit tout ce qu'il faut.
+//
+// Sa particularité : il est BILINGUE et met les valeurs sur des lignes séparées —
+// le libellé anglais, le libellé français, puis la valeur :
+//     Check-in
+//     Enregistrement
+//     31-Jul-2026 (31-07-2026)
+// Et pour la chambre, les quatre libellés s'enchaînent AVANT leurs quatre valeurs :
+//     Room Type / Catégorie de chambre / No. of Rooms / … puis  Comfort Room / 1 / 1 Adult / 0
+// D'où une lecture par motifs plutôt que par « libellé → ligne suivante ».
+export function parseAgoda(subject: string, body: string): OtaResa {
+  const hay = body;
+  const lines = body.split('\n').map((l) => l.trim());
+
+  const ref = subject.match(/(?:Booking ID|r[ée]servation Agoda)\s*(\d{6,})/i)?.[1]
+    || hay.match(/Num[ée]ro de r[ée]servation\s*\n?\s*(\d{6,})/i)?.[1] || null;
+
+  // « CANCELLED » dans l'objet — l'annulation est archivée en amont (règle métier), mais
+  // le parseur doit savoir la nommer si elle arrive quand même jusqu'ici.
+  const kind: OtaResa['kind'] = /CANCELLED|annulation/i.test(subject) ? 'annulation'
+    : /AMENDED|modifi/i.test(subject) ? 'modification' : 'nouvelle';
+
+  const guestFirst = fieldAfter(lines, /^Pr[ée]nom du client/i);
+  const guestLast = fieldAfter(lines, /^Nom du client/i);
+  const guestName = [guestFirst, guestLast].filter(Boolean).join(' ') || null;
+
+  // Les dates portent leur forme jj-mm-aaaa entre parenthèses : on prend celle-là,
+  // sans dépendre des mois anglais abrégés (« 1-Aug-2026 »).
+  //
+  // ⚠️ On construit l'ISO ici plutôt que via `frDateToISO`, qui attend un mois en
+  // toutes lettres (« 31 juillet 2026 ») et rendrait null sur « 31/07/2026 ». Sans
+  // arrivalISO, la résa ne se rapproche plus de celle de Mews — donc plus de « déjà
+  // venu » ni de taxe de séjour dans la note.
+  const dateAgoda = (label: RegExp): { brut: string | null; iso: string | null } => {
+    const m = fieldAfter(lines, label)?.match(/\((\d{1,2})-(\d{1,2})-(\d{4})\)/);
+    if (!m) return { brut: null, iso: null };
+    return {
+      brut: `${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}/${m[3]}`,
+      iso: `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`,
+    };
+  };
+  const arr = dateAgoda(/^Enregistrement/i);
+  const dep = dateAgoda(/^D[ée]part$/i);
+
+  // Bloc chambre : quatre libellés puis quatre valeurs. On repart de « Lits
+  // supplémentaires » — le dernier libellé — et la chambre est la valeur suivante.
+  const iBloc = lines.findIndex((l) => /^Lits suppl[ée]mentaires/i.test(l));
+  const roomType = iBloc >= 0
+    ? lines.slice(iBloc + 1, iBloc + 4).find((l) => l && !/^\d+$/.test(l)) || null
+    : null;
+
+  const ratePlan = hay.match(/Nom du plan tarifaire\s*:\s*([^\n(]+)/i)?.[1]?.trim() || null;
+  // « Flex BB » = annulable ; « NR / Non[- ]Refundable » = sec. Le texte d'annulation
+  // confirme (« Annulez avant le … et vous ne paierez rien »).
+  const refundable = ratePlan && /\bflex/i.test(ratePlan) ? true
+    : ratePlan && /\bN\.?R\b|non[- ]?refundable|non remboursable/i.test(ratePlan) ? false
+    : /Annulez avant le .+ vous ne paierez rien/i.test(hay) ? true : null;
+
+  // Tarif NET : c'est ce que l'hôtel touche, pas le prix vitrine (« Tarif de vente de
+  // référence »), qui est plus élevé et n'intéresse pas la réception.
+  const net = hay.match(/Tarif net[^\n]*\n?\s*EUR\s*([\d]+[.,]\d{2})/i)?.[1]
+    || hay.match(/Net rate[^\n]*\n?\s*EUR\s*([\d]+[.,]\d{2})/i)?.[1] || null;
+  const amount = net ? `${net.replace('.', ',')} €` : null;
+
+  // Qui encaisse. « Réservé et payable par Agoda » + carte virtuelle masquée à récupérer
+  // sur l'extranet YCS = CCV : la réception doit aller la chercher, elle ne débite pas
+  // le client. Sinon, la chambre se règle sur place.
+  const parAgoda = /R[ée]serv[ée] et payable par\s*\n?\s*Agoda|Booked and Payable by\s*\n?\s*Agoda/i.test(hay);
+  const vcc = /UPC (?:is hidden|a [ée]t[ée] cach[ée])|extranet YCS/i.test(hay);
+  const payment: OtaPayment = parAgoda || vcc ? 'vcc' : 'on_site';
+
+  const avantages = fieldAfter(lines, /^Avantages inclus/i) || '';
+  const breakfast = /breakfast|petit[- ]d[ée]j/i.test(avantages) ? true : null;
+
+  const cancelText = hay.match(/(Annulez avant le [^\n!]+)/i)?.[1]?.trim()
+    || fieldAfter(lines, /^Conditions d'annulation/i);
+  // « Annulez avant le 30 juillet 2026 » → date pivot, pour recouper une annulation tardive.
+  const gratuitJusqua = hay.match(/Annulez avant le\s+(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})/i)?.[1] || null;
+
+  const specialRequests = fieldAfter(lines, /^NonSmoke|^Requ[êe]te sp[ée]ciale/i);
+
+  return {
+    ref, source: 'Agoda', kind,
+    guestName, guestFirst, guestLast, email: null, phone: null,
+    arrival: arr.brut, arrivalISO: arr.iso,
+    departure: dep.brut, departureISO: dep.iso,
+    bookedAtISO: null,
+    cancelDateISO: gratuitJusqua ? frDateToISO(gratuitJusqua) : null,
+    freeCancelDaysBefore: null, penalty: null, firstNightAmount: null,
+    nights: null, guests: null,
+    roomType, breakfast, ratePlan, amount, chargeAmount: null,
+    refundable, cancelText, genius: false,
+    payment, vccChargeableFrom: null, specialRequests,
+    company: null,
+  };
+}
+
 // Variante CDS `bookings@cdsgroupe.com` : « RAPPEL DE PAIEMENT … CDS GROUPE - <REF> - <Nom> »
 // avec « Mode de paiement : payée par Booking.com » → la chambre est sur la VCC Booking, il n'y
 // a RIEN à débiter côté agence. Le mail veut juste qu'on CONFIRME LA RÉCEPTION (bouton/lien),
