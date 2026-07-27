@@ -260,7 +260,7 @@ export default function MailAssistantPage() {
   // La conversation avec l'agent, par ligne : ce qu'on lui a demandé, ce qu'il a
   // répondu. Elle ne survit pas au rechargement — c'est une aide à la décision,
   // pas un dossier. Ce qui doit rester va dans la fiche ou dans une correction.
-  const [causerie, setCauserie] = useState<Record<string, { moi: string; lui?: string; outils?: string[] }[]>>({});
+  const [causerie, setCauserie] = useState<Record<string, { moi: string; lui?: string; outils?: string[]; rate?: boolean }[]>>({});
   const [question, setQuestion] = useState("");
   const [cherche, setCherche] = useState(false);
   const [repBusy, setRepBusy] = useState(false);
@@ -494,7 +494,10 @@ export default function MailAssistantPage() {
       // incompréhensible pour lui.
       body: JSON.stringify({
         id: row.id, question: q,
-        fil: (causerie[row.id] || []).filter((e) => e.lui).slice(-3).map((e) => ({ moi: e.moi, lui: e.lui })),
+        // Un « je n'arrive pas à le joindre » reste affiché à l'écran, mais ne part
+        // pas dans le fil : c'est nous qui l'avons écrit, pas lui. Sinon on lui
+        // rejoue nos propres pannes comme si c'étaient ses réponses.
+        fil: (causerie[row.id] || []).filter((e) => e.lui && !e.rate).slice(-3).map((e) => ({ moi: e.moi, lui: e.lui })),
       }),
     });
     const j = await resp.json().catch(() => ({}));
@@ -502,7 +505,9 @@ export default function MailAssistantPage() {
       const fil = [...(c[row.id] || [])];
       const dernier = fil[fil.length - 1];
       if (dernier) {
-        dernier.lui = resp.ok && j.ok ? String(j.reponse) : `Je n’y arrive pas : ${j.error || "réessaie"}`;
+        const ok = resp.ok && j.ok;
+        dernier.lui = ok ? String(j.reponse) : `Je n’y arrive pas : ${j.error || "réessaie"}`;
+        dernier.rate = !ok;
         dernier.outils = (j.traces || []).map((t: { outil: string }) => t.outil);
       }
       return { ...c, [row.id]: fil };

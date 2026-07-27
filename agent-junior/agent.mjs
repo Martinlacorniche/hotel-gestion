@@ -262,10 +262,18 @@ async function enqueter({ question, hotel, contexte, fil, qui }) {
     messages.push({ role: 'user', content: String(e.moi).slice(0, 2000) });
     messages.push({ role: 'assistant', content: String(e.lui).slice(0, 6000) });
   }
+  // Le dossier ouvert et qui parle accompagnent CHAQUE question, pas seulement la
+  // première. On ne les mettait qu'en tête de conversation — en pariant que le fil
+  // les rappellerait ensuite. Le pari tombe dès que le premier échange rate : un
+  // « je n'arrive pas à te joindre » entre quand même dans le fil, le fil n'est
+  // plus vide, et Junior répond « de quel dossier tu parles ? » avec le mail sous
+  // les yeux (Martin 2026-07-27). Qui tient le desk change aussi en cours de
+  // conversation. Ça ne se duplique pas : le fil est rejoué à partir des questions
+  // brutes, seul le dernier message porte ces lignes.
   messages.push({
     role: 'user',
-    content: (qui && !messages.length ? `${qui}\n\n` : '')
-      + (contexte && !messages.length ? `Contexte du dossier ouvert à l'écran :\n${contexte}\n\n` : '')
+    content: (qui ? `${qui}\n\n` : '')
+      + (contexte ? `Contexte du dossier ouvert à l'écran :\n${contexte}\n\n` : '')
       + `Question : ${question}`,
   });
   const traces = [];
