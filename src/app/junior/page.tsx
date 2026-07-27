@@ -501,17 +501,44 @@ export default function MailAssistantPage() {
       }),
     });
     const j = await resp.json().catch(() => ({}));
-    setCauserie((c) => {
-      const fil = [...(c[row.id] || [])];
-      const dernier = fil[fil.length - 1];
-      if (dernier) {
-        const ok = resp.ok && j.ok;
-        dernier.lui = ok ? String(j.reponse) : `Je n’y arrive pas : ${j.error || "réessaie"}`;
-        dernier.rate = !ok;
-        dernier.outils = (j.traces || []).map((t: { outil: string }) => t.outil);
-      }
-      return { ...c, [row.id]: fil };
-    });
+
+    // Poser la réponse (ou l'échec) sur le dernier échange du fil.
+    const poser = (texte: string, rate: boolean, traces: { outil: string }[] = []) =>
+      setCauserie((c) => {
+        const fil = [...(c[row.id] || [])];
+        const dernier = fil[fil.length - 1];
+        if (dernier) {
+          dernier.lui = texte;
+          dernier.rate = rate;
+          dernier.outils = traces.map((t) => t.outil);
+        }
+        return { ...c, [row.id]: fil };
+      });
+
+    if (!resp.ok || !j.ok || !j.enquete) {
+      poser(`Je n’y arrive pas : ${j.error || "réessaie"}`, true);
+      setCherche(false);
+      return;
+    }
+
+    // La réponse ne revient plus par ce fil-là : le serveur la dépose en base
+    // quand il a fini, et on vient la relever. Une enquête peut durer des
+    // minutes — c'est ce que Netlify ne savait pas tenir (27/07).
+    const debut = Date.now();
+    let rendu = false;
+    while (!rendu && Date.now() - debut < 7 * 60_000) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const h = await authHeaders();
+      if (!h) break;
+      const rep = await fetch(`/api/junior/agent?enquete=${j.enquete}`, { headers: h });
+      const e = await rep.json().catch(() => ({}));
+      if (!rep.ok || !e.ok) continue;   // hoquet réseau : on retentera dans 2 s
+      if (e.statut === "finie") { poser(String(e.reponse), false, e.traces || []); rendu = true; }
+      if (e.statut === "echec") { poser(`Je n’y arrive pas : ${e.erreur || "réessaie"}`, true); rendu = true; }
+    }
+    // Sortie sans réponse : sans ce filet, la bulle resterait vide à l'écran et
+    // on croirait Junior muet alors qu'on a simplement cessé de l'attendre.
+    if (!rendu) poser("Je n’y arrive pas : il met trop longtemps, repose-lui la question.", true);
     setCherche(false);
   };
 

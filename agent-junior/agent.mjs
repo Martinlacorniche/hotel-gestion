@@ -71,6 +71,23 @@ async function sb(table, query) {
   return r.json();
 }
 
+// La SEULE écriture de tout ce fichier, et elle ne touche qu'à `junior_enquetes` :
+// Junior y dépose ses propres réponses. La barrière ne bouge pas — mails, fiches,
+// planning restent hors d'atteinte. C'est son carnet, pas les affaires de l'hôtel.
+async function deposer(enqueteId, champs) {
+  const r = await fetch(`${SB_URL}/junior_enquetes?id=eq.${enqueteId}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`,
+      'Content-Type': 'application/json', Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({ ...champs, finished_at: new Date().toISOString() }),
+  });
+  // Personne au-dessus pour rattraper : si le dépôt échoue, l'écran attendrait
+  // indéfiniment. On le crie dans le journal, c'est là qu'on ira voir.
+  if (!r.ok) console.error(`dépôt enquête ${enqueteId} : supabase ${r.status}`);
+}
+
 // ── Les outils : tout en lecture ────────────────────────────────────────────
 const OUTILS = [
   {
@@ -332,11 +349,35 @@ createServer(async (req, res) => {
   req.on('data', (c) => { brut += c; if (brut.length > 200000) req.destroy(); });
   req.on('end', async () => {
     try {
-      const { question, hotel, contexte, fil, qui } = JSON.parse(brut || '{}');
+      const { question, hotel, contexte, fil, qui, enquete_id } = JSON.parse(brut || '{}');
       if (!question) return fin(400, { ok: false, error: 'question requise' });
       const t0 = Date.now();
+      const journal = (r, echec) => console.log(
+        `[${new Date().toISOString()}] ${hotel} · ${Math.round((Date.now() - t0) / 1000)}s · `
+        + `${echec ? 'ÉCHEC' : `${r.traces.length} outils`} · ${String(question).slice(0, 70)}`);
+
+      // AVEC un numéro d'enquête : on accuse réception tout de suite et on
+      // travaille après. Netlify coupe une fonction à 26 s ; une vraie enquête en
+      // prend 40 et se faisait jeter (Martin 2026-07-27). Personne n'attend plus
+      // au bout du fil : la réponse est déposée en base, l'écran la relève.
+      if (enquete_id) {
+        fin(202, { ok: true, accepte: true });
+        try {
+          const r = await enqueter({ question, hotel, contexte, fil, qui });
+          journal(r);
+          await deposer(enquete_id, { statut: 'finie', reponse: r.reponse, traces: r.traces });
+        } catch (e) {
+          journal(null, true);
+          console.error('enquête', enquete_id, e);
+          await deposer(enquete_id, { statut: 'echec', erreur: String(e.message || e) });
+        }
+        return;
+      }
+
+      // Sans numéro : réponse directe. Sert aux essais en ligne de commande, où
+      // l'on veut la réponse dans le terminal sans passer par la base.
       const r = await enqueter({ question, hotel, contexte, fil, qui });
-      console.log(`[${new Date().toISOString()}] ${hotel} · ${Math.round((Date.now() - t0) / 1000)}s · ${r.traces.length} outils · ${String(question).slice(0, 70)}`);
+      journal(r);
       fin(200, { ok: true, ...r });
     } catch (e) {
       console.error('erreur', e);
