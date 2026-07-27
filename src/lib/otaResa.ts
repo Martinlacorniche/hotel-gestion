@@ -766,7 +766,16 @@ export function shortRoom(room: string | null): string {
   const kept = words.filter((w) => !drop.has(w.toLowerCase()) && !amenity.has(w.toLowerCase()));
   const cat = kept.find((w) => category.has(w.toLowerCase()));
   const pick = cat || kept[0] || words[0] || 'chambre';
-  return pick.toLowerCase();
+  // Les canaux qui écrivent en anglais (Agoda : « Comfort Room ») donnaient « #comfort »
+  // au milieu de notes françaises. Même catégorie, deux orthographes selon l'OTA : la
+  // réception lit un code, elle ne doit pas avoir à le traduire (Martin 2026-07-27).
+  const FR: Record<string, string> = {
+    comfort: 'confort', superior: 'supérieure', family: 'familiale', classic: 'classique',
+    economy: 'économique', executive: 'exécutive', luxury: 'luxe', single: 'simple',
+    twin: 'twin', triple: 'triple', quadruple: 'quadruple',
+  };
+  const code = pick.toLowerCase();
+  return FR[code] || code;
 }
 
 // Note de contrôle réception — FORMAT GLOBAL EN CODES (Martin 2026-07-07). Squelette :
