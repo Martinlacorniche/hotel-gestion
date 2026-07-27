@@ -705,6 +705,17 @@ export function parseAgoda(subject: string, body: string): OtaResa {
     || fieldAfter(lines, /^Conditions d'annulation/i);
   // « Annulez avant le 30 juillet 2026 » → date pivot, pour recouper une annulation tardive.
   const gratuitJusqua = hay.match(/Annulez avant le\s+(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})/i)?.[1] || null;
+  const gratuitISO = gratuitJusqua ? frDateToISO(gratuitJusqua) : null;
+
+  // Le délai en JOURS, déduit de l'écart entre la date limite et l'arrivée. C'est lui
+  // que réclame `isLateCancellation` quand l'annulation arrive : le mail d'annulation
+  // ne le porte jamais, on le retrouve dans la résa d'origine. Sans ce calcul, la note
+  // d'annulation disait « délai à VÉRIFIER manuellement » — donc personne ne vérifiait
+  // (Martin 2026-07-27, résa 683273639 : limite au 30/07, arrivée le 31/07 → 1 jour).
+  const freeCancelDaysBefore = gratuitISO && arr.iso
+    ? Math.max(0, Math.round(
+        (Date.parse(`${arr.iso}T00:00:00Z`) - Date.parse(`${gratuitISO}T00:00:00Z`)) / 86_400_000))
+    : null;
 
   const specialRequests = fieldAfter(lines, /^NonSmoke|^Requ[êe]te sp[ée]ciale/i);
 
@@ -714,8 +725,17 @@ export function parseAgoda(subject: string, body: string): OtaResa {
     arrival: arr.brut, arrivalISO: arr.iso,
     departure: dep.brut, departureISO: dep.iso,
     bookedAtISO: null,
-    cancelDateISO: gratuitJusqua ? frDateToISO(gratuitJusqua) : null,
-    freeCancelDaysBefore: null, penalty: null, firstNightAmount: null,
+    // ⚠️ PAS la date limite ici. `cancelDateISO` est la date où le client a annulé —
+    // `isLateCancellation` la compare à la deadline pour décider s'il faut facturer.
+    // Y glisser le « Annulez avant le 30 juillet » ferait comparer la deadline à
+    // elle-même et pourrait facturer un client dans son droit. Le mail de confirmation
+    // ne porte évidemment aucune date d'annulation : on n'invente pas.
+    cancelDateISO: null,
+    freeCancelDaysBefore,
+    // Agoda l'annonce en toutes lettres dans les conditions : la première nuit est due
+    // passé le délai. C'est ce que la note d'annulation doit dire à la réception.
+    penalty: /facturation de la premi[èe]re nuit/i.test(hay) ? 'première nuit' : null,
+    firstNightAmount: null,
     nights: null, guests: null,
     roomType, breakfast, ratePlan, amount, chargeAmount: null,
     refundable, cancelText, genius: false,

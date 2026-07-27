@@ -163,10 +163,17 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
     if (r.freeCancelDaysBefore == null && r.ref) {
       try {
         const orig = (await searchMessages(cfg.mailbox, r.ref, 10)).find(
-          (m) => m.id !== row.message_id && !/annulation/i.test(m.subject || ''),
+          (m) => m.id !== row.message_id && !/annulation|CANCELLED/i.test(m.subject || ''),
         );
         if (orig) {
-          const o = parseOtaResa(orig.subject || '', await getMessageText(cfg.mailbox, orig.id));
+          // La résa d'origine se lit avec LE parseur de SON canal. On la passait à
+          // `parseOtaResa` quel que soit l'expéditeur : sur une résa Agoda, rien n'était
+          // reconnu et la note retombait sur « délai à VÉRIFIER manuellement » — l'inverse
+          // exact de ce que ce repêchage cherche à faire (Martin 2026-07-27).
+          const brut = await getMessageText(cfg.mailbox, orig.id);
+          const o = /agoda/i.test(orig.fromAddr || '')
+            ? parseAgoda(orig.subject || '', brut)
+            : parseOtaResa(orig.subject || '', brut);
           rr = {
             ...r,
             freeCancelDaysBefore: o.freeCancelDaysBefore ?? r.freeCancelDaysBefore,
