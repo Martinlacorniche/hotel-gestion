@@ -28,7 +28,7 @@ import {
   Mail, Loader2, RefreshCw, Inbox, Check, X, ExternalLink, Copy,
   SlidersHorizontal, CheckCheck, ChevronDown, Sparkles,
 } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, isToday } from "date-fns";
 import { fr } from "date-fns/locale";
 import toast from "react-hot-toast";
 
@@ -571,8 +571,18 @@ export default function MailAssistantPage() {
     [modes],
   );
 
+  // « Ce que j'ai fait » = ce qu'il a fait AUJOURD'HUI. Sans ça, l'historique
+  // remontait tout depuis toujours : un mail du 24 s'affichait à côté de ceux du
+  // jour avec la seule heure pour l'en distinguer, et on le croyait de ce matin
+  // (Martin 2026-07-27, sur un Group Request vieux de trois jours).
+  //
+  // ⚠️ La date ne filtre QUE les réglés. Un mail encore en attente reste visible
+  // quel que soit son âge — c'est justement le vieux dossier oublié qu'il ne faut
+  // pas escamoter.
   const garde = useCallback(
-    (r: Row) => voirTraites || !estTraite(r) || fraichementTraites.has(r.id),
+    (r: Row) => !estTraite(r)
+      || fraichementTraites.has(r.id)
+      || (voirTraites && !!r.received_at && isToday(parseISO(r.received_at))),
     [voirTraites, fraichementTraites],
   );
   const visibles = useMemo(() => {
@@ -760,8 +770,15 @@ export default function MailAssistantPage() {
                   <b className={`flex-1 min-w-0 truncate text-[13.5px] ${attend ? "font-semibold text-slate-800" : "font-medium text-slate-500"}`}>
                     {r.subject || "(sans objet)"}
                   </b>
+                  {/* L'heure seule pour aujourd'hui, la date dès que c'est plus vieux :
+                      « 15:18 » et « 24 juil. » ne se confondent pas, alors que deux
+                      heures nues laissaient croire que tout datait du jour. */}
                   <time className="text-[11px] text-slate-400 shrink-0 tabular-nums">
-                    {r.received_at ? format(parseISO(r.received_at), "HH:mm") : ""}
+                    {r.received_at
+                      ? isToday(parseISO(r.received_at))
+                        ? format(parseISO(r.received_at), "HH:mm")
+                        : format(parseISO(r.received_at), "d MMM", { locale: fr })
+                      : ""}
                   </time>
                 </span>
                 <span className="block truncate text-[12.5px] text-slate-400 mt-0.5">{apercu}</span>

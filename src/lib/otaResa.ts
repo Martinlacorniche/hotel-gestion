@@ -69,6 +69,29 @@ function fieldAfter(lines: string[], label: RegExp): string | null {
   return null;
 }
 
+// Montant d'un champ dont la valeur ne suit pas immédiatement le libellé. D-Edge
+// glisse une phrase d'explication entre les deux :
+//   Montant à débiter
+//   Vous devez débiter la carte bancaire du client de ce montant
+//   105,00 €
+// `fieldAfter` ramasse la première ligne non vide — donc la phrase, qui atterrit
+// telle quelle dans la note de réception : « DÉBIT CB Vous devez débiter la carte
+// bancaire du client de ce montant » au lieu de « DÉBIT CB 105,00 € » (Martin
+// 2026-07-27). On cherche donc le premier vrai montant sous le libellé.
+function amountAfter(lines: string[], label: RegExp, fenetre = 5): string | null {
+  const MONTANT = /(\d[\d  .]*,\d{2}|\d[\d  .]*)\s*€/;
+  for (let i = 0; i < lines.length; i++) {
+    if (!label.test(lines[i])) continue;
+    const zone = [lines[i].split(':').slice(1).join(':'), ...lines.slice(i + 1, i + 1 + fenetre)];
+    for (const l of zone) {
+      const m = l.match(MONTANT);
+      if (m) return m[0].replace(/\s+/g, ' ').trim();
+    }
+    return null;   // libellé trouvé mais aucun montant dessous : mieux vaut rien
+  }
+  return null;
+}
+
 const FR_MONTHS: Record<string, string> = {
   janvier: '01', janv: '01', février: '02', fevrier: '02', févr: '02', fevr: '02',
   mars: '03', avril: '04', avr: '04', mai: '05', juin: '06',
@@ -183,7 +206,7 @@ export function parseOtaResa(subject: string, body: string): OtaResa {
   } else if (/montant à débiter|devez débiter la carte|débiter la carte bancaire/i.test(hay)) {
     payment = 'charge_card';   // résa directe NANR : l'hôtel débite la carte du client
   }
-  const chargeAmount = payment === 'charge_card' ? fieldAfter(lines, /^Montant à débiter/i) : null;
+  const chargeAmount = payment === 'charge_card' ? amountAfter(lines, /^Montant à débiter/i) : null;
   // Réservation DIRECTE (moteur de l'hôtel, ex. « Hôtels Toulon Bord De Mer ») non prépayée :
   // « Montant payé en ligne » > 0 → prépayé ; sinon → tout à régler sur place.
   if (payment === 'unknown' && /Moteur de réservation/i.test(hay)) {
