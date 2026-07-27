@@ -9,6 +9,11 @@ une fonction serverless est coupée bien avant.
 - **Lecture seule.** Aucun outil d'écriture : il cherche, lit, croise, explique.
   Tout ce qui modifie quoi que ce soit passe par l'app, avec un clic humain.
   C'est la barrière : même mal aiguillé, il ne peut rien casser.
+  ⚠️ Lecture seule protège les **systèmes**, pas sa parole : il a le droit de
+  rédiger une réponse ou d'adoucir un ton dans le fil — c'est l'humain qui relit
+  et envoie. Il répondait « je suis en lecture seule » à une demande de
+  reformulation (Martin 2026-07-27) : la consigne rangeait « répondre à un
+  client » parmi les gestes interdits, elle ne le fait plus.
 - **Jamais de sa propre initiative.** Un humain le sollicite depuis `/junior`.
 - **Il n'écrit pas ses propres règles.** L'apprentissage vient des corrections
   humaines, réinjectées dans le classifieur (`assistant_mail_corrections`).
