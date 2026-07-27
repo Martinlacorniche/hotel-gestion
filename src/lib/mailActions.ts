@@ -234,13 +234,16 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
   let dejaVenu: boolean | null = null;   // null = info indisponible (Corniche / Mews KO)
   let cityTax: number | null = null;     // TS exacte à encaisser sur place (VCC, Voiles)
   let mewsResaId: string | null = null;  // pour écrire la note directement dans le PMS
+  let annuleeDansPms = false;            // Mews dit que le séjour ne tient plus
   if (cfg.mews && r.guestLast) {
     try {
       const g = await findGuest(r.guestFirst, r.guestLast);
       dejaVenu = g ? await hasPastStay(g.id) : false;   // pas de profil Mews = 1er séjour
       // La réservation sert à DEUX choses : la taxe de séjour exacte, et l'écriture
       // de la note. On la cherche donc dès qu'on a le profil, plus seulement en VCC.
-      if (g && r.arrivalISO) mewsResaId = await findReservation(g.id, r.arrivalISO);
+      const resa = g && r.arrivalISO ? await findReservation(g.id, r.arrivalISO) : null;
+      mewsResaId = resa?.id ?? null;
+      annuleeDansPms = /^cancel/i.test(resa?.state || '');
       // TS exacte : VCC (la carte virtuelle ne couvre pas la taxe) OU Swile prépayé (TS sur place).
       if (mewsResaId && (r.payment === 'vcc' || r.source === 'Swile')) {
         cityTax = (await cityTaxForReservation(mewsResaId))?.amount ?? null;
@@ -275,6 +278,29 @@ async function actResaControl(cfg: HotelMailConfig, row: LogRow): Promise<ExecOu
   // avec un bouton « Copier » et la réception la retapait — parce qu'on croyait la
   // note de réservation inaccessible au Connector. Elle ne l'est pas (cf mewsNotes).
   // Best-effort : si Mews refuse, la note reste affichée et rien n'est perdu.
+  // ⚠️ LE MAIL PEUT AVOIR DES HEURES DE RETARD SUR LA RÉALITÉ. Le 27/07, une
+  // confirmation reçue à 14h51 a été traitée à 16h36 — alors que l'annulation, tombée
+  // à 15h08, avait déjà été traitée à 16h07. Junior s'apprêtait donc à poser une note
+  // de contrôle toute fraîche sur un séjour annulé, que la réception aurait lue comme
+  // un client à venir. Mews fait foi : s'il dit annulé, on n'écrit rien et on ne classe
+  // pas — le mail reste en réception avec la mention, pour qu'un humain voie le
+  // télescopage (Martin 2026-07-27).
+  if (annuleeDansPms) {
+    return {
+      status: 'executed',
+      result: {
+        kind: 'resa_control', note: `${note} · ⚠️ RÉSA ANNULÉE ENTRE-TEMPS DANS MEWS — rien à contrôler`,
+        dejaVenu, cityTax, linked, pms: null, classe: false, annuleeDansPms: true,
+        resa: {
+          ref: r.ref, source: r.source, guest: r.guestName, arrival: r.arrival, departure: r.departure,
+          nights: r.nights, guests: r.guests, room: r.roomType, amount: r.amount,
+          ratePlan: r.ratePlan, refundable: r.refundable, payment: r.payment,
+          vccChargeableFrom: r.vccChargeableFrom, genius: r.genius,
+        },
+      },
+    };
+  }
+
   let pms: NoteSyncResult | null = null;
   if (cfg.mews && mewsResaId) {
     try {

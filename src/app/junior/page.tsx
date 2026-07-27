@@ -181,6 +181,9 @@ function resultSummary(r: Row): string | null {
   if (r.status !== "executed") return null;
 
   const fait = (() => {
+    // Rien n'est parti dans Mews quand la résa y est déjà annulée : le dire, plutôt
+    // que d'annoncer une note écrite qui n'existe pas.
+    if (res.annuleeDansPms) return "Résa annulée entre-temps · rien écrit";
     if (res.note) return res.classe ? "Note écrite dans Mews · classé" : "Note écrite dans Mews";
     if (res.movedTo === "deleteditems") return "Mis à la corbeille";
     if (res.movedTo === "archive") return "Classé";

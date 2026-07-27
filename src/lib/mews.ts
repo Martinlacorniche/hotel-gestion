@@ -613,11 +613,23 @@ export async function hasPastStay(customerId: string, now: Date = new Date()): P
   return false;
 }
 
-type UpcomingReservation = { Id: string; StartUtc?: string; ScheduledStartUtc?: string; Number?: string };
+type UpcomingReservation = {
+  Id: string; StartUtc?: string; ScheduledStartUtc?: string; Number?: string;
+  // Mews renvoyait déjà l'état, on ne le lisait pas. Il vaut 'Confirmed', 'Started',
+  // 'Processed', 'Optional' ou 'Canceled' — c'est lui qui dit si le séjour tient encore.
+  State?: string;
+};
 
 // Retrouve LA réservation d'un client dont l'arrivée = arrivalISO (yyyy-mm-dd), pour la
 // relier à un mail D-Edge. Fenêtre ±3 j autour de l'arrivée ; match exact sur la date.
-export async function findReservation(customerId: string, arrivalISO: string): Promise<string | null> {
+//
+// Retourne aussi son ÉTAT : le mail qu'on traite peut avoir des heures de retard sur la
+// réalité (vécu le 27/07 : confirmation reçue à 14h51, traitée à 16h36, alors que
+// l'annulation était tombée à 15h08 et avait déjà été traitée à 16h07). Sans l'état, on
+// posait une note de contrôle toute fraîche sur un séjour annulé.
+export async function findReservation(
+  customerId: string, arrivalISO: string,
+): Promise<{ id: string; state: string | null } | null> {
   const day = new Date(`${arrivalISO}T12:00:00Z`).getTime();
   const data = await callMews<{ Reservations: UpcomingReservation[] }>('reservations/getAll', {
     CustomerIds: [customerId],
@@ -629,7 +641,8 @@ export async function findReservation(customerId: string, arrivalISO: string): P
   });
   const list = data.Reservations || [];
   const exact = list.find((r) => (r.ScheduledStartUtc || r.StartUtc || '').slice(0, 10) === arrivalISO);
-  return (exact || list[0])?.Id ?? null;
+  const found = exact || list[0];
+  return found ? { id: found.Id, state: found.State ?? null } : null;
 }
 
 type TaxLineItem = { BillingName?: string; Amount?: { Currency?: string; GrossValue?: number } };
