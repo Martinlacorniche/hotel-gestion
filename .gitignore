@@ -63,3 +63,9 @@ mail*voiles*.txt
 
 # Dumps du balayage Mews (données de démo, volumineux et régénérables)
 scripts/mews-certif/dumps/
+
+# Dossier de certification HotSoft : la collection Postman contient le mot de
+# passe du service et le ProviderKey en clair. Ne jamais committer.
+hotsoft/
+scripts/hotsoft-certif/dumps/
+scripts/hotsoft-certif/.build/
