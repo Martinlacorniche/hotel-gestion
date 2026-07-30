@@ -163,6 +163,9 @@ interface Groupe {
   affichage_tarifs?: 'complet' | 'budget' | 'masque';
   taxe_sejour_mode?: 'incluse' | 'ajoutee';
   taxe_sejour_montant?: number;
+  // Montants par hôtel : petit-déjeuner ET taxe de séjour (un même mariage vaut
+  // 10 € de PDJ aux Voiles et 15 € à La Corniche, et la taxe diffère aussi).
+  groupe_tarifs_hotel?: TarifHotel[];
   paiement_obligatoire?: boolean;
   mode_paiement?: string | null;
   date_envoi_paiement?: string | null;
@@ -182,6 +185,17 @@ interface RoomSel {
 }
 
 // Clé de catégorie pour le tarif : le type, ou un sentinel par hôtel pour les sans-type
+// Montants d'un groupe pour UN hôtel. Un groupe bi-hôtel a une ligne par
+// établissement : la taxe de séjour vaut 1,86 € aux Voiles et 2,83 € à La Corniche,
+// et le petit-déjeuner se négocie hôtel par hôtel. `pdj_actif` est distinct d'un
+// prix à 0 : un mariage peut l'offrir tout en ayant besoin de savoir qui en prend.
+export type TarifHotel = {
+  id?: string; groupe_id?: string; hotel_id: string;
+  pdj_actif: boolean; pdj_prix: number;
+  // null = pas de montant propre à cet hôtel → repli sur groupes.taxe_sejour_montant.
+  taxe_sejour_montant: number | null;
+};
+
 function typeKeyOf(c: { room_type_id: string | null; hotel_id: string }) {
   return c.room_type_id || `__notype_${c.hotel_id}`;
 }
@@ -290,7 +304,7 @@ export default function GroupesPage() {
       supabase.from('room_units').select('*').in('hotel_id', hotelIds).order('ordre'),
       supabase
         .from('groupes')
-        .select('*, groupe_chambres(*), groupe_reservations(id, groupe_id, groupe_chambre_id, statut, nom, prenom, email, tel, date_arrivee, date_depart, config_lit, nb_personnes, pms_done, vu_backoffice, derniere_action, created_at, modified_at)')
+        .select('*, groupe_chambres(*), groupe_tarifs_hotel(*), groupe_reservations(id, groupe_id, groupe_chambre_id, statut, nom, prenom, email, tel, date_arrivee, date_depart, config_lit, nb_personnes, pdj_nuits, pdj_prix_unitaire, pms_done, vu_backoffice, derniere_action, created_at, modified_at)')
         .order('date_arrivee', { ascending: true }),
     ]);
     if (rt.error) toast.error('Types : ' + rt.error.message);
@@ -563,6 +577,11 @@ function GroupesTab({
   const [affichageTarifs, setAffichageTarifs] = useState<'complet' | 'budget' | 'masque'>('complet');
   const [taxeMode, setTaxeMode] = useState<'incluse' | 'ajoutee'>('ajoutee');
   const [taxeMontant, setTaxeMontant] = useState('');
+  // Petit-déjeuner : un réglage PAR HÔTEL du bloc (clé = hotel_id).
+  const [pdjByHotel, setPdjByHotel] = useState<Record<string, { actif: boolean; prix: string }>>({});
+  // Taxe de séjour : le MODE reste global (décision commerciale), le MONTANT est
+  // par hôtel — il est fixé par la commune, pas par le groupe.
+  const [taxeByHotel, setTaxeByHotel] = useState<Record<string, string>>({});
   const [modePaiement, setModePaiement] = useState<'immediat' | 'differe' | 'optionnel' | 'aucun'>('immediat');
   const [dateEnvoiPaiement, setDateEnvoiPaiement] = useState('');
   const [messageAccueil, setMessageAccueil] = useState('');
@@ -641,13 +660,22 @@ function GroupesTab({
   );
   const chambreById = useCallback((id: string) => chambres.find(c => c.id === id), [chambres]);
 
+  // Les hôtels réellement concernés par le bloc = ceux des chambres cochées. Le
+  // petit-déjeuner se règle par hôtel, il n'y a donc rien à demander pour un
+  // hôtel dont aucune chambre n'est dans le groupe.
+  const hotelsDuBloc = useMemo(() => {
+    const ids = new Set<string>();
+    for (const id of Object.keys(selected)) { const ch = chambreById(id); if (ch) ids.add(ch.hotel_id); }
+    return [...ids];
+  }, [selected, chambreById]);
+
   function resetForm() {
     setEditing(null);
     setNom(''); setDateArrivee(''); setDateDepart(''); setDateLimite('');
     setConditions(''); setPlanVisible(true); setExclus({}); setModeVue('simple'); setAffichageTarifs('complet'); setTaxeMode('ajoutee'); setTaxeMontant(''); setModePaiement('immediat'); setDateEnvoiPaiement(''); setMessageAccueil('');
     setContactNom(''); setContactEmail(''); setNotes('');
     setCoverUrl(null); setCoverFile(null);
-    setSelected({}); setTarifByType({});
+    setSelected({}); setTarifByType({}); setPdjByHotel({}); setTaxeByHotel({});
     if (coverInputRef.current) coverInputRef.current.value = '';
     // Le brouillon a rempli son rôle (enregistré ou annulé) → on le purge.
     if (typeof window !== 'undefined') { try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ } }
@@ -677,6 +705,14 @@ function GroupesTab({
     setAffichageTarifs(g.affichage_tarifs ?? 'complet');
     setTaxeMode(g.taxe_sejour_mode ?? 'ajoutee');
     setTaxeMontant(g.taxe_sejour_montant != null ? String(g.taxe_sejour_montant) : '');
+    const pdj: Record<string, { actif: boolean; prix: string }> = {};
+    const tax: Record<string, string> = {};
+    for (const t of g.groupe_tarifs_hotel || []) {
+      pdj[t.hotel_id] = { actif: t.pdj_actif, prix: String(t.pdj_prix ?? '') };
+      if (t.taxe_sejour_montant != null) tax[t.hotel_id] = String(t.taxe_sejour_montant);
+    }
+    setPdjByHotel(pdj);
+    setTaxeByHotel(tax);
     setModePaiement((g.mode_paiement as 'immediat' | 'differe' | 'optionnel' | 'aucun') ?? (g.paiement_obligatoire ? 'immediat' : 'aucun'));
     setDateEnvoiPaiement(g.date_envoi_paiement ?? '');
     setMessageAccueil(g.message_accueil || '');
@@ -809,6 +845,8 @@ function GroupesTab({
             });
           }
         }
+        await saveTarifsHotel(groupeId, hotelsDuBloc);
+
         // Sync du dossier commercial lié (best-effort)
         const primaryHotelId = entries.length ? (chambreById(entries[0][0])?.hotel_id || null) : null;
         await supabase.from('suivi_commercial').update({
@@ -848,6 +886,8 @@ function GroupesTab({
         const { error: chErr } = await supabase.from('groupe_chambres').insert(rows);
         if (chErr) throw chErr;
 
+        await saveTarifsHotel(groupeId, hotelsDuBloc);
+
         // Rattachement au dossier commercial d'origine (créé en amont dans le
         // pipeline ; c'est lui qui porte devis + fiche de fonction).
         const primaryHotelId = rows[0]?.hotel_id || null;
@@ -873,6 +913,34 @@ function GroupesTab({
       toast.error('Enregistrement : ' + msg);
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Écrit les montants du bloc (petit-déjeuner + taxe de séjour), un jeu par hôtel. On efface aussi les
+  // hôtels SORTIS du bloc : sinon le tarif survivrait au retrait de la dernière
+  // chambre d'un hôtel, et la page invité proposerait un petit-déjeuner dans un
+  // établissement où le groupe n'a plus une seule chambre.
+  async function saveTarifsHotel(groupeId: string, hotelIds: string[]) {
+    if (hotelIds.length) {
+      const rows = hotelIds.map(hid => {
+        const cur = pdjByHotel[hid] ?? { actif: false, prix: '' };
+        const tx = (taxeByHotel[hid] ?? '').trim();
+        return {
+          groupe_id: groupeId, hotel_id: hid, pdj_actif: cur.actif,
+          pdj_prix: cur.prix.trim() === '' ? 0 : parseFloat(cur.prix.replace(',', '.')) || 0,
+          // Vide → NULL, et la vitrine retombe sur le montant du groupe. Mettre 0
+          // ferait croire à une taxe offerte.
+          taxe_sejour_montant: tx === '' ? null : parseFloat(tx.replace(',', '.')) || 0,
+          updated_at: new Date().toISOString(),
+        };
+      });
+      const { error } = await supabase.from('groupe_tarifs_hotel')
+        .upsert(rows, { onConflict: 'groupe_id,hotel_id' });
+      if (error) throw error;
+      await supabase.from('groupe_tarifs_hotel').delete()
+        .eq('groupe_id', groupeId).not('hotel_id', 'in', `(${hotelIds.join(',')})`);
+    } else {
+      await supabase.from('groupe_tarifs_hotel').delete().eq('groupe_id', groupeId);
     }
   }
 
@@ -1233,13 +1301,67 @@ function GroupesTab({
                       </button>
                     ))}
                   </div>
+                  {/* Le MONTANT est par hôtel : 1,86 € aux Voiles, 2,83 € à La Corniche.
+                      Une seule case pour un groupe bi-hôtel surfacturait fatalement un
+                      des deux côtés (constaté le 2026-07-30 sur trois mariages). Le
+                      MODE, lui, reste global : c'est une décision commerciale. */}
                   {taxeMode !== 'incluse' && (
-                    <label className="flex items-center gap-2 mt-2.5">
-                      <span className="text-[11px] text-slate-400 shrink-0">Montant / nuit / personne</span>
-                      <input value={taxeMontant} onChange={e => setTaxeMontant(e.target.value)} placeholder="2,83" inputMode="decimal"
-                        className="w-24 border rounded-lg px-2 h-9 text-sm bg-white" />
-                      <span className="text-sm text-slate-400">€</span>
-                    </label>
+                    hotelsDuBloc.length === 0 ? (
+                      <p className="text-[11px] text-slate-400 mt-2.5">Sélectionne des chambres pour saisir les montants.</p>
+                    ) : (
+                      <div className="mt-2.5 space-y-2">
+                        {hotelsDuBloc.map(hid => (
+                          <label key={hid} className="flex items-center gap-2">
+                            <span className="text-sm text-slate-600 min-w-0 truncate">{hotelName(hid)}</span>
+                            <span className="text-[11px] text-slate-400 shrink-0 ml-auto">/ nuit / personne</span>
+                            <input value={taxeByHotel[hid] ?? ''} inputMode="decimal" placeholder="1,86"
+                              onChange={e => setTaxeByHotel(prev => ({ ...prev, [hid]: e.target.value }))}
+                              className="w-24 border rounded-lg px-2 h-9 text-sm bg-white" />
+                            <span className="text-sm text-slate-400">€</span>
+                          </label>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
+
+                {/* Petit-déjeuner en option (demande Fabien, 2026-07-30). Le tarif se
+                    négocie par groupe ET par hôtel — l'invité choisira ensuite SES
+                    nuits, une par une, sur la page de réservation. */}
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-sm font-medium text-slate-700 mb-2">Petit-déjeuner en option</p>
+                  {hotelsDuBloc.length === 0 ? (
+                    <p className="text-[11px] text-slate-400">Sélectionne des chambres pour régler le petit-déjeuner.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {hotelsDuBloc.map(hid => {
+                        const cur = pdjByHotel[hid] ?? { actif: false, prix: '' };
+                        return (
+                          <div key={hid} className="flex flex-wrap items-center gap-2">
+                            <button type="button"
+                              onClick={() => setPdjByHotel(prev => ({ ...prev, [hid]: { ...cur, actif: !cur.actif } }))}
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 h-9 text-sm font-semibold transition ${
+                                cur.actif ? 'border-rose-600 bg-rose-50/60 text-rose-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                              }`}>
+                              {cur.actif ? 'Proposé' : 'Non proposé'}
+                            </button>
+                            <span className="text-sm text-slate-600 min-w-0 truncate">{hotelName(hid)}</span>
+                            {cur.actif && (
+                              <label className="flex items-center gap-2 ml-auto">
+                                <span className="text-[11px] text-slate-400 shrink-0">/ nuit / personne</span>
+                                <input value={cur.prix} inputMode="decimal" placeholder="14"
+                                  onChange={e => setPdjByHotel(prev => ({ ...prev, [hid]: { ...cur, prix: e.target.value } }))}
+                                  className="w-24 border rounded-lg px-2 h-9 text-sm bg-white" />
+                                <span className="text-sm text-slate-400">€</span>
+                              </label>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <p className="text-[11px] leading-snug text-slate-400">
+                        Laisser à 0 € revient à l’offrir : l’invité le choisit quand même, et la cuisine sait combien en préparer.
+                      </p>
+                    </div>
                   )}
                 </div>
 

@@ -25,6 +25,8 @@ const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((new Date
 type Row = {
   id: string; booking_ref: string; email: string; nom: string; prenom: string | null;
   date_arrivee: string; date_depart: string; nb_personnes: number | null;
+  // Petit-déjeuner choisi par l'invité : les nuits cochées et le tarif figé à la résa.
+  pdj_nuits: string[] | null; pdj_prix_unitaire: number | null;
   groupe_id: string; payment_link_sent_at: string | null;
   groupe_chambres: { hotel_id: string; tarif_nuit: number; room_units: { numero: string } | null } | null;
   groupes: {
@@ -64,11 +66,23 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabaseAdmin
     .from('groupe_reservations')
     .select('id, booking_ref, email, nom, prenom, date_arrivee, date_depart, nb_personnes, groupe_id, payment_link_sent_at,' +
+      ' pdj_nuits, pdj_prix_unitaire,' +
       ' groupe_chambres!inner ( hotel_id, tarif_nuit, room_units ( numero ) ),' +
       ' groupes!inner ( nom, code_acces, date_envoi_paiement, taxe_sejour_mode, taxe_sejour_montant )')
     .eq('statut', 'paiement_differe');
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   const rows = (data || []) as unknown as Row[];
+
+  // Taxe de séjour PAR HÔTEL (1,86 € aux Voiles, 2,83 € à La Corniche). Le montant
+  // porté par le groupe ne sert plus que de repli : un groupe bi-hôtel n'a pas un
+  // tarif unique, et s'en servir surfacturait un des deux côtés.
+  const { data: tarifRows } = await supabaseAdmin
+    .from('groupe_tarifs_hotel')
+    .select('groupe_id, hotel_id, taxe_sejour_montant')
+    .in('groupe_id', [...new Set(rows.map(r => r.groupe_id))]);
+  const taxeParGroupeHotel = new Map<string, number>(
+    (tarifRows || []).filter(t => t.taxe_sejour_montant != null)
+      .map(t => [`${t.groupe_id}|${t.hotel_id}`, Number(t.taxe_sejour_montant)]));
 
   let envois = 0, relaches = 0;
 
@@ -86,15 +100,25 @@ export async function POST(req: NextRequest) {
   for (const [key, group] of byBookingHotel) {
     const hotelId = key.split('|')[1];
     const first = group[0];
-    const lines = group.map(r => {
+    const lines = group.flatMap(r => {
       const nights = nightsBetween(r.date_arrivee, r.date_depart);
-      return { name: `${r.groupes?.nom} · Ch. ${r.groupe_chambres?.room_units?.numero ?? '?'} · ${nights} nuit(s)`, amount: Math.round(Number(r.groupe_chambres?.tarif_nuit) * nights * 100) };
+      const pax = Math.max(1, Number(r.nb_personnes) || 1);
+      const numero = r.groupe_chambres?.room_units?.numero ?? '?';
+      const out = [{ name: `${r.groupes?.nom} · Ch. ${numero} · ${nights} nuit(s)`, amount: Math.round(Number(r.groupe_chambres?.tarif_nuit) * nights * 100) }];
+      // Petit-déjeuner choisi à la réservation : prix × personnes × nuits cochées.
+      const pdjNuits = (r.pdj_nuits || []) as string[];
+      const pdjPrix = Number(r.pdj_prix_unitaire) || 0;
+      if (pdjNuits.length && pdjPrix > 0) {
+        out.push({ name: `Petit-déjeuner · Ch. ${numero} · ${pdjNuits.length} matin(s) × ${pax} pers.`, amount: Math.round(pdjPrix * pdjNuits.length * pax * 100) });
+      }
+      return out;
     });
     // Taxe de séjour : encaissée UNIQUEMENT en mode « ajoutee » — le seul où la page
     // groupe l'annonce comprise dans le total. 'incluse' = déjà dans le tarif/nuit ;
     // 'sur_place' = réglée à l'hôtel. Sans cette ligne, on facturait le total SANS la
     // taxe alors que le client l'avait vue dans le sien.
-    const tsMontant = Number(first.groupes?.taxe_sejour_montant) || 0;
+    const tsMontant = taxeParGroupeHotel.get(`${first.groupe_id}|${hotelId}`)
+      ?? (Number(first.groupes?.taxe_sejour_montant) || 0);
     if (first.groupes?.taxe_sejour_mode === 'ajoutee' && tsMontant > 0) {
       const nuitees = group.reduce((s, r) =>
         s + nightsBetween(r.date_arrivee, r.date_depart) * Math.max(1, Number(r.nb_personnes) || 1), 0);
