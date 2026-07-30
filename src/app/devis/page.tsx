@@ -12,13 +12,17 @@ import { ThemedBackground } from '@/components/ThemedBackground';
 import {
   Trash2, FileText, Send, AlertCircle,
   ArrowLeft, Calculator, Calendar, User, Building2, MapPin,
-  StickyNote, Loader2, CheckCircle, Mail, Edit2, Settings2, GripVertical
+  StickyNote, Loader2, CheckCircle, Mail, Edit2, Settings2, GripVertical, QrCode
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PDFDownloadLink } from '@react-pdf/renderer';
+import { QRCodeCanvas } from 'qrcode.react';
 import { QuotePDF, getHotelBranding } from './QuotePDF';
 
+
+// Même base que /groupes : c'est le domaine Netlify qui sert réellement la page invités.
+const SITE_BW_BASE = process.env.NEXT_PUBLIC_SITE_BW_URL || 'https://sitehtbm.netlify.app';
 
 // --- UTILITAIRES ---
 const getHTFromTTC = (ttc: number, rate: number) => ttc / (1 + rate / 100);
@@ -79,6 +83,10 @@ const [isCatalogAdminMode, setIsCatalogAdminMode] = useState(false);
 const [editingItem, setEditingItem] = useState<any>(null);
 
 const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  // Bloc chambres lié au dossier : sert à imprimer le QR de la page invités sur le devis.
+  const [groupe, setGroupe] = useState<{ code: string; link: string; limite: string | null } | null>(null);
+  const [groupQr, setGroupQr] = useState<string | null>(null);
+  const qrHolder = useRef<HTMLDivElement | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'} | null>(null);
   const [newItem, setNewItem] = useState({ category: 'Hébergement', name: '', description: '', price_ttc: 0, tva: 10 });
@@ -152,6 +160,23 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
         if (leadErr || !lead) throw new Error("Prospect introuvable");
         setClient(lead);
         setDate(lead.date_evenement || '');
+
+        // A bis. Le bloc chambres, s'il existe. Un devis de mariage sans le lien
+        // vers la page invités obligeait à transmettre l'URL à côté, à la main.
+        if (lead.groupe_id) {
+          const { data: g } = await supabase
+            .from('groupes')
+            .select('code_acces, date_limite')
+            .eq('id', lead.groupe_id)
+            .maybeSingle();
+          if (g?.code_acces) {
+            setGroupe({
+              code: g.code_acces,
+              link: `${SITE_BW_BASE}/groupe/${g.code_acces}`,
+              limite: g.date_limite || null,
+            });
+          }
+        }
 
         // Récupérer les infos de l'hôtel
         const hId = lead.hotel_id || localStorage.getItem('selectedHotelId');
@@ -363,7 +388,70 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
     }
   };
 
+  // react-pdf ne sait pas rendre un composant React : il lui faut une image. On dessine
+  // donc le QR hors écran avec qrcode.react, puis on en tire un PNG en data-URL.
+  // L'effet du parent s'exécute après celui du canvas : il est déjà peint ici.
+  useEffect(() => {
+    if (!groupe) { setGroupQr(null); return; }
+    const canvas = qrHolder.current?.querySelector('canvas');
+    if (!canvas) return;
+    try {
+      setGroupQr(canvas.toDataURL('image/png'));
+    } catch {
+      // Pas de QR imprimable : le devis sort quand même, avec le lien en clair.
+      setGroupQr(null);
+    }
+  }, [groupe]);
+
   const branding = getHotelBranding(hotel?.id, hotel?.nom);
+
+  // Le devis se télécharge en deux versions. Le QR de la page invités n'est PAS
+  // ajouté d'office : il ne parle qu'aux dossiers qui ouvrent un bloc chambres,
+  // et même là il reste un choix au clic (second bouton). Le bouton « PDF »
+  // historique sort donc toujours exactement le même document qu'avant.
+  const quoteDoc = (withQr: boolean) => (
+    <QuotePDF
+      data={{
+        quoteNumber: quoteNumber ?? 'EN COURS',
+        quoteDate: quoteDate ? new Date(quoteDate).toLocaleDateString('fr-FR') : '01/03/2026',
+        clientName: client?.societe || client?.nom_client || 'Client',
+        clientEmail: client?.email,
+        eventTitle: client?.titre_demande,
+        eventDate: date ? new Date(date).toLocaleDateString('fr-FR') : '--',
+        conditions: cancellationTerms,
+        hotelId: hotel?.id,
+        hotelName: hotel?.nom,
+        branding,
+        ...(withQr && groupe
+          ? {
+              groupLink: groupe.link,
+              groupCode: groupe.code,
+              groupQr,
+              groupDeadline: groupe.limite
+                ? new Date(groupe.limite).toLocaleDateString('fr-FR')
+                : null,
+            }
+          : {}),
+      }}
+      lines={lines.filter(l => l.label).map(l => ({
+        date: (l.date || date) ? new Date(l.date || date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '--',
+        description: l.label,
+        detail: l.description || '',
+        quantity: l.quantity,
+        unitPriceTTC: Number(l.unitPriceTTC).toFixed(2),
+        tvaRate: l.tvaRate,
+        totalTTC: (l.quantity * l.unitPriceTTC).toFixed(2)
+      }))}
+      totals={{
+        ht: totals.ht.toFixed(2),
+        ttc: totals.ttc.toFixed(2),
+        tvaDetails: totals.tvaDetails
+      }}
+    />
+  );
+
+  const pdfName = (suffix = '') =>
+    `Devis ${client?.nom_client || 'Client'} - ${hotel?.nom || branding.name}${suffix}.pdf`;
 
   // Envoyer le devis, c'est aussi le DIRE. Le clic ouvrait le client mail et l'app
   // n'en gardait aucune trace : personne ne savait depuis quand une proposition
@@ -427,42 +515,16 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
           {toast.msg}
         </div>
       )}
+      {/* QR dessiné hors écran, uniquement pour en extraire le PNG du PDF. */}
+      {groupe && (
+        <div ref={qrHolder} aria-hidden className="fixed -left-[9999px] top-0 pointer-events-none">
+          <QRCodeCanvas value={groupe.link} size={320} level="M" marginSize={2} />
+        </div>
+      )}
       <div className="max-w-7xl mx-auto flex justify-between items-center mb-6 print:hidden">
         <div className="flex gap-3">
   {/* Nouveau bouton PDF Pro */}
- <PDFDownloadLink
-  document={
-    <QuotePDF
-      data={{
-        quoteNumber: quoteNumber ?? 'EN COURS',
-        quoteDate: quoteDate ? new Date(quoteDate).toLocaleDateString('fr-FR') : '01/03/2026',
-        clientName: client?.societe || client?.nom_client || 'Client',
-        clientEmail: client?.email,
-        eventTitle: client?.titre_demande,
-        eventDate: date ? new Date(date).toLocaleDateString('fr-FR') : '--',
-        conditions: cancellationTerms,
-        hotelId: hotel?.id,
-        hotelName: hotel?.nom,
-        branding
-      }}
-      lines={lines.filter(l => l.label).map(l => ({
-        date: (l.date || date) ? new Date(l.date || date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '--',
-        description: l.label,
-        detail: l.description || '',
-        quantity: l.quantity,
-        unitPriceTTC: Number(l.unitPriceTTC).toFixed(2),
-        tvaRate: l.tvaRate,
-        totalTTC: (l.quantity * l.unitPriceTTC).toFixed(2)
-      }))} 
-      totals={{
-        ht: totals.ht.toFixed(2),
-        ttc: totals.ttc.toFixed(2),
-        tvaDetails: totals.tvaDetails
-      }} 
-    />
-  } 
-  fileName={`Devis ${client?.nom_client || 'Client'} - ${hotel?.nom || branding.name}.pdf`}
->
+ <PDFDownloadLink document={quoteDoc(false)} fileName={pdfName()}>
   {({ loading }) => (
     <Button variant="outline" className="bg-white border-slate-200 font-bold shadow-sm">
       {loading ? (
@@ -474,6 +536,27 @@ const lineRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
     </Button>
   )}
 </PDFDownloadLink>
+
+{/* Version avec le QR de la page invités : proposée seulement si un bloc
+    chambres est ouvert sur ce dossier, et seulement une fois le QR dessiné. */}
+{groupe && groupQr && (
+  <PDFDownloadLink document={quoteDoc(true)} fileName={pdfName(' (avec QR)')}>
+    {({ loading }) => (
+      <Button
+        variant="outline"
+        title={`Ajoute le QR vers ${groupe.link} (code ${groupe.code})`}
+        className="bg-white border-[var(--brand)] text-[var(--brand)] font-bold shadow-sm hover:bg-[var(--brand-bg)]"
+      >
+        {loading ? (
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        ) : (
+          <QrCode className="w-4 h-4 mr-2" />
+        )}
+        {loading ? 'Génération...' : 'PDF + QR'}
+      </Button>
+    )}
+  </PDFDownloadLink>
+)}
 
   <Button onClick={handleSendMail} variant="outline" className="bg-white border-[var(--brand)] text-[var(--brand)] font-bold shadow-sm hover:bg-[var(--brand-bg)]">
     <Mail className="w-4 h-4 mr-2" /> Mail

@@ -170,6 +170,26 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
 
+  // ── Bloc chambres : QR vers la page de réservation des invités ──────────
+  // Le devis d'un mariage ne se lit pas seul : il ouvre un bloc de chambres que
+  // les invités réservent eux-mêmes. Sans ce QR, le lien se transmettait à l'oral
+  // ou par un mail séparé — et se perdait entre les mariés et leurs invités.
+  groupBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+    padding: 12,
+    backgroundColor: ICE,
+    borderWidth: 1,
+    borderColor: ICE_BORDER,
+    borderRadius: 8,
+  },
+  groupQr:    { width: 64, height: 64, marginRight: 14 },
+  groupText:  { flex: 1 },
+  groupTitle: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: BLUE_MID, marginBottom: 4 },
+  groupSub:   { fontSize: 7, color: SLATE_600, lineHeight: 1.5 },
+  groupUrl:   { fontSize: 7, fontFamily: 'Helvetica-Bold', color: BLUE_MID },
+
   // ── Footer CGV + Signature — wrap:false pour ne jamais couper ───────────
   footer: {
     flexGrow: 1,
@@ -296,6 +316,22 @@ export const QuotePDFPage = ({ data, lines, totals }: any) => {
           </View>
         </View>
       </View>
+
+      {/* ── BLOC CHAMBRES : QR + lien vers la page invités (si un groupe est lié) ── */}
+      {data.groupQr && data.groupLink ? (
+        <View style={s.groupBox} wrap={false}>
+          <Image src={data.groupQr} style={s.groupQr} />
+          <View style={s.groupText}>
+            <Text style={s.label}>Réservation des chambres</Text>
+            <Text style={s.groupTitle}>Vos invités réservent eux-mêmes leur chambre</Text>
+            <Text style={s.groupSub}>
+              Scannez ce code, ou rendez-vous sur <Text style={s.groupUrl}>{data.groupLink}</Text>
+              {data.groupCode ? ` — code d'accès ${data.groupCode}` : ''}
+              {data.groupDeadline ? `. Chambres à réserver avant le ${data.groupDeadline}.` : '.'}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       {/* ── FOOTER : CGV + Signature — jamais découpé ── */}
       <View style={s.footer} wrap={false}>
