@@ -8,6 +8,7 @@ import { format as formatDate, subDays } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import { setReadOnlyMode } from '@/lib/readOnlyMode';
+import { ThemedBackground } from '@/components/ThemedBackground';
 import { isOnDutyAt, type PlanningEntryLite } from '@/lib/shift';
 
 // Mode shift (cadré avec Martin le 2026-06-10) :
@@ -98,7 +99,11 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
         </div>
       )}
       {blocked ? (
-        <div className="flex min-h-[80vh] flex-col items-center justify-center gap-4 p-6 text-center">
+        // L'écran de blocage remplace `children` : sans ThemedBackground ni
+        // var(--brand), il était le seul écran de l'app à ignorer le thème de
+        // l'utilisateur — d'où le « hors shift, mon thème ne s'applique pas ».
+        <div className="relative flex min-h-[80vh] flex-col items-center justify-center gap-4 p-6 text-center">
+          <ThemedBackground />
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
             <Lock className="h-8 w-8 text-amber-700" />
           </div>
@@ -117,7 +122,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
             </Link>
             <Link
               href="/planning"
-              className="flex h-11 items-center gap-2 rounded-md bg-indigo-600 px-4 text-sm text-white hover:bg-indigo-700"
+              className="flex h-11 items-center gap-2 rounded-md px-4 text-sm text-[var(--brand-text,#fff)] transition-colors"
+              style={{ backgroundColor: 'var(--brand, #4f46e5)' }}
             >
               <CalendarDays className="h-4 w-4" />
               Mon planning
