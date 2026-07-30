@@ -417,16 +417,30 @@ export async function pushPaymentToMews(paymentId: string): Promise<{ id: string
 
 // ── Pré-remplissage caisse (Voiles) depuis Mews ──────────────────────────────
 // Récupère les encaissements du jour (heure de Paris) et les range par LIGNE de
-// caisse (TPE CB / Amex / Espèces / ANCV / Virement) et par SHIFT (matin 6h-14h,
-// soir sinon). On ne compte QUE les paiements « externes » = le vrai terminal /
-// caisse (pas les CreditCardPayment VCC/en ligne). On EXCLUT le compte Rooftop
-// (sa propre caisse) pour ne pas compter deux fois. Montants en valeur absolue
-// (encaissé brut à contrôler par la réception).
+// caisse (TPE CB / Amex / Espèces / ANCV / Virement). On ne compte QUE les
+// paiements « externes » = le vrai terminal / caisse (pas les CreditCardPayment
+// VCC/en ligne). Montants en valeur absolue (encaissé brut à contrôler par la
+// réception).
+//
+// Le folio « Rooftop 2026 » est INCLUS : ses espèces tombent dans le même tiroir
+// et ses CB sur le même TPE que la réception. Il était exclu jusqu'au 2026-07-30,
+// et l'équipe le recopiait à la main — vérifié dans les saisies : le 29/07 le TPE
+// du soir valait 483,46 € = 322,46 (hôtel) + 161,00 (Rooftop).
+//
+// Les deux shifts ne se partagent pas la journée, ils la CUMULENT :
+//   • matin = ce qui est tombé entre 6h et 14h ;
+//   • soir  = TOUTE la journée (matin compris).
+// C'est la logique du tiroir : on ne le vide pas à midi, donc le comptage du soir
+// porte sur l'intégralité de ce qui a été encaissé depuis le matin. La saisie
+// manuelle fonctionnait déjà ainsi (29/07 : matin 3,72 € et soir 3,72 € pour un
+// seul encaissement de 9h).
 export type CaisseLine = 'tpe' | 'amex' | 'especes' | 'ancv' | 'virement';
 export type CaisseShiftAmounts = Record<CaisseLine, number>;
 export type CaissePrefill = { matin: CaisseShiftAmounts; soir: CaisseShiftAmounts };
 
-const ROOFTOP_ACCOUNT_ID_EXCL =
+// Compte « Rooftop 2026 » : cible des charges du POS. Ne sert PLUS à exclure quoi
+// que ce soit de la caisse (cf. getCaissePrefill) — d'où la perte du suffixe _EXCL.
+const ROOFTOP_ACCOUNT_ID =
   process.env.MEWS_ROOFTOP_ACCOUNT_ID || 'd3451171-ce99-42cc-b412-b47c00f8a967';
 
 // ── ÉCRITURE : poster les CHARGES d'une addition Rooftop ─────────────────────
@@ -463,7 +477,7 @@ export async function addRooftopCharges(params: {
   currency?: string;
 }): Promise<{ id: string | null; lines: number }> {
   const { ttc10, ttc20, externalPrefix, currency = 'EUR' } = params;
-  const accountId = params.accountId || ROOFTOP_ACCOUNT_ID_EXCL;
+  const accountId = params.accountId || ROOFTOP_ACCOUNT_ID;
   const Items: Record<string, unknown>[] = [];
   // Une ligne par taux, et seulement si elle porte un montant : une addition
   // 100 % soft ne doit pas poser une ligne à 0 € au taux 20 %.
@@ -508,7 +522,6 @@ export async function getCaissePrefill(dateParis: string): Promise<CaissePrefill
 
   for (const p of data.Payments || []) {
     if (p.State !== 'Charged') continue;
-    if (p.AccountId === ROOFTOP_ACCOUNT_ID_EXCL) continue;   // Rooftop = caisse séparée
     if (!p.ChargedUtc) continue;
     const charged = new Date(p.ChargedUtc);
     if (parisDateStr(charged) !== dateParis) continue;
@@ -529,8 +542,11 @@ export async function getCaissePrefill(dateParis: string): Promise<CaissePrefill
 
     const val = Math.abs(Number(p.Amount?.GrossValue) || 0);
     const h = parisHour(charged);
-    const bucket = h >= 6 && h < 14 ? out.matin : out.soir;
-    bucket[line] += val;
+    // Le soir prend tout ; le matin ne prend que sa tranche. Un encaissement de
+    // 9h compte donc dans les DEUX (cf. en-tête) — ce n'est pas un double-comptage,
+    // chaque shift contrôle le tiroir tel qu'il est à sa clôture.
+    if (h >= 6 && h < 14) out.matin[line] += val;
+    out.soir[line] += val;
   }
   const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
   (['matin', 'soir'] as const).forEach((s) =>

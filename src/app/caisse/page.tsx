@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ThemedBackground } from "@/components/ThemedBackground";
 import { supabase } from "@/lib/supabaseClient";
@@ -126,6 +126,7 @@ function CaissePageInner() {
   const [loading, setLoading] = useState(false);
   const [savingShift, setSavingShift] = useState<ShiftType | null>(null);
   const [prefilling, setPrefilling] = useState(false);
+  const [prefillError, setPrefillError] = useState<string | null>(null);
 
   // Voiles : pas de shift Clôture, mais une ligne TPE AMEX. Ailleurs : l'inverse.
   // Exception : les journées Voiles antérieures ont une Clôture signée en base — on
@@ -340,41 +341,64 @@ function CaissePageInner() {
   }, [shifts, stripeDayNet, shiftTypes, showAmex]);
 
   // Pré-remplit les cases PMS (matin + soir) depuis les encaissements Mews du jour.
-  // LECTURE seule : remplit l'état local, le staff vérifie puis enregistre. Idempotent
-  // (re-cliquable) : chaque clic réécrit les PMS avec l'état Mews courant. N'écrase pas
-  // un shift déjà validé.
-  const prefillFromMews = async () => {
+  // LECTURE seule : remplit l'état local, le staff vérifie puis enregistre — rien
+  // n'est écrit en base sans son clic. Idempotent : chaque passage réécrit les PMS
+  // avec l'état Mews à l'instant T.
+  //
+  // Un shift VALIDÉ n'est jamais retouché : c'est ce qui fige le matin à sa clôture,
+  // pendant que le soir continue de suivre la journée entière (Mews renvoie déjà le
+  // cumul côté serveur, cf. getCaissePrefill).
+  const prefillFromMews = useCallback(async () => {
     if (!hotelId) return;
     setPrefilling(true);
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
-      if (!token) { toast.error("Session expirée"); setPrefilling(false); return; }
+      if (!token) { setPrefillError("Session expirée"); setPrefilling(false); return; }
       const res = await fetch("/api/caisse/mews-prefill", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ hotelId, date: dateJour }),
       });
       const json = await res.json();
-      if (!res.ok || !json.ok) { toast.error(json.error || "Échec du pré-remplissage Mews"); setPrefilling(false); return; }
+      if (!res.ok || !json.ok) { setPrefillError(json.error || "Mews indisponible"); setPrefilling(false); return; }
       const p = json.prefill as { matin: Record<string, number>; soir: Record<string, number> };
-      let filled = 0;
-      (["matin", "soir"] as const).forEach((s) => {
-        if (shifts[s].valide) return; // ne pas écraser un shift validé
-        const a = p[s] || {};
-        updateShift(s, {
-          pms_tpe: a.tpe ?? 0, pms_amex: a.amex ?? 0, pms_especes: a.especes ?? 0,
-          pms_ancv: a.ancv ?? 0, pms_virement: a.virement ?? 0,
+      // setShifts fonctionnel : on lit l'état FRAIS (les shifts viennent d'être
+      // chargés), sans faire dépendre ce callback de `shifts` — ce qui relancerait
+      // l'effet d'auto-prefill en boucle.
+      setShifts((prev) => {
+        const next = { ...prev };
+        (["matin", "soir"] as const).forEach((s) => {
+          if (prev[s].valide) return; // shift signé : intouchable
+          const a = p[s] || {};
+          next[s] = {
+            ...prev[s],
+            pms_tpe: a.tpe ?? 0, pms_amex: a.amex ?? 0, pms_especes: a.especes ?? 0,
+            pms_ancv: a.ancv ?? 0, pms_virement: a.virement ?? 0,
+          };
         });
-        filled++;
+        return next;
       });
+      setPrefillError(null);
       setPrefilling(false);
-      toast.success(filled ? "PMS pré-remplis depuis Mews ✓ — vérifiez et enregistrez" : "Shifts déjà validés, rien à pré-remplir");
     } catch {
       setPrefilling(false);
-      toast.error("Pré-remplissage Mews échoué (réseau)");
+      setPrefillError("Mews injoignable (réseau)");
     }
-  };
+  }, [hotelId, dateJour]);
+
+  // Déclenchement AUTOMATIQUE (le bouton « Pré-remplir » a disparu le 2026-07-30) :
+  // à l'ouverture de la page, puis à chaque changement de date ou d'hôtel. On attend
+  // la fin du chargement des shifts, sinon la lecture en base écraserait ce qu'on
+  // vient de poser. La clé évite de rappeler Mews à chaque re-rendu.
+  const autoPrefillKeyRef = useRef<string>("");
+  useEffect(() => {
+    if (!isVoiles || !hotelId || !dateJour || loading) return;
+    const key = `${hotelId}|${dateJour}`;
+    if (autoPrefillKeyRef.current === key) return;
+    autoPrefillKeyRef.current = key;
+    prefillFromMews();
+  }, [isVoiles, hotelId, dateJour, loading, prefillFromMews]);
 
   // --- Save shift ---
   // signature = dataURL PNG fourni par la modale au moment de la validation.
@@ -612,11 +636,18 @@ function CaissePageInner() {
               <ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
           </div>
+          {/* Plus de bouton : les PMS se remplissent seuls à l'ouverture. Reste un
+              état, sinon des cases se rempliraient sans que personne sache d'où. */}
           {isVoiles && (
-            <button onClick={prefillFromMews} disabled={prefilling} title="Récupère les encaissements Mews du jour dans les cases PMS (matin/soir)"
-              className="inline-flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition disabled:opacity-50">
-              <Download className="w-3.5 h-3.5" /> {prefilling ? "…" : "Pré-remplir (Mews)"}
-            </button>
+            prefillError ? (
+              <span title={prefillError} className="inline-flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
+                <Download className="w-3.5 h-3.5" /> PMS non repris — {prefillError}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium text-slate-500">
+                <Download className="w-3.5 h-3.5" /> {prefilling ? "Lecture Mews…" : "PMS repris de Mews"}
+              </span>
+            )
           )}
           <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium text-slate-700 bg-white border border-slate-200 rounded-md shadow-[0_1px_0_rgba(0,0,0,0.02)] hover:border-slate-300 hover:bg-slate-50 transition">
             <Printer className="w-3.5 h-3.5" /> Imprimer
