@@ -84,6 +84,13 @@ type Payment = { id: string; method: string; amount: number; room_ref: string | 
 type MenuItem = { source: "plat" | "boisson"; ref_id: string | null; nom: string; prix: number; tvaType: TvaType };
 type PayMethod = "cb" | "amex" | "espece" | "chambre";
 
+// Articles facturables au POS mais ABSENTS de la carte publique : ils ne sont
+// ni dans `rooftop_plats` ni dans `wifi_bar`, donc la vitrine ne les voit pas.
+// C'est le seul endroit à toucher pour en ajouter un.
+const POS_EXTRAS: MenuItem[] = [
+  { source: "plat", ref_id: null, nom: "Dessert", prix: 7, tvaType: "food" },
+];
+
 // Récap figé à la clôture. Calculé avec le MÊME moteur TVA que les factures
 // (rooftopTva) — le dupliquer en SQL le ferait diverger.
 type Recap = {
@@ -232,7 +239,7 @@ export function FloorTab({ hotelId, headerSlot }: { hotelId: string; headerSlot?
         if (!barItems.some(b => b.categorie === cat)) continue;
         out.push({ source: "boisson", ref_id: null, nom: `Eat & Drink · ${cat}`, prix: toNum(catPrix[cat]), tvaType: tvaTypeForCategorie(cat, catTva) });
       }
-      setMenu(out);
+      setMenu([...out, ...POS_EXTRAS]);
     });
   }, [hotelId, barSlug]);
 
