@@ -6,7 +6,7 @@
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { categorieParNumero } from '@/lib/mewsBlocks';
-import { creerResaGroupe, noteGroupe, poserNoteGroupe } from '@/lib/mewsGroupResa';
+import { creerResaGroupe, noteGroupe, poserNoteGroupe, poserPdjGroupe } from '@/lib/mewsGroupResa';
 import { callMews } from '@/lib/mews';
 
 const VOILES = 'ded6e6fb-ff3c-4fa8-ad07-403ee316be53';
@@ -14,12 +14,13 @@ const VOILES = 'ded6e6fb-ff3c-4fa8-ad07-403ee316be53';
 export type PushResult = {
   skipped?: string;
   reservationId?: string; customerId?: string; noteId?: string | null; note?: string;
+  pdjLignes?: number;
 };
 
 export async function pushGroupeResaToMews(id: string): Promise<PushResult> {
   const { data: r } = await supabaseAdmin
     .from('groupe_reservations')
-    .select('id, groupe_id, groupe_chambre_id, statut, nom, prenom, email, tel, date_arrivee, date_depart, config_lit, nb_personnes, mews_reservation_id')
+    .select('id, groupe_id, groupe_chambre_id, statut, nom, prenom, email, tel, date_arrivee, date_depart, config_lit, nb_personnes, pdj_nuits, pdj_prix_unitaire, mews_reservation_id')
     .eq('id', id).single();
   if (!r) return { skipped: 'réservation introuvable' };
   if (r.mews_reservation_id) return { skipped: 'déjà dans Mews' };
@@ -57,6 +58,25 @@ export async function pushGroupeResaToMews(id: string): Promise<PushResult> {
     .update({ mews_reservation_id: reservationId, mews_customer_id: customerId, pms_done: true })
     .eq('id', r.id);
 
+  // Petit-déjeuner : une ligne par matin retenu, au tarif négocié du groupe. Posé
+  // APRÈS avoir consigné la réservation — si Mews refuse la conso, on ne rejoue pas
+  // la création (ce qui ferait un doublon de chambre pour un petit-déjeuner).
+  const pdjNuits = ((r.pdj_nuits as string[] | null) || []);
+  const pdjPrix = r.pdj_prix_unitaire != null ? Number(r.pdj_prix_unitaire) : 0;
+  let pdjLignes = 0;
+  if (pdjNuits.length) {
+    try {
+      pdjLignes = await poserPdjGroupe({
+        accountId: customerId, nuits: pdjNuits, nbPersonnes: nbPers,
+        prixUnitaire: pdjPrix, reference: String(r.id).slice(0, 8),
+      });
+    } catch (e) {
+      // La réception le verra dans la note et le saisira à la main : mieux vaut une
+      // réservation posée sans son petit-déjeuner qu'un push qui échoue en entier.
+      console.error('petit-déjeuner non posé dans Mews', r.id, e instanceof Error ? e.message : e);
+    }
+  }
+
   // Le nom lisible de la catégorie, pour que la note dise « confort » et non un GUID.
   let categorieNom = '';
   try {
@@ -80,6 +100,9 @@ export async function pushGroupeResaToMews(id: string): Promise<PushResult> {
   const note = noteGroupe({
     categorieNom, groupeNom: String(g.nom),
     paye,
+    // La note dit ce qui a été VRAIMENT posé : si l'appel a échoué, elle annonce le
+    // petit-déjeuner comme restant à saisir plutôt que de le passer sous silence.
+    pdjMatins: pdjNuits.length, pdjPose: pdjLignes > 0, pdjPrix,
     tsMode: (g.taxe_sejour_mode as 'incluse' | 'ajoutee' | null) ?? null,
     tsMontant: g.taxe_sejour_montant != null ? Number(g.taxe_sejour_montant) : null,
     nuits, nbPersonnes: nbPers, configLit: r.config_lit as string | null,
@@ -87,5 +110,5 @@ export async function pushGroupeResaToMews(id: string): Promise<PushResult> {
   const noteId = await poserNoteGroupe(reservationId, note).catch(() => null);
   if (noteId) await supabaseAdmin.from('groupe_reservations').update({ mews_note_id: noteId }).eq('id', r.id);
 
-  return { reservationId, customerId, noteId, note };
+  return { reservationId, customerId, noteId, note, pdjLignes };
 }

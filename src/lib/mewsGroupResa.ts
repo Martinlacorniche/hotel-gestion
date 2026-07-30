@@ -91,10 +91,46 @@ export async function creerResaGroupe(i: InviteGroupe): Promise<{ customerId: st
 // La note de contrôle d'une résa de groupe. Même grammaire que celle des OTA
 // (cf otaResa.controlNote) pour que la réception lise la même chose partout :
 //   #<chambre> GROUPE <nom> # / <règlement> <taxe> <variables>
+// ── Petit-déjeuner choisi par l'invité ──────────────────────────────────────
+// Une ligne PAR NUIT retenue, jamais un forfait : l'invité coche les matins qu'il
+// veut, et Mews doit refléter exactement ça. C'est aussi la forme que prennent
+// déjà les petits-déjeuners de l'hôtel — vérifié sur 45 jours de `orderItems` :
+// une ligne = 1 personne × 1 nuit, 14 €, catégorie comptable ed5c4322.
+//
+// Produit retenu : le « Petit-déjeuner » GÉNÉRIQUE du service Hébergement. Les
+// deux autres du même service sont étiquetés OTA (agences) et BB (tarif incluant
+// le petit-déjeuner) — un groupe en direct n'est ni l'un ni l'autre. Les trois
+// partagent prix et catégorie comptable, donc l'étiquette ne change que l'origine.
+//
+// ⚠️ Le montant est FORCÉ au tarif négocié du groupe (UnitAmount), sinon Mews
+// appliquerait ses 14 € par défaut — pas les 10 € consentis à ce mariage.
+const PDJ_PRODUCT_ID = process.env.MEWS_PDJ_PRODUCT_ID || '89de9f7f-fec7-426f-af42-ab7a01255de7';
+
+export async function poserPdjGroupe(p: {
+  accountId: string;        // le profil client créé pour la réservation
+  nuits: string[];          // nuits cochées ('YYYY-MM-DD') — la nuit N = le matin N+1
+  nbPersonnes: number;
+  prixUnitaire: number;     // par personne et par nuit, tarif du groupe pour cet hôtel
+  reference: string;        // pour retrouver la ligne dans Mews
+}): Promise<number> {
+  if (!p.nuits.length || p.nbPersonnes < 1) return 0;
+  const Items = p.nuits.map((nuit) => ({
+    ProductId: PDJ_PRODUCT_ID,
+    UnitCount: p.nbPersonnes,
+    ConsumedUtc: instantParis(nuit, 9),
+    ExternalIdentifier: `${p.reference}-pdj-${nuit}`,
+    UnitAmount: { Currency: 'EUR', GrossValue: p.prixUnitaire },
+  }));
+  await callMews('orders/add', { ServiceId: SERVICE_ID, AccountId: p.accountId, Items });
+  return Items.length;
+}
+
 export function noteGroupe(p: {
   categorieNom: string; groupeNom: string;
   paye: boolean; tsMode: 'incluse' | 'ajoutee' | null; tsMontant: number | null;
   nuits: number; nbPersonnes: number; configLit?: string | null;
+  // Petit-déjeuner : combien de matins, et a-t-il pu être posé dans Mews ?
+  pdjMatins?: number; pdjPose?: boolean; pdjPrix?: number;
 }): string {
   const chambre = (p.categorieNom || '').toLowerCase()
     .replace(/^chambre\s+/, '').replace(/\s*-\s*/, ' ').trim();
@@ -109,7 +145,19 @@ export function noteGroupe(p: {
     const montant = total ? ` ${total.toFixed(2).replace('.', ',')}€` : '';
     taxe = p.paye ? `TS prépayée${montant}` : `RSP TS${montant}`;
   }
+  // Petit-déjeuner : la réception doit savoir combien de couverts préparer, et
+  // surtout si la conso a bien été posée. Non posée = à saisir à la main, dit en
+  // toutes lettres plutôt que passé sous silence.
+  let pdj = '';
+  if (p.pdjMatins && p.pdjMatins > 0) {
+    const couverts = p.pdjMatins * Math.max(1, p.nbPersonnes);
+    const prix = p.pdjPrix ? ` à ${p.pdjPrix.toFixed(2).replace('.', ',')}€` : '';
+    pdj = p.pdjPose
+      ? `PDJ ${p.pdjMatins} matin${p.pdjMatins > 1 ? 's' : ''} (${couverts} couverts)`
+      : `PDJ ${p.pdjMatins} matin${p.pdjMatins > 1 ? 's' : ''}${prix} À SAISIR`;
+  }
   const variables = [
+    pdj || null,
     p.configLit ? String(p.configLit).toLowerCase() : null,
     p.nbPersonnes > 1 ? `${p.nbPersonnes} pers` : null,
   ].filter(Boolean).join(' · ');
