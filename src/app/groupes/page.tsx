@@ -33,6 +33,10 @@ interface RoomType {
   id: string;
   hotel_id: string;
   nom: string;
+  // Libellés traduits pour la page publique des groupes (migration 110).
+  // null → la page invité retombe sur `nom`.
+  nom_en?: string | null;
+  nom_es?: string | null;
   ordre: number;
   active: boolean;
 }
@@ -1741,19 +1745,29 @@ function ChambresTab({
 
   // --- Type form ---
   const [typeNom, setTypeNom] = useState('');
+  // Libellés traduits (migration 110) : la page publique des groupes parle FR/EN/ES,
+  // mais ces titres-là sont saisis ici — ils ne peuvent pas venir d'un dictionnaire.
+  const [typeNomEn, setTypeNomEn] = useState('');
+  const [typeNomEs, setTypeNomEs] = useState('');
   const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
 
   async function saveType(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedHotelId || !typeNom.trim()) return;
     if (editingTypeId) {
-      const { error } = await supabase.from('room_types').update({ nom: typeNom.trim() }).eq('id', editingTypeId);
+      const { error } = await supabase.from('room_types')
+        .update({ nom: typeNom.trim(), nom_en: typeNomEn.trim() || null, nom_es: typeNomEs.trim() || null })
+        .eq('id', editingTypeId);
       if (error) return toast.error(error.message);
     } else {
-      const { error } = await supabase.from('room_types').insert({ hotel_id: selectedHotelId, nom: typeNom.trim(), ordre: typesHotel.length });
+      const { error } = await supabase.from('room_types').insert({
+        hotel_id: selectedHotelId, nom: typeNom.trim(),
+        nom_en: typeNomEn.trim() || null, nom_es: typeNomEs.trim() || null,
+        ordre: typesHotel.length,
+      });
       if (error) return toast.error(error.message);
     }
-    setTypeNom(''); setEditingTypeId(null);
+    setTypeNom(''); setTypeNomEn(''); setTypeNomEs(''); setEditingTypeId(null);
     await onChanged();
   }
 
@@ -1762,7 +1776,7 @@ function ChambresTab({
     if (!ok) return;
     const { error } = await supabase.from('room_types').delete().eq('id', rt.id);
     if (error) return toast.error(error.message);
-    if (editingTypeId === rt.id) { setEditingTypeId(null); setTypeNom(''); }
+    if (editingTypeId === rt.id) { setEditingTypeId(null); setTypeNom(''); setTypeNomEn(''); setTypeNomEs(''); }
     await onChanged();
   }
 
@@ -1837,10 +1851,25 @@ function ChambresTab({
           <Card>
             <CardContent className="p-5">
               <h2 className="font-semibold text-slate-800 mb-3 flex items-center gap-2"><Plus className="w-4 h-4" /> Types (libellés)</h2>
-              <form onSubmit={saveType} className="flex gap-2 mb-3">
-                <input value={typeNom} onChange={e => setTypeNom(e.target.value)} placeholder="Double, Suite…"
-                  className="flex-1 border rounded-lg px-3 h-10 text-sm bg-white" />
-                <Button type="submit" size="sm" className="h-10">{editingTypeId ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}</Button>
+              <form onSubmit={saveType} className="space-y-2 mb-3">
+                <div className="flex gap-2">
+                  <input value={typeNom} onChange={e => setTypeNom(e.target.value)} placeholder="Double, Suite…"
+                    className="flex-1 border rounded-lg px-3 h-10 text-sm bg-white" />
+                  <Button type="submit" size="sm" className="h-10">{editingTypeId ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}</Button>
+                </div>
+                {/* Le libellé part tel quel sur la page invité : sans traduction, un
+                    Espagnol lit « Confort, étage, vue ville » au milieu d'une page
+                    espagnole. Vide = repli sur le français. */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-5 shrink-0">EN</span>
+                  <input value={typeNomEn} onChange={e => setTypeNomEn(e.target.value)} placeholder="Comfort, Upper Floor, City View"
+                    className="flex-1 border rounded-lg px-3 h-9 text-sm bg-white italic text-slate-600" />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-5 shrink-0">ES</span>
+                  <input value={typeNomEs} onChange={e => setTypeNomEs(e.target.value)} placeholder="Confort, Planta Alta, Vistas a la Ciudad"
+                    className="flex-1 border rounded-lg px-3 h-9 text-sm bg-white italic text-slate-600" />
+                </div>
               </form>
               {typesHotel.length === 0 ? (
                 <p className="text-sm text-slate-400">Aucun type. Ex : Double, Twin, Suite.</p>
@@ -1848,9 +1877,20 @@ function ChambresTab({
                 <ul className="space-y-1.5">
                   {typesHotel.map(rt => (
                     <li key={rt.id} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${editingTypeId === rt.id ? 'border-rose-300 bg-rose-50/40' : 'border-slate-200'}`}>
-                      <span className="text-sm font-medium text-slate-700">{rt.nom}</span>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => { setEditingTypeId(rt.id); setTypeNom(rt.nom); }} className="text-slate-300 hover:text-rose-600" title="Modifier"><Pencil className="w-3.5 h-3.5" /></button>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-slate-700 truncate">{rt.nom}</span>
+                        {/* Une catégorie sans traduction s'affichera en français sur la
+                            page invité : autant que ça se voie ici. */}
+                        {(rt.nom_en || rt.nom_es) ? (
+                          <span className="block text-[11px] text-slate-400 truncate italic">
+                            {rt.nom_en || '—'} · {rt.nom_es || '—'}
+                          </span>
+                        ) : (
+                          <span className="block text-[11px] text-amber-600">non traduit</span>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => { setEditingTypeId(rt.id); setTypeNom(rt.nom); setTypeNomEn(rt.nom_en || ''); setTypeNomEs(rt.nom_es || ''); }} className="text-slate-300 hover:text-rose-600" title="Modifier"><Pencil className="w-3.5 h-3.5" /></button>
                         <button onClick={() => deleteType(rt)} className="text-slate-300 hover:text-rose-600" title="Supprimer"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </li>
