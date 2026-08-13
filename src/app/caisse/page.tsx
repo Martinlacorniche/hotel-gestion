@@ -327,8 +327,28 @@ function CaissePageInner() {
   const dayTotals = useMemo(() => {
     // Seuls les shifts de l'hôtel comptent (pas de Clôture aux Voiles), et l'Amex
     // n'entre dans le total que là où la ligne existe.
-    const sum = (k: keyof CaisseShift) =>
-      shiftTypes.reduce((acc, s) => acc + (shifts[s][k] as number || 0), 0);
+    //
+    // ⚠️ Aux Voiles, depuis le 2026-07-30, les shifts CUMULENT : le soir porte
+    // TOUTE la journée, matin compris (logique du tiroir, on ne le vide pas à
+    // midi). Les additionner comptait donc le matin DEUX FOIS — le 09/08 le
+    // bandeau annonçait 1 534,96 € pour 863,48 € encaissés. On prend désormais
+    // la valeur du DERNIER shift renseigné, qui est déjà le total du jour.
+    //
+    // Partout ailleurs — La Corniche et ses trois shifts, dont Clôture — on somme
+    // comme avant : leur mode de remplissage (par tranche ou en cumul) n'est pas
+    // établi, et leur PMS est Hotsoft, qu'on ne voit pas d'ici. À trancher avec
+    // Martin avant d'y toucher.
+    const cumulatif = isVoiles && dateJour >= "2026-07-30";
+    const sum = (k: keyof CaisseShift) => {
+      if (!cumulatif) return shiftTypes.reduce((acc, s) => acc + (shifts[s][k] as number || 0), 0);
+      // Dernier shift porteur d'un montant : le soir écrase le matin dès qu'il est
+      // rempli, et une journée encore en cours reste sur son matin.
+      for (let i = shiftTypes.length - 1; i >= 0; i--) {
+        const v = (shifts[shiftTypes[i]][k] as number) || 0;
+        if (v) return v;
+      }
+      return 0;
+    };
     const amex = (k: "pms_amex" | "reel_amex") => (showAmex ? sum(k) : 0);
     // Stripe = encaissement du jour, compté UNE SEULE FOIS (pas par shift).
     const totalReel = sum("reel_tpe") + amex("reel_amex") + sum("reel_especes") + sum("reel_ancv") + sum("reel_virement") + stripeDayNet;
@@ -338,7 +358,7 @@ function CaissePageInner() {
       totalPms: round2(totalPms),
       ecart: round2(totalReel - totalPms),
     };
-  }, [shifts, stripeDayNet, shiftTypes, showAmex]);
+  }, [shifts, stripeDayNet, shiftTypes, showAmex, isVoiles, dateJour]);
 
   // Pré-remplit les cases PMS (matin + soir) depuis les encaissements Mews du jour.
   // LECTURE seule : remplit l'état local, le staff vérifie puis enregistre — rien
