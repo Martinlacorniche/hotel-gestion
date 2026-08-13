@@ -350,7 +350,12 @@ export async function getMonthlyRevenue(now: Date = new Date(), horizon = 6): Pr
 // Le paiement se rattache à un compte Mews (AccountId), pas à une note précise.
 // Vérifié en prod le 2026-07-04 (scope écriture ouvert). Cf. mémoire
 // project_mews_occupancy / project_rooftop_pos_resa.
-export type MewsExternalPaymentType = 'Cash' | 'CreditCard' | 'Amex';
+//
+// 'OnlinePayment' = l'argent est chez un PSP (Stripe, ou la borne Hospismart),
+// PAS sur le TPE de la banque ni dans le tiroir. Type vérifié accepté par
+// addExternal le 2026-08-13 (sonde à AccountId bidon : « Invalid AccountId »,
+// donc le type passe ; un type inconnu répond « Invalid JSON »).
+export type MewsExternalPaymentType = 'Cash' | 'CreditCard' | 'Amex' | 'OnlinePayment';
 
 export async function addExternalPayment(params: {
   accountId: string;
@@ -396,15 +401,18 @@ export async function pushPaymentToMews(paymentId: string): Promise<{ id: string
   const amount = Number(p.amount);
   if (!(amount > 0)) return { id: null, skipped: 'montant invalide' };
 
-  const type: MewsExternalPaymentType =
-    ({ cb: 'CreditCard', carte: 'CreditCard', tpe: 'CreditCard', amex: 'Amex', espece: 'Cash' } as const)[
-      String(p.method || 'cb').toLowerCase() as 'cb'
-    ] ?? 'CreditCard';
+  // TOUJOURS 'OnlinePayment' : que le client ait payé au Terminal Stripe du
+  // comptoir (`method: 'tpe'`) ou par lien de paiement, l'argent tombe chez
+  // Stripe — jamais sur le TPE bancaire. On l'a écrit en 'CreditCard' jusqu'au
+  // 2026-08-13, et la réception a requalifié À LA MAIN les DEUX seuls push
+  // (31/07 et 12/08) : contre-passation puis re-saisie en « paiement en ligne ».
+  // C'est aussi le type que pose la borne Hospismart, donc la caisse reste juste
+  // — 'CreditCard' gonflait la ligne TPE d'un encaissement qui n'y était pas.
 
   const { id } = await addExternalPayment({
     accountId: p.mews_customer_id,
     grossValue: amount,
-    type,
+    type: 'OnlinePayment',
     currency: (p.currency || 'EUR').toUpperCase(),
     externalIdentifier: p.stripe_payment_intent_id || p.id,
     notes: `Encaissement ${p.client_nom || ''}${p.description ? ' · ' + p.description : ''}`.trim(),
@@ -537,10 +545,19 @@ export async function getCaissePrefill(dateParis: string): Promise<CaissePrefill
         case 'WireTransfer': line = 'virement'; break;
       }
     }
-    // CreditCardPayment (VCC / en ligne) et types inconnus → ignorés.
+    // CreditCardPayment (VCC / en ligne), OnlinePayment (borne Hospismart, nos
+    // encaissements Stripe) et types inconnus → ignorés : cet argent est chez un
+    // PSP, il n'est ni dans le tiroir ni sur le TPE que la réception compte.
     if (!line) continue;
 
-    const val = Math.abs(Number(p.Amount?.GrossValue) || 0);
+    // Le SIGNE porte le sens : Mews stocke un encaissement en NÉGATIF et une
+    // annulation (contre-passation) en POSITIF. On prenait la valeur absolue
+    // jusqu'au 2026-08-13 — une annulation s'AJOUTAIT donc au lieu de s'annuler.
+    // Mesuré le 12/08 : ligne TPE pré-remplie à 469,20 € pour 144,30 € réels,
+    // parce qu'un encaissement de 162,45 € et son annulation comptaient tous
+    // deux en positif. On somme désormais en signé : une annulation vient en
+    // déduction, comme dans le tiroir.
+    const val = -(Number(p.Amount?.GrossValue) || 0);
     const h = parisHour(charged);
     // Le soir prend tout ; le matin ne prend que sa tranche. Un encaissement de
     // 9h compte donc dans les DEUX (cf. en-tête) — ce n'est pas un double-comptage,
