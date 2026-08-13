@@ -12,6 +12,9 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 SCRIPT="${1:-sweep-read.mjs}"
+# Le reste de la ligne de commande appartient à la sonde : `certif.mjs` s'en
+# sert pour cibler un onglet ou un test précis pendant la visio de certification.
+shift || true
 
 if [ ! -f .env.hotsoft-demo ]; then
   echo "REFUS : .env.hotsoft-demo introuvable (identifiants du bac à sable)." >&2
@@ -22,4 +25,4 @@ fi
   --outDir scripts/hotsoft-certif/.build \
   --module esnext --target es2022 --moduleResolution bundler --skipLibCheck
 
-exec node --env-file=.env.hotsoft-demo "scripts/hotsoft-certif/$SCRIPT"
+exec node --env-file=.env.hotsoft-demo "scripts/hotsoft-certif/$SCRIPT" "$@"
