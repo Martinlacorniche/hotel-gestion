@@ -6,7 +6,10 @@
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "certif": "bash scripts/hotsoft-certif/run.sh certif.mjs",
+    "certif:list": "bash scripts/hotsoft-certif/run.sh certif.mjs --list",
+    "hotsoft:sweep": "bash scripts/hotsoft-certif/run.sh sweep-read.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
