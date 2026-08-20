@@ -21,7 +21,7 @@ import {
   PaintRoller, DoorClosed, PlugZap, Plus, Calendar,
   CheckCircle, AlertCircle, Clock, Euro, ArrowRight, Trash2, Edit2,
   LayoutGrid, List, History, MessageCircle, Send, XCircle,
-  Snowflake, Sun, Zap, Search, Sparkles, Flower2, Package, Flame, Timer
+  Snowflake, Sun, Zap, Search, Sparkles, Flower2, Package, Flame, Timer, Undo2
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
@@ -603,7 +603,7 @@ function MaintenancePageInner() {
   };
 
   const undoEntretien = async (e: EntretienEvent) => {
-    if (!(await confirmDialog('Supprimer ce pointage ?'))) return;
+    if (!(await confirmDialog(`Supprimer le pointage du ${toFr(e.date_event)} ?`))) return;
     const { error } = await supabase.from('entretien_evenements').delete().eq('id', e.id);
     if (error) { toast.error('Erreur suppression : ' + error.message); return; }
     setEntretienEvts(prev => prev.filter(x => x.id !== e.id));
@@ -905,6 +905,7 @@ function MaintenancePageInner() {
                                         t={t}
                                         evts={evtsParTache.get(t.id) || []}
                                         onLog={() => logEntretien(t)}
+                                        onUndo={undoEntretien}
                                         onAutreDate={() => setEntretienLog(t)}
                                         onHisto={() => setEntretienHisto(t)}
                                         onEdit={isAdmin ? () => setEntretienEdit(t) : undefined}
@@ -1441,10 +1442,11 @@ function ClimEditModal({ initial, ROOM_OPTIONS, onCancel, onSave }: { initial: C
 
 // Une carte = une tâche. Gros bouton (le geste de tous les jours) + le rythme
 // réel juste à côté (« tous les combien on arrose »).
-function EntretienCard({ t, evts, onLog, onAutreDate, onHisto, onEdit, onDelete }: {
+function EntretienCard({ t, evts, onLog, onUndo, onAutreDate, onHisto, onEdit, onDelete }: {
   t: EntretienTache;
   evts: EntretienEvent[];
   onLog: () => Promise<void> | void;
+  onUndo: (e: EntretienEvent) => void;
   onAutreDate: () => void;
   onHisto: () => void;
   onEdit?: () => void;
@@ -1456,6 +1458,12 @@ function EntretienCard({ t, evts, onLog, onAutreDate, onHisto, onEdit, onDelete 
   const [busy, setBusy] = useState(false);
 
   const unite = (n: number) => (n > 1 ? t.unite_pluriel : t.unite_singulier);
+
+  // Nombre de clics par jour : deux passages le même jour doivent se voir.
+  const clicsParJour = new Map<string, number>();
+  evts.forEach(e => clicsParJour.set(e.date_event, (clicsParJour.get(e.date_event) || 0) + 1));
+  // « Le dernier clic » = le dernier SAISI, pas la date la plus récente.
+  const dernierSaisi = evts.slice().sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0];
 
   const click = async () => {
     if (busy) return;
@@ -1504,10 +1512,21 @@ function EntretienCard({ t, evts, onLog, onAutreDate, onHisto, onEdit, onDelete 
       >
         <Plus className="w-5 h-5" />
         {t.verbe}
-        {st.qteAujourdhui > 0 && (
-          <span className="text-[11px] font-bold opacity-80">· {nbFr(st.qteAujourdhui)} aujourd'hui</span>
-        )}
       </button>
+
+      {/* Clic de trop : on annule sans aller chercher l'historique */}
+      {st.qteAujourdhui > 0 && dernierSaisi && (
+        <div className="flex items-center justify-center gap-2 -mt-2 text-[11px] font-bold text-slate-400 flex-wrap">
+          <span>{nbFr(st.qteAujourdhui)} {unite(st.qteAujourdhui)} aujourd'hui</span>
+          <span className="text-slate-300">·</span>
+          <button
+            onClick={() => onUndo(dernierSaisi)}
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-red-500 hover:text-red-600 hover:bg-red-50 transition"
+          >
+            <Undo2 className="w-3.5 h-3.5" /> Annuler le dernier
+          </button>
+        </div>
+      )}
 
       {/* Le rythme */}
       <div className="grid grid-cols-3 gap-2">
@@ -1536,11 +1555,14 @@ function EntretienCard({ t, evts, onLog, onAutreDate, onHisto, onEdit, onDelete 
       {/* Les derniers passages, en clair */}
       {st.dates.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {st.dates.slice(0, 6).map(d => (
-            <span key={d} className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 rounded-md px-1.5 py-0.5">
-              {toFr(d)}
-            </span>
-          ))}
+          {st.dates.slice(0, 6).map(d => {
+            const n = clicsParJour.get(d) || 1;
+            return (
+              <span key={d} className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 rounded-md px-1.5 py-0.5">
+                {toFr(d)}{n > 1 && <span className="text-[var(--brand)]"> ×{n}</span>}
+              </span>
+            );
+          })}
         </div>
       )}
 
@@ -1611,6 +1633,11 @@ function EntretienHistoModal({ t, evts, onDelete, onClose }: {
   }, [evts]);
   const maxMois = parMois.reduce((m, [, v]) => Math.max(m, v), 0) || 1;
 
+  // Deux pointages le même jour : on affiche l'heure, sinon les lignes sont
+  // indiscernables et on ne sait pas laquelle supprimer.
+  const clicsParJour = new Map<string, number>();
+  evts.forEach(e => clicsParJour.set(e.date_event, (clicsParJour.get(e.date_event) || 0) + 1));
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
@@ -1650,8 +1677,11 @@ function EntretienHistoModal({ t, evts, onDelete, onClose }: {
             <div className="space-y-1">
               {evts.map(e => (
                 <div key={e.id} className="group/line flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition">
-                  <span className="w-24 shrink-0 text-sm font-bold text-slate-700">
+                  <span className="w-28 shrink-0 text-sm font-bold text-slate-700">
                     {dfFormat(new Date(`${e.date_event}T12:00:00`), 'd MMM yyyy', { locale: frLocale })}
+                    {(clicsParJour.get(e.date_event) || 1) > 1 && e.created_at && (
+                      <span className="ml-1 text-[11px] font-bold text-slate-400">{dfFormat(new Date(e.created_at), 'HH:mm')}</span>
+                    )}
                   </span>
                   <span className={`shrink-0 text-xs font-bold ${c.text}`}>
                     {nbFr(Number(e.quantite))} {Number(e.quantite) > 1 ? t.unite_pluriel : t.unite_singulier}
@@ -1659,8 +1689,8 @@ function EntretienHistoModal({ t, evts, onDelete, onClose }: {
                   <span className="flex-1 min-w-0 truncate text-xs text-slate-400">
                     {e.auteur || '—'}{e.commentaire ? ` · ${e.commentaire}` : ''}
                   </span>
-                  <button onClick={() => onDelete(e)} className="shrink-0 p-1 text-slate-300 hover:text-red-600 opacity-100 lg:opacity-0 group-hover/line:opacity-100 transition" title="Supprimer ce pointage">
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <button onClick={() => onDelete(e)} className="shrink-0 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition" title="Supprimer ce pointage" aria-label="Supprimer ce pointage">
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               ))}
