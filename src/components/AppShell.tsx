@@ -265,18 +265,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Switch hôtel : on identifie l'outil de la page courante pour griser l'hôtel
   // où cette page n'existe pas (ex. Clim → Voiles seulement) sur la bascule directe.
   const allTools = [...TOOLS, ...Object.values(TOOL_CHILDREN).flat()];
-  const currentTool = allTools.find((t) => { const b = basePath(t); return b !== '/' && pathname.startsWith(b); });
+  // Une même page peut être rangée à deux endroits selon l'hôtel (ex. Wifi Client :
+  // dans « Clients » à La Corniche, dans « Technique » aux Voiles) → on regarde
+  // TOUTES les entrées qui pointent la page courante, pas seulement la première.
+  const currentTools = allTools.filter((t) => { const b = basePath(t); return b !== '/' && pathname.startsWith(b); });
   const hotelInitial = (h: { nom?: string }) => {
     const words = (h.nom || '').trim().split(/\s+/);
     return (words[words.length - 1] || '?')[0]?.toUpperCase() || '?';
   };
   const hotelAvailable = (h: Record<string, unknown>) => {
-    if (!currentTool?.condition) return true;
+    if (currentTools.length === 0) return true;
     const n = String(h.nom || '').toLowerCase();
-    return isToolVisible(currentTool, {
+    const hCtx: ToolVisibilityCtx = {
       hasParking: !!h.has_parking, hasCoworking: !!h.has_coworking,
       isCorniche: n.includes('corniche'), isVoiles: n.includes('voiles'), isSuperadmin, isAdmin,
-    });
+    };
+    return currentTools.some((t) => isToolVisible(t, hCtx));
   };
 
   const curHotel = hotels.find((h) => h.id === selectedHotelId) || hotels[0];

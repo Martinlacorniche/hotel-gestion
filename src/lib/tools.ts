@@ -56,7 +56,9 @@ export const THUNE_CHILDREN: ToolDef[] = [
 export const TECHNIQUE_CHILDREN: ToolDef[] = [
   { id: 'maintenance', label: 'Maintenance', href: '/maintenance', icon: Wrench,  bg: 'bg-yellow-50', text: 'text-yellow-700' },
   { id: 'chromecast',  label: 'Chromecasts', href: '/chromecast',  icon: Tv2,     bg: 'bg-slate-100', text: 'text-slate-700', condition: 'corniche' },
-  { id: 'wifi-admin',  label: 'Wifi Client', href: '/wifi-admin',  icon: Wifi,    bg: 'bg-sky-50',    text: 'text-sky-700' },
+  // Wifi client : à La Corniche c'est un service au client (→ menu « Clients ») ;
+  // aux Voiles il reste rangé avec la technique.
+  { id: 'wifi-admin',  label: 'Wifi Client', href: '/wifi-admin',  icon: Wifi,    bg: 'bg-sky-50',    text: 'text-sky-700',   condition: 'voiles' },
   { id: 'clim',        label: 'Clim',        href: '/clim',        icon: Wind,    bg: 'bg-sky-50',    text: 'text-sky-700',   condition: 'voiles' },
   { id: 'ecran',       label: 'Écran',       href: '/ecran',       icon: Monitor, bg: 'bg-slate-100', text: 'text-slate-700', condition: 'superadmin' },
 ];
@@ -83,6 +85,7 @@ export const CLIENTS_CHILDREN: ToolDef[] = [
   { id: 'fidelite',    label: 'Co-Work',    href: '/fidelite',    icon: Stamp,   bg: 'bg-purple-50', text: 'text-purple-700', condition: 'coworking' },
   { id: 'objets-pret', label: 'Curiosités', href: '/objets-pret', icon: Package, bg: 'bg-amber-50',  text: 'text-amber-700',  condition: 'corniche' },
   { id: 'parfums',     label: 'Parfums',    href: '/parfums',     icon: Flower2, bg: 'bg-rose-50',   text: 'text-rose-700',   condition: ['corniche', 'superadmin'] },
+  { id: 'wifi-client', label: 'Wifi Client', href: '/wifi-admin', icon: Wifi,   bg: 'bg-sky-50',    text: 'text-sky-700',    condition: 'corniche' },
 ];
 
 // Hubs ayant un sous-menu déroulant dans la sidebar (id de l'outil → enfants).

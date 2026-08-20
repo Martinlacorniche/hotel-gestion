@@ -17,7 +17,8 @@ type TechTool = {
 const TOOLS: TechTool[] = [
   { id: "maintenance", label: "Maintenance", desc: "Tickets & interventions techniques", href: "/maintenance", icon: Wrench, bg: "bg-yellow-50", text: "text-yellow-700", cond: "always" },
   { id: "chromecast", label: "Chromecasts", desc: "Pilotage des Chromecasts des chambres", href: "/chromecast", icon: Tv2, bg: "bg-slate-100", text: "text-slate-700", cond: "corniche" },
-  { id: "wifi-admin", label: "Wifi Client", desc: "Réseau & portail invité", href: "/wifi-admin", icon: Wifi, bg: "bg-sky-50", text: "text-sky-700", cond: "always" },
+  // À La Corniche, le wifi client vit dans le menu « Clients » (cf. src/lib/tools.ts).
+  { id: "wifi-admin", label: "Wifi Client", desc: "Réseau & portail invité", href: "/wifi-admin", icon: Wifi, bg: "bg-sky-50", text: "text-sky-700", cond: "voiles" },
   { id: "clim", label: "Clim", desc: "Journal des incidents climatisation", href: "/clim", icon: Wind, bg: "bg-sky-50", text: "text-sky-700", cond: "voiles" },
   { id: "ecran", label: "Écran", desc: "Messages sur l'écran SmallTV", href: "/ecran", icon: Monitor, bg: "bg-slate-100", text: "text-slate-700", cond: "superadmin" },
 ];
