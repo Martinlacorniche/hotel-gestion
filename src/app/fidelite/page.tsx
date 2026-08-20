@@ -159,16 +159,31 @@ export default function FidelitePage() {
     .filter((c) => `${c.nom} ${c.prenom}`.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }));
 
-  // Abonnements en cours (date de fin >= aujourd'hui), triés par échéance la plus proche
+  // Abonnements, répartis en trois paquets : ceux qui roulent, ceux qui arrivent
+  // à échéance (à relancer), et les expirés récents (ceux qu'on peut encore
+  // rattraper — au-delà d'un mois, le client est parti, on ne l'affiche plus).
+  // Règles fixées par la direction : 5 jours avant / 30 jours après.
   const todayStr = new Date().toISOString().split('T')[0];
-  const abosEnCours = allAbos
-    .filter((a) => a.date_fin && a.date_fin >= todayStr)
+  const SEUIL_BIENTOT = 5;   // j avant échéance = « arrive à expiration »
+  const SEUIL_EXPIRE = 30;   // j après échéance = encore affiché comme « expiré »
+  const aboRows = allAbos
+    .filter((a) => a.date_fin)
     .map((a) => {
       const client = clients.find((c) => c.id === a.client_id);
       const joursRestants = Math.ceil((new Date(a.date_fin).getTime() - new Date(todayStr).getTime()) / 86400000);
       return { ...a, client, joursRestants };
-    })
+    });
+
+  const abosEnCours = aboRows
+    .filter((a) => a.joursRestants > SEUIL_BIENTOT)
     .sort((a, b) => a.date_fin.localeCompare(b.date_fin));
+  const abosBientot = aboRows
+    .filter((a) => a.joursRestants >= 0 && a.joursRestants <= SEUIL_BIENTOT)
+    .sort((a, b) => a.date_fin.localeCompare(b.date_fin));
+  const abosExpires = aboRows
+    .filter((a) => a.joursRestants < 0 && a.joursRestants >= -SEUIL_EXPIRE)
+    .sort((a, b) => b.date_fin.localeCompare(a.date_fin));
+  const abosActifs = abosEnCours.length + abosBientot.length;
 
   return (
     <div className="flex h-screen font-sans overflow-hidden text-slate-900">
@@ -459,44 +474,61 @@ export default function FidelitePage() {
                             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-violet-50 text-violet-500 mb-4 ring-4 ring-violet-50/50">
                                 <CalendarClock className="w-8 h-8" />
                             </div>
-                            <h2 className="text-3xl font-extrabold text-slate-800">Abonnements en cours</h2>
-                            <p className="text-slate-500">{abosEnCours.length} actif{abosEnCours.length > 1 ? 's' : ''}</p>
+                            <h2 className="text-3xl font-extrabold text-slate-800">Abonnements</h2>
+                            <p className="text-slate-500">
+                                {abosActifs} actif{abosActifs > 1 ? 's' : ''}
+                                {abosBientot.length > 0 && <span className="text-amber-600 font-bold"> · {abosBientot.length} à relancer</span>}
+                                {abosExpires.length > 0 && <span className="text-red-500 font-bold"> · {abosExpires.length} expiré{abosExpires.length > 1 ? 's' : ''}</span>}
+                            </p>
                         </div>
 
-                        <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar">
-                            {abosEnCours.length === 0 ? (
-                                <div className="text-center text-slate-400 text-sm py-10">Aucun abonnement en cours.</div>
+                        <div className="space-y-5 overflow-y-auto pr-2 custom-scrollbar">
+                            {abosActifs + abosExpires.length === 0 ? (
+                                <div className="text-center text-slate-400 text-sm py-10">Aucun abonnement en cours ni expiré ce mois-ci.</div>
                             ) : (
-                                abosEnCours.map((a) => {
-                                    const bientot = a.joursRestants <= 7;
-                                    return (
-                                        <div
-                                            key={a.client_id}
-                                            onClick={() => a.client && selectClient(a.client)}
-                                            className="group flex items-center gap-4 p-3 rounded-2xl hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200 transition-all"
+                                <>
+                                    {/* À relancer en priorité */}
+                                    {abosBientot.length > 0 && (
+                                        <AboGroupe
+                                            titre={`Arrivent à expiration (${SEUIL_BIENTOT} j)`}
+                                            compteur={abosBientot.length}
+                                            ton="amber"
+                                            icone={<AlertCircle className="w-3.5 h-3.5" />}
                                         >
-                                            <div className="w-10 h-10 shrink-0 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold">
-                                                {a.client ? `${a.client.prenom[0] ?? ''}${a.client.nom[0] ?? ''}` : '?'}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="font-bold text-slate-800 group-hover:text-[var(--brand)] transition truncate">
-                                                    {a.client ? `${a.client.nom} ${a.client.prenom}` : 'Client inconnu'}
-                                                </div>
-                                                {a.client?.societe && (
-                                                    <div className="text-xs text-slate-400 truncate">{a.client.societe}</div>
-                                                )}
-                                            </div>
-                                            <div className="text-right shrink-0">
-                                                <div className={`text-sm font-bold ${bientot ? 'text-amber-600' : 'text-slate-700'}`}>
-                                                    {format(new Date(a.date_fin), 'dd MMM yyyy', { locale: fr })}
-                                                </div>
-                                                <div className={`text-xs font-medium ${bientot ? 'text-amber-500' : 'text-slate-400'}`}>
-                                                    {a.joursRestants <= 0 ? "dernier jour" : `${a.joursRestants} j restants`}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })
+                                            {abosBientot.map((a) => (
+                                                <AboLigne key={a.client_id} a={a} ton="amber" onClick={() => a.client && selectClient(a.client)} />
+                                            ))}
+                                        </AboGroupe>
+                                    )}
+
+                                    {/* Ceux qui roulent */}
+                                    {abosEnCours.length > 0 && (
+                                        <AboGroupe
+                                            titre="En cours"
+                                            compteur={abosEnCours.length}
+                                            ton="violet"
+                                            icone={<Check className="w-3.5 h-3.5" />}
+                                        >
+                                            {abosEnCours.map((a) => (
+                                                <AboLigne key={a.client_id} a={a} ton="violet" onClick={() => a.client && selectClient(a.client)} />
+                                            ))}
+                                        </AboGroupe>
+                                    )}
+
+                                    {/* Expirés, le plus récent en haut : encore rattrapables */}
+                                    {abosExpires.length > 0 && (
+                                        <AboGroupe
+                                            titre={`Expirés (${SEUIL_EXPIRE} derniers jours)`}
+                                            compteur={abosExpires.length}
+                                            ton="red"
+                                            icone={<CalendarClock className="w-3.5 h-3.5" />}
+                                        >
+                                            {abosExpires.map((a) => (
+                                                <AboLigne key={a.client_id} a={a} ton="red" onClick={() => a.client && selectClient(a.client)} />
+                                            ))}
+                                        </AboGroupe>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>
@@ -541,6 +573,65 @@ export default function FidelitePage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+// --- ABONNEMENTS : groupes (en cours / bientôt expirés / expirés) ------------
+
+type AboTon = 'violet' | 'amber' | 'red';
+
+const ABO_TONS: Record<AboTon, { titre: string; pastille: string; avatar: string; date: string; sous: string }> = {
+  violet: { titre: 'text-slate-400', pastille: 'bg-slate-100 text-slate-500', avatar: 'bg-violet-100 text-violet-600', date: 'text-slate-700', sous: 'text-slate-400' },
+  amber:  { titre: 'text-amber-600',  pastille: 'bg-amber-100 text-amber-700', avatar: 'bg-amber-100 text-amber-600',  date: 'text-amber-600', sous: 'text-amber-500' },
+  red:    { titre: 'text-red-500',    pastille: 'bg-red-100 text-red-600',     avatar: 'bg-red-50 text-red-500',       date: 'text-red-500',   sous: 'text-red-400' },
+};
+
+function AboGroupe({ titre, compteur, ton, icone, children }: {
+  titre: string; compteur: number; ton: AboTon; icone: React.ReactNode; children: React.ReactNode;
+}) {
+  const t = ABO_TONS[ton];
+  return (
+    <div>
+      <div className={`flex items-center gap-2 mb-2 px-1 text-[11px] font-extrabold uppercase tracking-wider ${t.titre}`}>
+        {icone}
+        <span>{titre}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] ${t.pastille}`}>{compteur}</span>
+        <div className="flex-1 h-px bg-slate-100" />
+      </div>
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
+}
+
+function AboLigne({ a, ton, onClick }: {
+  a: Abonnement & { client?: Client; joursRestants: number };
+  ton: AboTon;
+  onClick: () => void;
+}) {
+  const t = ABO_TONS[ton];
+  const jours = a.joursRestants;
+  const legende =
+    jours < 0 ? `expiré depuis ${Math.abs(jours)} j`
+    : jours === 0 ? 'dernier jour'
+    : `${jours} j restants`;
+  return (
+    <div
+      onClick={onClick}
+      className={`group flex items-center gap-4 p-3 rounded-2xl hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200 transition-all ${ton === 'red' ? 'opacity-80 hover:opacity-100' : ''}`}
+    >
+      <div className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center font-bold ${t.avatar}`}>
+        {a.client ? `${a.client.prenom[0] ?? ''}${a.client.nom[0] ?? ''}` : '?'}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-bold text-slate-800 group-hover:text-[var(--brand)] transition truncate">
+          {a.client ? `${a.client.nom} ${a.client.prenom}` : 'Client inconnu'}
+        </div>
+        {a.client?.societe && <div className="text-xs text-slate-400 truncate">{a.client.societe}</div>}
+      </div>
+      <div className="text-right shrink-0">
+        <div className={`text-sm font-bold ${t.date}`}>{format(new Date(a.date_fin), 'dd MMM yyyy', { locale: fr })}</div>
+        <div className={`text-xs font-medium ${t.sous}`}>{legende}</div>
+      </div>
     </div>
   );
 }
