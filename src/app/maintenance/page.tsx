@@ -21,8 +21,9 @@ import {
   PaintRoller, DoorClosed, PlugZap, Plus, Calendar,
   CheckCircle, AlertCircle, Clock, Euro, ArrowRight, Trash2, Edit2,
   LayoutGrid, List, History, MessageCircle, Send, XCircle,
-  Snowflake, Sun, Zap, Search
+  Snowflake, Sun, Zap, Search, Sparkles, Flower2, Package, Flame, Timer
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 // --- TYPES & CONSTANTES ---
@@ -86,6 +87,108 @@ type ClimReseau = {
 // Titre d'un réseau : son nom libre s'il existe, sinon la liste de ses chambres.
 const climTitle = (r: ClimReseau) =>
   r.label?.trim() || r.rooms.map(rm => (rm === 'Seminaire' ? 'Séminaire' : `#${rm}`)).join(' · ') || 'Réseau';
+
+// --- ENTRETIEN RÉCURRENT (arrosage des fleurs, sel adoucisseur, bac à suie…) ---
+// Plutôt qu'un onglet par tâche, un catalogue en base (public.entretien_taches,
+// éditable par les admins) + un événement par clic (public.entretien_evenements).
+// Toutes les stats — dernier passage, rythme réel, volumes — se recalculent ici.
+type EntretienTache = {
+  id: string;
+  hotel_id: string;
+  code: string;
+  label: string;
+  verbe: string;
+  unite_singulier: string;
+  unite_pluriel: string;
+  icone: string;
+  couleur: string;
+  frequence_cible_jours: number | null;
+  actif: boolean;
+  sort_order: number;
+};
+
+type EntretienEvent = {
+  id: string;
+  tache_id: string;
+  hotel_id: string;
+  date_event: string;   // yyyy-MM-dd
+  quantite: number;
+  auteur: string | null;
+  auteur_id: string | null;
+  commentaire: string | null;
+  created_at?: string;
+};
+
+const ENTRETIEN_ICONES: Record<string, LucideIcon> = {
+  flower: Flower2, droplets: Droplets, package: Package, flame: Flame,
+  sparkles: Sparkles, fan: Fan, wrench: Wrench, zap: PlugZap,
+};
+const entretienIcon = (code: string) => ENTRETIEN_ICONES[code] ?? Sparkles;
+
+// Classes écrites en dur : Tailwind ne sait pas lire une classe construite à la volée.
+const ENTRETIEN_COULEURS: Record<string, { chip: string; ring: string; btn: string; text: string }> = {
+  emerald: { chip: 'bg-emerald-50 text-emerald-600', ring: 'ring-emerald-50', btn: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200/60', text: 'text-emerald-600' },
+  sky:     { chip: 'bg-sky-50 text-sky-600',         ring: 'ring-sky-50',     btn: 'bg-sky-600 hover:bg-sky-700 shadow-sky-200/60',             text: 'text-sky-600' },
+  amber:   { chip: 'bg-amber-50 text-amber-600',     ring: 'ring-amber-50',   btn: 'bg-amber-600 hover:bg-amber-700 shadow-amber-200/60',       text: 'text-amber-600' },
+  violet:  { chip: 'bg-violet-50 text-violet-600',   ring: 'ring-violet-50',  btn: 'bg-violet-600 hover:bg-violet-700 shadow-violet-200/60',    text: 'text-violet-600' },
+  rose:    { chip: 'bg-rose-50 text-rose-600',       ring: 'ring-rose-50',    btn: 'bg-rose-600 hover:bg-rose-700 shadow-rose-200/60',          text: 'text-rose-600' },
+  slate:   { chip: 'bg-slate-100 text-slate-600',    ring: 'ring-slate-50',   btn: 'bg-slate-700 hover:bg-slate-800 shadow-slate-200/60',       text: 'text-slate-600' },
+};
+const entretienColor = (c: string) => ENTRETIEN_COULEURS[c] ?? ENTRETIEN_COULEURS.slate;
+
+const ENTRETIEN_ICON_CHOICES = ['flower', 'droplets', 'package', 'flame', 'sparkles', 'fan', 'wrench', 'zap'];
+const ENTRETIEN_COULEUR_CHOICES = ['emerald', 'sky', 'amber', 'violet', 'rose', 'slate'];
+
+// Largeur/colonnes de la barre d'onglets selon le nombre d'onglets affichés.
+const TABS_GRID: Record<number, string> = {
+  3: 'max-w-md grid-cols-3',
+  4: 'max-w-2xl grid-cols-4',
+  5: 'max-w-3xl grid-cols-5',
+};
+
+const todayISO = () => dfFormat(new Date(), 'yyyy-MM-dd');
+// Midi pour ne pas se faire piéger par les changements d'heure.
+const daysBetween = (fromISO: string, toISOStr: string) =>
+  Math.round((Date.parse(`${toISOStr}T12:00:00`) - Date.parse(`${fromISO}T12:00:00`)) / 86400000);
+const nbFr = (n: number) => n.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+
+// Stats d'une tâche à partir de ses événements. « Rythme » = moyenne des écarts
+// entre les 10 derniers passages (les vieux rythmes ne polluent pas la lecture).
+function statsEntretien(tache: EntretienTache, evts: EntretienEvent[]) {
+  const today = todayISO();
+  const dates = Array.from(new Set(evts.map(e => e.date_event))).sort().reverse();
+  const dernier = dates[0] ?? null;
+  const joursDepuis = dernier ? daysBetween(dernier, today) : null;
+
+  let rythme: number | null = null;
+  if (dates.length >= 2) {
+    const fenetre = dates.slice(0, 11);
+    let total = 0;
+    for (let i = 0; i < fenetre.length - 1; i++) total += daysBetween(fenetre[i + 1], fenetre[i]);
+    rythme = total / (fenetre.length - 1);
+  }
+
+  const sommeSur = (jours: number) => evts
+    .filter(e => daysBetween(e.date_event, today) < jours)
+    .reduce((acc, e) => acc + Number(e.quantite || 0), 0);
+
+  const cible = tache.frequence_cible_jours;
+  // Sans objectif fixé, on alerte quand on dépasse de moitié le rythme habituel.
+  const seuil = cible ?? (rythme ? rythme * 1.5 : null);
+
+  return {
+    dernier,
+    joursDepuis,
+    rythme,
+    dates,
+    total30: sommeSur(30),
+    total365: sommeSur(365),
+    qteAujourdhui: evts.filter(e => e.date_event === today).reduce((acc, e) => acc + Number(e.quantite || 0), 0),
+    faitAujourdhui: dernier === today,
+    enRetard: joursDepuis !== null && seuil !== null && joursDepuis > seuil,
+    jamais: dates.length === 0,
+  };
+}
 
 // Couleurs "Vibrantes" pour moderniser
 const TYPE_COLORS: Record<string, string> = {
@@ -162,6 +265,14 @@ function MaintenancePageInner() {
   const [climEdit, setClimEdit] = useState<ClimReseau | 'new' | null>(null);
   const isAdmin = ['admin', 'superadmin'].includes((rawUser as any)?.role);
   const hasClim = climReseaux.length > 0 || isAdmin;
+
+  // Entretien récurrent (arrosage, sel adoucisseur, bac à suie…)
+  const [entretienTaches, setEntretienTaches] = useState<EntretienTache[]>([]);
+  const [entretienEvts, setEntretienEvts] = useState<EntretienEvent[]>([]);
+  const [entretienEdit, setEntretienEdit] = useState<EntretienTache | 'new' | null>(null);
+  const [entretienLog, setEntretienLog] = useState<EntretienTache | null>(null);      // pointer une autre date
+  const [entretienHisto, setEntretienHisto] = useState<EntretienTache | null>(null);  // journal complet
+  const hasEntretien = entretienTaches.length > 0 || isAdmin;
 
   // Chat (style SMS) sur tickets maintenance
   const [chatItem, setChatItem] = useState<MaintItem | null>(null);
@@ -245,6 +356,18 @@ function MaintenancePageInner() {
       const { data, error } = await supabase
         .from('clim_reseaux').select('*').eq('hotel_id', hotelId).order('sort_order', { ascending: true });
       if (!error) setClimReseaux((data as any) || []);
+    })();
+  }, [hotelId]);
+
+  useEffect(() => {
+    if (!hotelId) { setEntretienTaches([]); setEntretienEvts([]); return; }
+    (async () => {
+      const [taches, evts] = await Promise.all([
+        supabase.from('entretien_taches').select('*').eq('hotel_id', hotelId).order('sort_order', { ascending: true }),
+        supabase.from('entretien_evenements').select('*').eq('hotel_id', hotelId).order('date_event', { ascending: false }).limit(2000),
+      ]);
+      if (!taches.error) setEntretienTaches((taches.data as any) || []);
+      if (!evts.error) setEntretienEvts((evts.data as any) || []);
     })();
   }, [hotelId]);
 
@@ -450,6 +573,69 @@ function MaintenancePageInner() {
     setEditingReplyText('');
   };
 
+  // --- ENTRETIEN RÉCURRENT ---
+  const evtsParTache = useMemo(() => {
+    const map = new Map<string, EntretienEvent[]>();
+    entretienEvts.forEach(e => {
+      if (!map.has(e.tache_id)) map.set(e.tache_id, []);
+      map.get(e.tache_id)!.push(e);
+    });
+    return map;
+  }, [entretienEvts]);
+
+  const entretienVisibles = entretienTaches.filter(t => t.actif || isAdmin);
+
+  const logEntretien = async (t: EntretienTache, opts?: { date?: string; quantite?: number; commentaire?: string }) => {
+    if (!hotelId) return;
+    const row = {
+      tache_id: t.id,
+      hotel_id: hotelId,
+      date_event: opts?.date || todayISO(),
+      quantite: opts?.quantite ?? 1,
+      auteur: meName,
+      auteur_id: meId,
+      commentaire: opts?.commentaire?.trim() || null,
+    };
+    const { data, error } = await supabase.from('entretien_evenements').insert(row).select().single();
+    if (error) { toast.error('Erreur : ' + error.message); return; }
+    setEntretienEvts(prev => [data as any, ...prev].sort((a, b) => b.date_event.localeCompare(a.date_event)));
+    toast.success(`${t.label} — noté le ${toFr(row.date_event)}`);
+  };
+
+  const undoEntretien = async (e: EntretienEvent) => {
+    if (!(await confirmDialog('Supprimer ce pointage ?'))) return;
+    const { error } = await supabase.from('entretien_evenements').delete().eq('id', e.id);
+    if (error) { toast.error('Erreur suppression : ' + error.message); return; }
+    setEntretienEvts(prev => prev.filter(x => x.id !== e.id));
+  };
+
+  const saveEntretienTache = async (form: Partial<EntretienTache>, initial: EntretienTache | null) => {
+    if (!hotelId || !form.label?.trim()) return;
+    if (initial) {
+      const { error } = await supabase.from('entretien_taches').update(form).eq('id', initial.id);
+      if (error) { toast.error('Erreur : ' + error.message); return; }
+      setEntretienTaches(prev => prev.map(x => (x.id === initial.id ? { ...x, ...form } as EntretienTache : x)));
+    } else {
+      const code = (form.label || '')
+        .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || `tache-${Date.now()}`;
+      const sort_order = entretienTaches.reduce((m, x) => Math.max(m, x.sort_order), 0) + 1;
+      const { data, error } = await supabase.from('entretien_taches')
+        .insert({ ...form, code, hotel_id: hotelId, sort_order }).select().single();
+      if (error) { toast.error('Erreur : ' + error.message); return; }
+      setEntretienTaches(prev => [...prev, data as any]);
+    }
+    setEntretienEdit(null);
+  };
+
+  const deleteEntretienTache = async (t: EntretienTache) => {
+    if (!(await confirmDialog(`Supprimer « ${t.label} » et tout son historique ?`))) return;
+    const { error } = await supabase.from('entretien_taches').delete().eq('id', t.id);
+    if (error) { toast.error('Erreur suppression : ' + error.message); return; }
+    setEntretienTaches(prev => prev.filter(x => x.id !== t.id));
+    setEntretienEvts(prev => prev.filter(x => x.tache_id !== t.id));
+  };
+
   return (
     <div className="flex h-screen font-sans text-slate-900 overflow-hidden">
       <ThemedBackground />
@@ -475,7 +661,7 @@ function MaintenancePageInner() {
         <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
             <Tabs defaultValue="type" className="h-full flex flex-col">
                 <div className="shrink-0 mb-6">
-                    <TabsList className={`bg-white/60 backdrop-blur-md p-1.5 rounded-2xl border border-white shadow-sm w-full grid ${hasClim ? 'max-w-2xl grid-cols-4' : 'max-w-md grid-cols-3'}`}>
+                    <TabsList className={`bg-white/60 backdrop-blur-md p-1.5 rounded-2xl border border-white shadow-sm w-full grid ${TABS_GRID[3 + (hasClim ? 1 : 0) + (hasEntretien ? 1 : 0)]}`}>
                         <TabsTrigger value="type" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
                             <LayoutGrid className="w-4 h-4 mr-2 mb-0.5 inline-block" />Par Type
                         </TabsTrigger>
@@ -488,6 +674,11 @@ function MaintenancePageInner() {
                         {hasClim && (
                           <TabsTrigger value="clim" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
                               <Snowflake className="w-4 h-4 mr-2 mb-0.5 inline-block" />Clim
+                          </TabsTrigger>
+                        )}
+                        {hasEntretien && (
+                          <TabsTrigger value="entretien" className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-md font-bold text-xs py-2.5 transition-all">
+                              <Sparkles className="w-4 h-4 mr-2 mb-0.5 inline-block" />Entretien
                           </TabsTrigger>
                         )}
                     </TabsList>
@@ -685,6 +876,39 @@ function MaintenancePageInner() {
                                         onReport={() => reportClim(r)}
                                         onEdit={isAdmin ? () => setClimEdit(r) : undefined}
                                         onDelete={isAdmin ? () => deleteClim(r.id) : undefined}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </TabsContent>
+
+                    {/* --- ENTRETIEN RÉCURRENT (1 clic = c'est fait) --- */}
+                    <TabsContent value="entretien" className="mt-0 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex items-center justify-between gap-3 mb-6">
+                            <p className="text-sm font-medium text-slate-400">
+                                Un clic et c'est noté. Le rythme réel se calcule tout seul.
+                            </p>
+                            {isAdmin && (
+                                <Button onClick={() => setEntretienEdit('new')} className="btn-brand text-white rounded-2xl h-11 px-5 font-bold shadow-lg shadow-slate-300/40 shrink-0">
+                                    <Plus className="w-4 h-4 mr-2" /> Tâche
+                                </Button>
+                            )}
+                        </div>
+
+                        {entretienVisibles.length === 0 ? (
+                            <EmptyState message={isAdmin ? 'Aucune tâche d’entretien. Ajoute-en une avec le bouton « Tâche ».' : 'Aucune tâche d’entretien configurée.'} />
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-6">
+                                {entretienVisibles.map(t => (
+                                    <EntretienCard
+                                        key={t.id}
+                                        t={t}
+                                        evts={evtsParTache.get(t.id) || []}
+                                        onLog={() => logEntretien(t)}
+                                        onAutreDate={() => setEntretienLog(t)}
+                                        onHisto={() => setEntretienHisto(t)}
+                                        onEdit={isAdmin ? () => setEntretienEdit(t) : undefined}
+                                        onDelete={isAdmin ? () => deleteEntretienTache(t) : undefined}
                                     />
                                 ))}
                             </div>
@@ -918,6 +1142,34 @@ function MaintenancePageInner() {
           ROOM_OPTIONS={ROOM_OPTIONS}
           onCancel={() => setClimEdit(null)}
           onSave={(form) => saveClim(form, climEdit === 'new' ? null : climEdit)}
+        />
+      )}
+
+      {/* ENTRETIEN — pointer une autre date */}
+      {entretienLog && (
+        <EntretienLogModal
+          t={entretienLog}
+          onCancel={() => setEntretienLog(null)}
+          onSave={async (form) => { await logEntretien(entretienLog, form); setEntretienLog(null); }}
+        />
+      )}
+
+      {/* ENTRETIEN — journal complet d'une tâche */}
+      {entretienHisto && (
+        <EntretienHistoModal
+          t={entretienHisto}
+          evts={evtsParTache.get(entretienHisto.id) || []}
+          onDelete={undoEntretien}
+          onClose={() => setEntretienHisto(null)}
+        />
+      )}
+
+      {/* ENTRETIEN — créer / modifier une tâche (admin) */}
+      {entretienEdit && (
+        <EntretienTacheModal
+          initial={entretienEdit === 'new' ? null : entretienEdit}
+          onCancel={() => setEntretienEdit(null)}
+          onSave={(form) => saveEntretienTache(form, entretienEdit === 'new' ? null : entretienEdit)}
         />
       )}
 
@@ -1183,6 +1435,344 @@ function ClimEditModal({ initial, ROOM_OPTIONS, onCancel, onSave }: { initial: C
             </div>
         </div>
     );
+}
+
+// --- ENTRETIEN RÉCURRENT ---------------------------------------------------
+
+// Une carte = une tâche. Gros bouton (le geste de tous les jours) + le rythme
+// réel juste à côté (« tous les combien on arrose »).
+function EntretienCard({ t, evts, onLog, onAutreDate, onHisto, onEdit, onDelete }: {
+  t: EntretienTache;
+  evts: EntretienEvent[];
+  onLog: () => Promise<void> | void;
+  onAutreDate: () => void;
+  onHisto: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
+  const Icon = entretienIcon(t.icone);
+  const c = entretienColor(t.couleur);
+  const st = statsEntretien(t, evts);
+  const [busy, setBusy] = useState(false);
+
+  const unite = (n: number) => (n > 1 ? t.unite_pluriel : t.unite_singulier);
+
+  const click = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await onLog(); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className={`bg-white rounded-3xl border shadow-sm hover:shadow-md transition-all p-5 flex flex-col gap-4 group/card ${st.enRetard ? 'border-amber-200' : 'border-slate-100'} ${t.actif ? '' : 'opacity-60'}`}>
+      {/* Titre + dernier passage */}
+      <div className="flex items-start gap-3">
+        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ring-4 ${c.chip} ${c.ring}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-extrabold text-slate-800 truncate flex items-center gap-2">
+            {t.label}
+            {!t.actif && <span className="text-[10px] uppercase font-bold text-slate-400 bg-slate-100 rounded px-1.5 py-0.5">archivée</span>}
+          </div>
+          <div className="text-xs font-semibold mt-0.5">
+            {st.jamais ? (
+              <span className="text-slate-400">Jamais pointé</span>
+            ) : st.faitAujourdhui ? (
+              <span className="text-emerald-600 inline-flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5" />Fait aujourd'hui</span>
+            ) : (
+              <span className={st.enRetard ? 'text-amber-600 inline-flex items-center gap-1' : 'text-slate-400 inline-flex items-center gap-1'}>
+                {st.enRetard && <AlertCircle className="w-3.5 h-3.5" />}
+                {st.joursDepuis === 1 ? 'Hier' : `Il y a ${st.joursDepuis} j`} · {toFr(st.dernier)}
+              </span>
+            )}
+          </div>
+        </div>
+        {(onEdit || onDelete) && (
+          <div className="flex items-center gap-0.5 opacity-100 lg:opacity-0 group-hover/card:opacity-100 transition-opacity shrink-0">
+            {onEdit && <button onClick={onEdit} className="p-1 text-slate-300 hover:text-[var(--brand)] rounded transition" title="Modifier"><Edit2 className="w-3.5 h-3.5" /></button>}
+            {onDelete && <button onClick={onDelete} className="p-1 text-slate-300 hover:text-red-600 rounded transition" title="Supprimer"><Trash2 className="w-3.5 h-3.5" /></button>}
+          </div>
+        )}
+      </div>
+
+      {/* Le geste : 1 clic */}
+      <button
+        onClick={click}
+        disabled={busy}
+        className={`w-full h-14 rounded-2xl text-white font-extrabold text-sm shadow-lg transition-all active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-2 ${c.btn}`}
+      >
+        <Plus className="w-5 h-5" />
+        {t.verbe}
+        {st.qteAujourdhui > 0 && (
+          <span className="text-[11px] font-bold opacity-80">· {nbFr(st.qteAujourdhui)} aujourd'hui</span>
+        )}
+      </button>
+
+      {/* Le rythme */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-slate-50 rounded-2xl py-2.5 px-2 text-center">
+          <div className={`text-lg font-extrabold leading-tight ${c.text}`}>{st.rythme ? `${nbFr(st.rythme)} j` : '—'}</div>
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wide">tous les</div>
+        </div>
+        <div className="bg-slate-50 rounded-2xl py-2.5 px-2 text-center">
+          <div className="text-lg font-extrabold text-slate-700 leading-tight">{nbFr(st.total30)}</div>
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wide truncate">{unite(st.total30)} / 30 j</div>
+        </div>
+        <div className="bg-slate-50 rounded-2xl py-2.5 px-2 text-center">
+          <div className="text-lg font-extrabold text-slate-700 leading-tight">{nbFr(st.total365)}</div>
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wide">sur 12 mois</div>
+        </div>
+      </div>
+
+      {t.frequence_cible_jours && (
+        <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 -mt-1">
+          <Timer className="w-3.5 h-3.5" />
+          Objectif : tous les {t.frequence_cible_jours} j
+          {st.enRetard && <span className="text-amber-600">— en retard</span>}
+        </div>
+      )}
+
+      {/* Les derniers passages, en clair */}
+      {st.dates.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {st.dates.slice(0, 6).map(d => (
+            <span key={d} className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 rounded-md px-1.5 py-0.5">
+              {toFr(d)}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-50">
+        <button onClick={onHisto} className="text-[11px] font-bold text-slate-400 hover:text-[var(--brand)] transition inline-flex items-center gap-1">
+          <History className="w-3.5 h-3.5" /> Historique ({evts.length})
+        </button>
+        <button onClick={onAutreDate} className="text-[11px] font-bold text-slate-400 hover:text-[var(--brand)] transition inline-flex items-center gap-1">
+          <Calendar className="w-3.5 h-3.5" /> Autre date / quantité
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Pointer un passage oublié (ou plusieurs sacs d'un coup).
+function EntretienLogModal({ t, onCancel, onSave }: {
+  t: EntretienTache;
+  onCancel: () => void;
+  onSave: (form: { date: string; quantite: number; commentaire: string }) => void;
+}) {
+  const [date, setDate] = useState(todayISO());
+  const [quantite, setQuantite] = useState('1');
+  const [commentaire, setCommentaire] = useState('');
+  const n = Number(quantite.replace(',', '.'));
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white p-6 rounded-3xl w-full max-w-md space-y-5 shadow-2xl">
+        <h2 className="text-lg font-extrabold text-slate-800">{t.label}</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Date</label>
+            <Input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} className="rounded-xl h-12 font-medium" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Nombre de {t.unite_pluriel}</label>
+            <Input type="number" min="0.5" step="0.5" value={quantite} onChange={(e) => setQuantite(e.target.value)} className="rounded-xl h-12 font-medium" />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Note (optionnel)</label>
+          <Input placeholder="ex. gros arrosage avant le week-end" value={commentaire} onChange={(e) => setCommentaire(e.target.value)} className="rounded-xl h-12 font-medium" />
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" onClick={onCancel} className="rounded-xl text-slate-500">Annuler</Button>
+          <Button onClick={() => onSave({ date, quantite: n, commentaire })} disabled={!date || !(n > 0)} className="btn-brand rounded-xl font-bold text-white px-6 disabled:opacity-50">Noter</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Journal complet + récap par mois (pour « combien de sacs ce mois-ci »).
+function EntretienHistoModal({ t, evts, onDelete, onClose }: {
+  t: EntretienTache;
+  evts: EntretienEvent[];
+  onDelete: (e: EntretienEvent) => void;
+  onClose: () => void;
+}) {
+  const c = entretienColor(t.couleur);
+  const parMois = useMemo(() => {
+    const map = new Map<string, number>();
+    evts.forEach(e => {
+      const k = e.date_event.slice(0, 7);
+      map.set(k, (map.get(k) || 0) + Number(e.quantite || 0));
+    });
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 12);
+  }, [evts]);
+  const maxMois = parMois.reduce((m, [, v]) => Math.max(m, v), 0) || 1;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between p-6 pb-4 shrink-0">
+          <h2 className="text-lg font-extrabold text-slate-800">{t.label} — historique</h2>
+          <button onClick={onClose} className="p-1 text-slate-300 hover:text-slate-600 transition"><XCircle className="w-6 h-6" /></button>
+        </div>
+
+        <div className="px-6 pb-4 shrink-0">
+          <div className="text-xs font-bold text-slate-400 uppercase mb-2">Par mois</div>
+          {parMois.length === 0 ? (
+            <div className="text-sm text-slate-400">Rien encore.</div>
+          ) : (
+            <div className="space-y-1.5">
+              {parMois.map(([mois, total]) => (
+                <div key={mois} className="flex items-center gap-3">
+                  <span className="w-20 shrink-0 text-xs font-bold text-slate-500">
+                    {dfFormat(new Date(`${mois}-01T12:00:00`), 'MMM yyyy', { locale: frLocale })}
+                  </span>
+                  <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${c.btn.split(' ')[0]}`} style={{ width: `${(total / maxMois) * 100}%` }} />
+                  </div>
+                  <span className="w-24 shrink-0 text-right text-xs font-bold text-slate-600">
+                    {nbFr(total)} {total > 1 ? t.unite_pluriel : t.unite_singulier}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar border-t border-slate-100 pt-4">
+          <div className="text-xs font-bold text-slate-400 uppercase mb-2">Chaque passage</div>
+          {evts.length === 0 ? (
+            <div className="text-sm text-slate-400">Aucun pointage.</div>
+          ) : (
+            <div className="space-y-1">
+              {evts.map(e => (
+                <div key={e.id} className="group/line flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition">
+                  <span className="w-24 shrink-0 text-sm font-bold text-slate-700">
+                    {dfFormat(new Date(`${e.date_event}T12:00:00`), 'd MMM yyyy', { locale: frLocale })}
+                  </span>
+                  <span className={`shrink-0 text-xs font-bold ${c.text}`}>
+                    {nbFr(Number(e.quantite))} {Number(e.quantite) > 1 ? t.unite_pluriel : t.unite_singulier}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate text-xs text-slate-400">
+                    {e.auteur || '—'}{e.commentaire ? ` · ${e.commentaire}` : ''}
+                  </span>
+                  <button onClick={() => onDelete(e)} className="shrink-0 p-1 text-slate-300 hover:text-red-600 opacity-100 lg:opacity-0 group-hover/line:opacity-100 transition" title="Supprimer ce pointage">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Catalogue : les admins ajoutent une tâche sans passer par le SQL.
+function EntretienTacheModal({ initial, onCancel, onSave }: {
+  initial: EntretienTache | null;
+  onCancel: () => void;
+  onSave: (form: Partial<EntretienTache>) => void;
+}) {
+  const [label, setLabel] = useState(initial?.label || '');
+  const [verbe, setVerbe] = useState(initial?.verbe || 'Fait');
+  const [uniteS, setUniteS] = useState(initial?.unite_singulier || 'passage');
+  const [uniteP, setUniteP] = useState(initial?.unite_pluriel || 'passages');
+  const [icone, setIcone] = useState(initial?.icone || 'sparkles');
+  const [couleur, setCouleur] = useState(initial?.couleur || 'emerald');
+  const [cible, setCible] = useState(initial?.frequence_cible_jours ? String(initial.frequence_cible_jours) : '');
+  const [actif, setActif] = useState(initial?.actif ?? true);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white p-6 rounded-3xl w-full max-w-lg space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <h2 className="text-lg font-extrabold text-slate-800">{initial ? 'Modifier la tâche' : 'Nouvelle tâche d’entretien'}</h2>
+
+        <div>
+          <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Nom</label>
+          <Input placeholder="ex. Arrosage des fleurs" value={label} onChange={(e) => setLabel(e.target.value)} className="rounded-xl h-12 font-medium" />
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Bouton</label>
+            <Input placeholder="Arrosé" value={verbe} onChange={(e) => setVerbe(e.target.value)} className="rounded-xl h-12 font-medium" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Unité</label>
+            <Input placeholder="sac" value={uniteS} onChange={(e) => setUniteS(e.target.value)} className="rounded-xl h-12 font-medium" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Pluriel</label>
+            <Input placeholder="sacs" value={uniteP} onChange={(e) => setUniteP(e.target.value)} className="rounded-xl h-12 font-medium" />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Icône</label>
+          <div className="flex flex-wrap gap-2">
+            {ENTRETIEN_ICON_CHOICES.map(code => {
+              const I = entretienIcon(code);
+              const on = icone === code;
+              return (
+                <button key={code} type="button" onClick={() => setIcone(code)} className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all ${on ? 'bg-[var(--brand)] text-white border-[var(--brand)] shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-[var(--brand)]'}`}>
+                  <I className="w-5 h-5" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Couleur</label>
+          <div className="flex flex-wrap gap-2">
+            {ENTRETIEN_COULEUR_CHOICES.map(code => {
+              const cc = entretienColor(code);
+              const on = couleur === code;
+              return (
+                <button key={code} type="button" onClick={() => setCouleur(code)} className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${cc.chip} ${on ? 'ring-4 ring-slate-200' : 'opacity-60 hover:opacity-100'}`}>
+                  <span className="w-4 h-4 rounded-full bg-current" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 items-end">
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Rythme visé (jours)</label>
+            <Input type="number" min="1" placeholder="vide = on observe" value={cible} onChange={(e) => setCible(e.target.value)} className="rounded-xl h-12 font-medium" />
+          </div>
+          <label className="flex items-center gap-2 h-12 px-3 rounded-xl border border-slate-200 cursor-pointer">
+            <input type="checkbox" checked={actif} onChange={(e) => setActif(e.target.checked)} className="w-4 h-4 accent-[var(--brand)]" />
+            <span className="text-sm font-bold text-slate-600">Active</span>
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" onClick={onCancel} className="rounded-xl text-slate-500">Annuler</Button>
+          <Button
+            onClick={() => onSave({
+              label: label.trim(),
+              verbe: verbe.trim() || 'Fait',
+              unite_singulier: uniteS.trim() || 'passage',
+              unite_pluriel: uniteP.trim() || 'passages',
+              icone, couleur, actif,
+              frequence_cible_jours: cible ? Number(cible) : null,
+            })}
+            disabled={!label.trim()}
+            className="btn-brand rounded-xl font-bold text-white px-6 disabled:opacity-50"
+          >
+            Enregistrer
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function EmptyState({ message }: { message: string }) {
