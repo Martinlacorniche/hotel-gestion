@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { PhotoStrip, PhotoPicker } from '@/components/Photos';
+import { uploadPhotos, removePhotos } from '@/lib/photosStorage';
 
 // --- TYPES & CONSTANTES ---
 
@@ -53,9 +55,13 @@ type MaintItem = {
   commentaire?: string | null;
   created_at?: string;
   replies?: ChatReply[] | null;
+  photos?: string[] | null;
 };
 
 const getRooms = (it: MaintItem) => it.chambre ? [it.chambre] : (it.chambres || []);
+
+// Bucket public créé par la migration 103, aligné sur `clim-photos`.
+const PHOTOS_BUCKET = 'maintenance-photos';
 
 const ROOM_OPTIONS_CORNICHE = [
   '2','3','4','5','6','7','11','12','14','15','16','17','18',
@@ -290,8 +296,11 @@ function MaintenancePageInner() {
   }, [chatItem?.id]);
 
   // Forms
-  const [editForm, setEditForm] = useState({ titre: '', type: TYPE_OPTIONS[0], chambre: '', commentaire: '' });
+  const [editForm, setEditForm] = useState({ titre: '', type: TYPE_OPTIONS[0], chambre: '', commentaire: '', photos: [] as string[] });
   const [newItem, setNewItem] = useState<Partial<MaintItem>>({ titre: '', type: TYPE_OPTIONS[0], chambres: [], commentaire: '' });
+  const [newPhotos, setNewPhotos] = useState<File[]>([]);
+  const [editPhotos, setEditPhotos] = useState<File[]>([]);
+  const [savingPhotos, setSavingPhotos] = useState(false);
 
   // Filter States for Accordions
   const [openTypes, setOpenTypes] = useState<Record<string, boolean>>({});
@@ -424,26 +433,62 @@ function MaintenancePageInner() {
   }, [items]);
 
   // --- ACTIONS ---
+
+  /** Un signalement sur trois chambres, c'est trois lignes qui partagent les
+   *  mêmes URL de photos. N'effacer du storage que les fichiers que plus
+   *  aucune ligne ne montre — sinon retirer une chambre crève les vignettes
+   *  des deux autres. */
+  const purgerPhotos = async (candidates: string[], restantes: MaintItem[]) => {
+    if (!candidates.length) return;
+    const encoreVues = new Set(restantes.flatMap(x => x.photos || []));
+    const orphelines = candidates.filter(u => !encoreVues.has(u));
+    if (orphelines.length) await removePhotos(PHOTOS_BUCKET, orphelines);
+  };
+
   const createItem = async () => {
     if (!hotelId || !newItem.titre?.trim() || !newItem.type || !newItem.chambres?.length) return;
     const groupId = crypto.randomUUID();
     const today = dfFormat(new Date(), 'yyyy-MM-dd');
+
+    setSavingPhotos(true);
+    const { urls, erreurs } = await uploadPhotos(PHOTOS_BUCKET, `${hotelId}/${groupId}`, newPhotos);
+    setSavingPhotos(false);
+    erreurs.forEach(e => toast.error('Photo — ' + e));
+
     const payloads = (newItem.chambres as string[]).map((room) => ({
-      hotel_id: hotelId, group_id: groupId, titre: newItem.titre!.trim(), type: newItem.type!, chambre: room, chambres: [room], statut: 'À faire' as const, commentaire: newItem.commentaire || null, date_creation: today,
+      hotel_id: hotelId, group_id: groupId, titre: newItem.titre!.trim(), type: newItem.type!, chambre: room, chambres: [room], statut: 'À faire' as const, commentaire: newItem.commentaire || null, date_creation: today, photos: urls.length ? urls : null,
     }));
     const { data, error } = await supabase.from('maintenance').insert(payloads).select();
-    if (!error) {
-        setItems(prev => [...(data as any), ...prev]);
-        setShowCreate(false);
-        setNewItem({ titre: '', type: TYPE_OPTIONS[0], chambres: [], commentaire: '' });
+    if (error) {
+        // Les photos sont déjà en ligne mais plus rien ne les référencera.
+        if (urls.length) await removePhotos(PHOTOS_BUCKET, urls);
+        return toast.error('Création : ' + error.message);
     }
+    setItems(prev => [...(data as any), ...prev]);
+    setShowCreate(false);
+    setNewItem({ titre: '', type: TYPE_OPTIONS[0], chambres: [], commentaire: '' });
+    setNewPhotos([]);
   };
 
-  const closeItem = async (fields: { temps: number; budget: number; dateFr: string }) => {
+  const closeItem = async (fields: { temps: number; budget: number; dateFr: string; photos?: File[] }) => {
     if (!showClose) return;
     const dateISO = toISO(fields.dateFr) || dfFormat(new Date(), 'yyyy-MM-dd');
-    const payload = { statut: 'Fait' as const, temps_travail: Number(fields.temps) || null, budget: Number(fields.budget) || null, date_resolution: dateISO };
-    await supabase.from('maintenance').update(payload).eq('id', showClose.id);
+
+    setSavingPhotos(true);
+    const dossier = showClose.group_id || showClose.id;
+    const { urls, erreurs } = await uploadPhotos(PHOTOS_BUCKET, `${showClose.hotel_id}/${dossier}`, fields.photos || []);
+    setSavingPhotos(false);
+    erreurs.forEach(e => toast.error('Photo — ' + e));
+
+    // On ajoute à la suite : la photo de la réparation ne remplace pas celle
+    // du problème, elle raconte l'étape d'après.
+    const photos = [...(showClose.photos || []), ...urls];
+    const payload = { statut: 'Fait' as const, temps_travail: Number(fields.temps) || null, budget: Number(fields.budget) || null, date_resolution: dateISO, photos: photos.length ? photos : null };
+    const { error } = await supabase.from('maintenance').update(payload).eq('id', showClose.id);
+    if (error) {
+        if (urls.length) await removePhotos(PHOTOS_BUCKET, urls);
+        return toast.error('Clôture : ' + error.message);
+    }
     setItems(prev => prev.map(x => x.id === showClose.id ? { ...x, ...payload } : x));
     setShowClose(null);
   };
@@ -456,16 +501,35 @@ function MaintenancePageInner() {
 
   const removeItem = async (id: string) => {
     if (!(await confirmDialog('Supprimer cette maintenance ?'))) return;
+    const supprime = items.find(x => x.id === id);
     await supabase.from('maintenance').delete().eq('id', id);
-    setItems(prev => prev.filter(x => x.id !== id));
+    const restantes = items.filter(x => x.id !== id);
+    setItems(restantes);
+    await purgerPhotos(supprime?.photos || [], restantes);
   };
 
   const saveEdit = async () => {
     if (!editItem || !editForm.titre.trim()) return;
-    const payload = { titre: editForm.titre.trim(), type: editForm.type, chambre: editForm.chambre || null, chambres: editForm.chambre ? [editForm.chambre] : [], commentaire: editForm.commentaire || null };
-    await supabase.from('maintenance').update(payload).eq('id', editItem.id);
-    setItems(prev => prev.map(x => (x.id === editItem.id ? { ...x, ...payload } : x)));
+
+    setSavingPhotos(true);
+    const dossier = editItem.group_id || editItem.id;
+    const { urls, erreurs } = await uploadPhotos(PHOTOS_BUCKET, `${editItem.hotel_id}/${dossier}`, editPhotos);
+    setSavingPhotos(false);
+    erreurs.forEach(e => toast.error('Photo — ' + e));
+
+    const photos = [...editForm.photos, ...urls];
+    const payload = { titre: editForm.titre.trim(), type: editForm.type, chambre: editForm.chambre || null, chambres: editForm.chambre ? [editForm.chambre] : [], commentaire: editForm.commentaire || null, photos: photos.length ? photos : null };
+    const { error } = await supabase.from('maintenance').update(payload).eq('id', editItem.id);
+    if (error) {
+        if (urls.length) await removePhotos(PHOTOS_BUCKET, urls);
+        return toast.error('Modification : ' + error.message);
+    }
+    const apres = items.map(x => (x.id === editItem.id ? { ...x, ...payload } : x));
+    setItems(apres);
+    const retirees = (editItem.photos || []).filter(u => !photos.includes(u));
     setEditItem(null);
+    setEditPhotos([]);
+    await purgerPhotos(retirees, apres);
   };
 
   // --- CLIM (réseaux / moteurs) ---
@@ -712,7 +776,7 @@ function MaintenancePageInner() {
                                             {enCours.map(it => (
                                                 <TaskCard
                                                     key={it.id} item={it}
-                                                    onEdit={() => { setEditItem(it); setEditForm({ titre: it.titre, type: it.type, chambre: getRooms(it)[0] || '', commentaire: it.commentaire || '' }); }}
+                                                    onEdit={() => { setEditItem(it); setEditForm({ titre: it.titre, type: it.type, chambre: getRooms(it)[0] || '', commentaire: it.commentaire || '', photos: it.photos || [] }); setEditPhotos([]); }}
                                                     onClose={() => setShowClose(it)}
                                                     onDelete={() => removeItem(it.id)}
                                                     onChat={() => openChat(it)}
@@ -752,7 +816,7 @@ function MaintenancePageInner() {
                                             {enCours.map(it => (
                                                 <TaskCard
                                                     key={it.id} item={it}
-                                                    onEdit={() => { setEditItem(it); setEditForm({ titre: it.titre, type: it.type, chambre: getRooms(it)[0] || '', commentaire: it.commentaire || '' }); }}
+                                                    onEdit={() => { setEditItem(it); setEditForm({ titre: it.titre, type: it.type, chambre: getRooms(it)[0] || '', commentaire: it.commentaire || '', photos: it.photos || [] }); setEditPhotos([]); }}
                                                     onClose={() => setShowClose(it)}
                                                     onDelete={() => removeItem(it.id)}
                                                     onChat={() => openChat(it)}
@@ -957,9 +1021,11 @@ function MaintenancePageInner() {
 
             <textarea rows={2} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[var(--brand)] resize-none placeholder:text-slate-400" placeholder="Détails supplémentaires..." value={newItem.commentaire || ''} onChange={(e) => setNewItem({ ...newItem, commentaire: e.target.value })} />
 
+            <PhotoPicker existantes={[]} fichiers={newPhotos} onExistantes={() => {}} onFichiers={setNewPhotos} />
+
             <div className="flex justify-end gap-3 pt-2">
-              <Button variant="ghost" onClick={() => setShowCreate(false)} className="rounded-xl hover:bg-slate-100 text-slate-500">Annuler</Button>
-              <Button onClick={createItem} className="btn-brand rounded-xl px-6 font-bold shadow-lg shadow-slate-300/40">Créer</Button>
+              <Button variant="ghost" onClick={() => { setShowCreate(false); setNewPhotos([]); }} className="rounded-xl hover:bg-slate-100 text-slate-500">Annuler</Button>
+              <Button onClick={createItem} disabled={savingPhotos} className="btn-brand rounded-xl px-6 font-bold shadow-lg shadow-slate-300/40 disabled:opacity-60">{savingPhotos ? 'Envoi des photos…' : 'Créer'}</Button>
             </div>
           </div>
         </div>
@@ -967,12 +1033,12 @@ function MaintenancePageInner() {
 
       {/* CLOSE */}
       {showClose && (
-        <CloseModal item={showClose} onCancel={() => setShowClose(null)} onConfirm={closeItem} />
+        <CloseModal item={showClose} onCancel={() => setShowClose(null)} onConfirm={closeItem} saving={savingPhotos} />
       )}
 
       {/* EDIT */}
       {editItem && (
-        <EditModal item={editItem} form={editForm} setForm={setEditForm} onCancel={() => setEditItem(null)} onSave={saveEdit} ROOM_OPTIONS={ROOM_OPTIONS} />
+        <EditModal item={editItem} form={editForm} setForm={setEditForm} onCancel={() => { setEditItem(null); setEditPhotos([]); }} onSave={saveEdit} ROOM_OPTIONS={ROOM_OPTIONS} photos={editPhotos} setPhotos={setEditPhotos} saving={savingPhotos} />
       )}
 
       {/* CHAT */}
@@ -1200,6 +1266,8 @@ function TaskCard({ item, onEdit, onClose, onDelete, onChat }: { item: MaintItem
                 </div>
             )}
 
+            {!!item.photos?.length && <PhotoStrip urls={item.photos} />}
+
             <div className="mt-auto pt-3 flex items-center justify-between border-t border-slate-50">
                 <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Calendar className="w-3 h-3"/> {toFr(item.date_creation)}</span>
@@ -1270,6 +1338,9 @@ function HistoryFolder({ title, items, openState, toggleFunc, id, onReopen, onCh
                                         {Number(it.budget || 0).toFixed(2)} €
                                     </span>
                                 </div>
+                                {!!it.photos?.length && (
+                                    <div className="mt-2"><PhotoStrip urls={it.photos} taille={44} /></div>
+                                )}
                             </div>
                             <div className="flex items-center gap-2">
                                 {onChat && (() => {
@@ -1295,10 +1366,13 @@ function HistoryFolder({ title, items, openState, toggleFunc, id, onReopen, onCh
     )
 }
 
-function CloseModal({ item, onCancel, onConfirm }: any) {
+function CloseModal({ item, onCancel, onConfirm, saving }: any) {
   const [temps, setTemps] = useState('');
   const [budget, setBudget] = useState('');
   const [dateFr, setDateFr] = useState(dfFormat(new Date(), 'dd/MM/yyyy', { locale: frLocale }));
+  // La photo de la réparation se prend au moment où on clôt, pas en repassant
+  // par « Modifier » une demi-heure plus tard.
+  const [photos, setPhotos] = useState<File[]>([]);
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1323,17 +1397,18 @@ function CloseModal({ item, onCancel, onConfirm }: any) {
                 <Calendar className="absolute left-4 top-3 w-4 h-4 text-slate-400" />
                 <Input placeholder="Date" className="pl-10 h-12 rounded-xl bg-slate-50 border-slate-200" value={dateFr} onChange={(e) => setDateFr(e.target.value)} />
             </div>
+            <PhotoPicker existantes={[]} fichiers={photos} onExistantes={() => {}} onFichiers={setPhotos} label="Photo de la réparation" />
         </div>
         <div className="flex justify-end gap-3">
           <Button variant="ghost" onClick={onCancel} className="rounded-xl hover:bg-slate-100 text-slate-500 font-bold">Annuler</Button>
-          <Button onClick={() => onConfirm({ temps: Number(temps), budget: Number(budget), dateFr })} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl px-6 shadow-lg shadow-emerald-200">Valider</Button>
+          <Button disabled={saving} onClick={() => onConfirm({ temps: Number(temps), budget: Number(budget), dateFr, photos })} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl px-6 shadow-lg shadow-emerald-200 disabled:opacity-60">{saving ? 'Envoi des photos…' : 'Valider'}</Button>
         </div>
       </div>
     </div>
   );
 }
 
-function EditModal({ item, form, setForm, onCancel, onSave, ROOM_OPTIONS }: any) {
+function EditModal({ item, form, setForm, onCancel, onSave, ROOM_OPTIONS, photos, setPhotos, saving }: any) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white p-6 rounded-3xl w-full max-w-lg space-y-4 shadow-2xl">
@@ -1349,9 +1424,17 @@ function EditModal({ item, form, setForm, onCancel, onSave, ROOM_OPTIONS }: any)
             </select>
         </div>
         <textarea rows={3} className="w-full border rounded-xl px-3 py-3 text-sm resize-none bg-slate-50" value={form.commentaire} onChange={(e) => setForm({ ...form, commentaire: e.target.value })} />
+
+        <PhotoPicker
+          existantes={form.photos || []}
+          fichiers={photos}
+          onExistantes={(urls: string[]) => setForm({ ...form, photos: urls })}
+          onFichiers={setPhotos}
+        />
+
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onCancel} className="rounded-xl">Annuler</Button>
-          <Button onClick={onSave} className="btn-brand rounded-xl font-bold text-white">Sauvegarder</Button>
+          <Button onClick={onSave} disabled={saving} className="btn-brand rounded-xl font-bold text-white disabled:opacity-60">{saving ? 'Envoi des photos…' : 'Sauvegarder'}</Button>
         </div>
       </div>
     </div>
