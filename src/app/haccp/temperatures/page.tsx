@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import {
-  Thermometer, AlertTriangle, Battery,
+  Thermometer, AlertTriangle, Battery, BellOff,
   Loader2, RefreshCw, Check, History,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -25,6 +25,8 @@ type Sensor = {
   temp_max: number | null;
   alert_delay_min: number;
   active: boolean;
+  silence_max_min: number;
+  silence_since: string | null;
 };
 
 type Reading = {
@@ -114,6 +116,28 @@ export default function HACCPTemperaturesDashboard() {
     setRefreshing(false);
   }, []);
 
+  // Une sonde qui se tait n'alerte personne toute seule : c'est le pire cas et
+  // c'était l'angle mort. On se fie d'abord à `silence_since`, posé par le cron
+  // `haccp-silence-check` (il connaît la vraie date du dernier relevé, même si
+  // elle est plus vieille que la fenêtre de 24 h chargée ici) ; à défaut on
+  // recalcule depuis le dernier relevé connu, ce qui rend le bandeau immédiat
+  // sans attendre le prochain passage du cron.
+  const muettes = useMemo(() => {
+    const maintenant = Date.now();
+    return sensors
+      .map(s => {
+        const dernier = s.silence_since
+          ? new Date(s.silence_since)
+          : latestReadings[s.id]
+            ? new Date(latestReadings[s.id].recorded_at)
+            : null;
+        if (!dernier) return null;
+        const minutes = (maintenant - dernier.getTime()) / 60_000;
+        return minutes > s.silence_max_min ? { sensor: s, dernier, minutes } : null;
+      })
+      .filter(Boolean) as { sensor: Sensor; dernier: Date; minutes: number }[];
+  }, [sensors, latestReadings]);
+
   useEffect(() => {
     if (!selectedHotelId) return;
     loadData(selectedHotelId);
@@ -163,6 +187,32 @@ export default function HACCPTemperaturesDashboard() {
           </Button>
         </div>
       </header>
+
+      {/* Sondes muettes — avant les alertes de température : tant qu'une sonde
+          se tait, on ne sait rien de ce frigo, ce qui prime sur le reste. */}
+      {muettes.length > 0 && (
+        <div className="mb-6 rounded-md border-2 border-amber-400 bg-amber-50/50 p-4">
+          <h2 className="text-sm font-semibold text-amber-800 flex items-center gap-2 mb-2">
+            <BellOff className="w-4 h-4" />
+            {muettes.length} sonde{muettes.length > 1 ? 's' : ''} muette{muettes.length > 1 ? 's' : ''}
+          </h2>
+          <ul className="space-y-1 text-sm">
+            {muettes.map(({ sensor, dernier }) => (
+              <li key={sensor.id}>
+                <strong>{sensor.location}</strong> — aucun relevé depuis{' '}
+                {format(dernier, "d MMMM 'à' HH:mm", { locale: fr })}{' '}
+                <span className="text-muted-foreground">
+                  ({formatDistanceToNow(dernier, { locale: fr })})
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-amber-700/90 mt-2">
+            Le registre ne s&rsquo;écrit plus pour {muettes.length > 1 ? 'ces équipements' : 'cet équipement'} —
+            vérifier la pile de la sonde, puis la passerelle Zigbee.
+          </p>
+        </div>
+      )}
 
       {/* Alertes actives */}
       {activeAlerts.length > 0 && (
