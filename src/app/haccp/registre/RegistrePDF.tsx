@@ -89,6 +89,13 @@ const s = StyleSheet.create({
   synthSub: { fontSize: 7, color: SLATE_500, marginTop: 1 },
 
   // Cards sondes (page de synthèse)
+  ecartes: {
+    marginTop: 8, marginBottom: 4, padding: 6,
+    backgroundColor: '#fffbeb', borderLeftWidth: 2, borderLeftColor: AMBER,
+  },
+  ecartesTitre: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: AMBER, marginBottom: 2 },
+  ecartesMotif: { fontSize: 7, color: SLATE_500, marginTop: 1 },
+
   sensorListRow: {
     flexDirection: 'row',
     paddingVertical: 6,
@@ -228,20 +235,33 @@ export function RegistrePDF({
 }) {
   const generatedAt = new Date();
 
+  // Un relevé écarté a été pris ailleurs que dans l'équipement — une sonde
+  // sortie de son congélateur mesure la cuisine, pas la marchandise. Le laisser
+  // dans les min/max ferait dire au registre le contraire de la vérité. On ne
+  // le supprime pas pour autant : il reste en base, et le nombre d'écartés est
+  // annoncé dans la synthèse, parce qu'un registre qui retranche en silence ne
+  // vaut pas mieux qu'un registre faux.
+  const readingsRetenus = readings.filter(r => !r.exclu_motif);
+  const alertsRetenues = alerts.filter(a => !a.exclu_motif);
+  const nbEcartes = readings.length - readingsRetenus.length;
+  const motifsEcartes = Array.from(new Set(
+    readings.filter(r => r.exclu_motif).map(r => r.exclu_motif as string),
+  ));
+
   // Grouper readings par sonde
   const readingsBySensor = new Map<string, Reading[]>();
-  for (const r of readings) {
+  for (const r of readingsRetenus) {
     (readingsBySensor.get(r.sensor_id) || readingsBySensor.set(r.sensor_id, []).get(r.sensor_id)!).push(r);
   }
   const alertsBySensor = new Map<string, Alert[]>();
-  for (const a of alerts) {
+  for (const a of alertsRetenues) {
     (alertsBySensor.get(a.sensor_id) || alertsBySensor.set(a.sensor_id, []).get(a.sensor_id)!).push(a);
   }
 
   const activeSensors = sensors.filter(s => s.active);
-  const totalReadings = readings.length;
-  const totalAlerts = alerts.length;
-  const ackAlerts = alerts.filter(a => a.acknowledged_at).length;
+  const totalReadings = readingsRetenus.length;
+  const totalAlerts = alertsRetenues.length;
+  const ackAlerts = alertsRetenues.filter(a => a.acknowledged_at).length;
 
   return (
     <Document
@@ -273,6 +293,20 @@ export function RegistrePDF({
             <Text style={s.synthValue}>{ackAlerts} / {totalAlerts}</Text>
           </View>
         </View>
+
+        {nbEcartes > 0 && (
+          <View style={s.ecartes}>
+            <Text style={s.ecartesTitre}>
+              {nbEcartes.toLocaleString('fr-FR')} relevé{nbEcartes > 1 ? 's' : ''} écarté{nbEcartes > 1 ? 's' : ''} des statistiques ci-dessus
+            </Text>
+            {motifsEcartes.map(m => (
+              <Text key={m} style={s.ecartesMotif}>• {m}</Text>
+            ))}
+            <Text style={s.ecartesMotif}>
+              Ces relevés restent conservés dans la base et consultables à la demande.
+            </Text>
+          </View>
+        )}
 
         <Text style={s.sectionTitle}>SONDES SOUS SURVEILLANCE</Text>
         <View style={s.sensorListHeader}>

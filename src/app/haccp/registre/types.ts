@@ -14,6 +14,9 @@ export type Reading = {
   sensor_id: string;
   temperature: number;
   recorded_at: string;
+  // Non NULL = relevé pris ailleurs que dans l'équipement (sonde sortie,
+  // maintenance). Il reste au registre, mais il n'entre dans aucun bilan.
+  exclu_motif?: string | null;
 };
 
 export type Alert = {
@@ -26,6 +29,7 @@ export type Alert = {
   acknowledged_by: string | null;
   acknowledged_at: string | null;
   action_taken: string | null;
+  exclu_motif?: string | null;
 };
 
 export type Hotel = { id: string; nom: string };

@@ -61,7 +61,7 @@ export default function RegistrePage() {
     const [readingsResult, alertsResult, zonesRes, tasksRes, logsRes] = await Promise.all([
       supabase
         .from('haccp_readings')
-        .select('sensor_id, temperature, recorded_at')
+        .select('sensor_id, temperature, recorded_at, exclu_motif')
         .in('sensor_id', sensorIds)
         .gte('recorded_at', periodStart.toISOString())
         .lte('recorded_at', periodEnd.toISOString())
@@ -111,9 +111,11 @@ export default function RegistrePage() {
 
   const stats = useMemo(() => ({
     nbSensors: sensors.filter(s => s.active).length,
-    nbReadings: readings.length,
-    nbAlerts: alerts.length,
-    nbAlertsAck: alerts.filter(a => a.acknowledged_at).length,
+    // Mêmes exclusions que le PDF : ce qui n'a pas mesuré l'équipement ne
+    // compte pas comme un relevé de l'équipement.
+    nbReadings: readings.filter(r => !r.exclu_motif).length,
+    nbAlerts: alerts.filter(a => !a.exclu_motif).length,
+    nbAlertsAck: alerts.filter(a => !a.exclu_motif && a.acknowledged_at).length,
   }), [sensors, readings, alerts]);
 
   if (authLoading) {

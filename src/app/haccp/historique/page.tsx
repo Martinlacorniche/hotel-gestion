@@ -20,6 +20,7 @@ type Reading = {
   temperature: number;
   humidity: number | null;
   recorded_at: string;
+  exclu_motif: string | null;
 };
 
 type Preset = '7d' | '30d' | 'this_month' | 'last_month' | 'custom';
@@ -117,7 +118,7 @@ export default function HACCPHistoriquePage() {
     const [readingsRes, alertsRes] = await Promise.all([
       supabase
         .from('haccp_readings')
-        .select('id, sensor_id, temperature, humidity, recorded_at')
+        .select('id, sensor_id, temperature, humidity, recorded_at, exclu_motif')
         .in('sensor_id', sensorIds)
         .gte('recorded_at', periodStart.toISOString())
         .lte('recorded_at', periodEnd.toISOString())
@@ -139,34 +140,43 @@ export default function HACCPHistoriquePage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Un relevé écarté a été pris ailleurs que dans l'équipement (sonde sortie,
+  // maintenance) : il reste au registre — on ne supprime rien d'un registre
+  // réglementaire — mais il n'a rien à faire dans un min/max ni sur la courbe,
+  // où il écraserait l'échelle et ferait dire au bilan le contraire du vrai.
+  const retenus = useMemo(() => readings.filter(r => !r.exclu_motif), [readings]);
+  const ecartes = readings.length - retenus.length;
+
   // ---- Stats ----
   const stats = useMemo(() => {
-    if (readings.length === 0) {
+    if (retenus.length === 0) {
       return { count: 0, min: null, max: null, avg: null };
     }
-    const temps = readings.map(r => r.temperature);
+    const temps = retenus.map(r => r.temperature);
     const sum = temps.reduce((a, b) => a + b, 0);
     return {
-      count: readings.length,
+      count: retenus.length,
       min: Math.min(...temps),
       max: Math.max(...temps),
       avg: sum / temps.length,
     };
-  }, [readings]);
+  }, [retenus]);
 
   // ---- Sondes affichées dans le graph : grouper par sensor_id ----
   const seriesBySensor = useMemo(() => {
     const m = new Map<string, Reading[]>();
-    for (const r of readings) {
+    for (const r of retenus) {
       (m.get(r.sensor_id) || m.set(r.sensor_id, []).get(r.sensor_id)!).push(r);
     }
     for (const arr of m.values()) {
       arr.sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime());
     }
     return m;
-  }, [readings]);
+  }, [retenus]);
 
   const sensorById = useMemo(() => new Map(sensors.map(s => [s.id, s])), [sensors]);
+
+  const alertesRetenues = useMemo(() => alerts.filter(a => !a.exclu_motif), [alerts]);
 
   // ---- Pagination relevés ----
   const pageCount = Math.max(1, Math.ceil(readings.length / PAGE_SIZE));
@@ -174,7 +184,7 @@ export default function HACCPHistoriquePage() {
 
   // ---- Export CSV ----
   const exportCSV = () => {
-    const header = ['Date', 'Heure', 'Sonde', 'Emplacement', 'Température (°C)', 'Humidité (%)'].join(';');
+    const header = ['Date', 'Heure', 'Sonde', 'Emplacement', 'Température (°C)', 'Humidité (%)', 'Écarté du bilan — motif'].join(';');
     const rows = readings.map(r => {
       const s = sensorById.get(r.sensor_id);
       const d = new Date(r.recorded_at);
@@ -185,6 +195,7 @@ export default function HACCPHistoriquePage() {
         s?.location || '',
         r.temperature.toFixed(1).replace('.', ','),
         r.humidity !== null ? Math.round(r.humidity) : '',
+        (r.exclu_motif || '').replace(/[;\n]/g, ' '),
       ].join(';');
     });
     const csv = '﻿' + [header, ...rows].join('\n');
@@ -287,8 +298,16 @@ export default function HACCPHistoriquePage() {
         <Stat label="Relevés" value={stats.count.toLocaleString('fr-FR')} />
         <Stat label="T° min" value={stats.min !== null ? `${stats.min.toFixed(1)} °C` : '—'} />
         <Stat label="T° max" value={stats.max !== null ? `${stats.max.toFixed(1)} °C` : '—'} />
-        <Stat label="Alertes" value={alerts.length} tone={alerts.length > 0 ? 'warn' : 'ok'} />
+        <Stat label="Alertes" value={alertesRetenues.length} tone={alertesRetenues.length > 0 ? 'warn' : 'ok'} />
       </div>
+
+      {ecartes > 0 && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50/60 px-4 py-2.5 text-sm text-amber-900">
+          <strong>{ecartes.toLocaleString('fr-FR')} relevé{ecartes > 1 ? 's' : ''} écarté{ecartes > 1 ? 's' : ''}</strong>{' '}
+          des statistiques et de la courbe : sonde hors de l&rsquo;équipement. Ils restent au registre,
+          signalés dans le tableau et dans l&rsquo;export.
+        </div>
+      )}
 
       {loading ? (
         <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin" /></div>
@@ -323,7 +342,9 @@ export default function HACCPHistoriquePage() {
               <CardContent className="py-4">
                 <div className="flex items-center gap-2 mb-3 text-sm font-medium">
                   <AlertTriangle className="w-4 h-4" />
-                  Alertes ({alerts.length})
+                  Alertes ({alertesRetenues.length}{alerts.length !== alertesRetenues.length
+                    ? ` — ${alerts.length - alertesRetenues.length} écartée${alerts.length - alertesRetenues.length > 1 ? 's' : ''}`
+                    : ''})
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -344,11 +365,18 @@ export default function HACCPHistoriquePage() {
                           ? Math.round((new Date(a.resolved_at).getTime() - new Date(a.triggered_at).getTime()) / 60_000)
                           : null;
                         return (
-                          <tr key={a.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                          <tr key={a.id} className={`border-b last:border-b-0 hover:bg-muted/30 ${a.exclu_motif ? 'bg-amber-50/60 text-muted-foreground' : ''}`}>
                             <td className="py-2 pr-3 whitespace-nowrap">
                               {format(new Date(a.triggered_at), 'dd/MM HH:mm', { locale: fr })}
                             </td>
-                            <td className="py-2 pr-3">{sensor?.location || a.sensor_id.slice(0, 8)}</td>
+                            <td className="py-2 pr-3">
+                              {sensor?.location || a.sensor_id.slice(0, 8)}
+                              {a.exclu_motif && (
+                                <span className="ml-2 text-[10px] font-bold uppercase text-amber-700" title={a.exclu_motif}>
+                                  écartée
+                                </span>
+                              )}
+                            </td>
                             <td className="py-2 pr-3">
                               <span className={`inline-block px-1.5 py-0.5 rounded text-xs ${
                                 a.threshold_type === 'high' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
@@ -414,12 +442,19 @@ export default function HACCPHistoriquePage() {
                         (sensor.temp_min !== null && r.temperature < sensor.temp_min)
                       );
                       return (
-                        <tr key={r.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                        <tr key={r.id} className={`border-b last:border-b-0 hover:bg-muted/30 ${r.exclu_motif ? 'bg-amber-50/60 text-muted-foreground' : ''}`}>
                           <td className="py-1.5 pr-3 whitespace-nowrap tabular-nums">
                             {format(new Date(r.recorded_at), 'dd/MM/yyyy HH:mm:ss', { locale: fr })}
                           </td>
-                          <td className="py-1.5 pr-3">{sensor?.location || r.sensor_id.slice(0, 8)}</td>
-                          <td className={`py-1.5 pr-3 text-right tabular-nums font-medium ${breached ? 'text-red-600' : ''}`}>
+                          <td className="py-1.5 pr-3">
+                            {sensor?.location || r.sensor_id.slice(0, 8)}
+                            {r.exclu_motif && (
+                              <span className="ml-2 text-[10px] font-bold uppercase text-amber-700" title={r.exclu_motif}>
+                                écarté
+                              </span>
+                            )}
+                          </td>
+                          <td className={`py-1.5 pr-3 text-right tabular-nums font-medium ${r.exclu_motif ? 'line-through' : breached ? 'text-red-600' : ''}`}>
                             {r.temperature.toFixed(1)} °C
                           </td>
                           <td className="py-1.5 pr-3 text-right text-muted-foreground tabular-nums">
