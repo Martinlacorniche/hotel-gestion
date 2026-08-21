@@ -1,0 +1,6 @@
+# Actions déclenchées depuis Telegram (boutons du bot) — voir jobs_machine.
+# Volontairement étroit : uniquement le redémarrage de ces services précis,
+# rien d'autre. Pas de wildcard, pas de systemctl général : sinon la règle
+# autoriserait aussi bien d'arrêter tailscaled ou de masquer un service.
+htbm ALL=(root) NOPASSWD: /usr/bin/systemctl restart chromecast-hotel.service
+htbm ALL=(root) NOPASSWD: /usr/bin/systemctl restart screen-relay.service

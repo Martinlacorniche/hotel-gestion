@@ -1,0 +1,15 @@
+[Unit]
+Description=Webhook Telegram (etat machine + boutons de redemarrage)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/tg-bot
+ExecStart=/usr/bin/python3 %h/tg-bot/tg_bot.py
+Restart=always
+RestartSec=5
+MemoryMax=200M
+
+[Install]
+WantedBy=default.target

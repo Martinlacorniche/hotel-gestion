@@ -10,6 +10,7 @@
 
 import mqtt from 'mqtt'
 import { createClient } from '@supabase/supabase-js'
+import nodemailer from 'nodemailer'
 
 const MQTT_URL = process.env.MQTT_LOCAL_URL || 'mqtt://mosquitto:1883'
 const HOTEL_ID = process.env.HOTEL_ID
@@ -26,34 +27,53 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 })
 
 // ----------------------------------------------------------------------------
-// Cache des sondes (rechargé toutes les 5 min)
+// Mailer
 // ----------------------------------------------------------------------------
-// friendlyName → { id, temp_min, temp_max, alert_delay_min }
-let sensorsByFriendlyName = new Map()
-
-async function reloadSensors() {
-  const { data, error } = await supabase
-    .from('haccp_sensors')
-    .select('id, friendly_name, temp_min, temp_max, alert_delay_min, active')
-    .eq('hotel_id', HOTEL_ID)
-    .eq('active', true)
-
-  if (error) {
-    console.error('reloadSensors failed:', error.message)
-    return
+const mailer = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASSWORD
   }
-  sensorsByFriendlyName = new Map(
-    data.map(s => [s.friendly_name, s])
-  )
-  console.log(`[${new Date().toISOString()}] Loaded ${data.length} active sensors`)
+})
+const ALERT_MAIL_TO = process.env.ALERT_MAIL_TO
+
+async function sendAlertMail(sensor, breachType, peakValue, durationMin, critique = false) {
+  if (!ALERT_MAIL_TO || !process.env.SMTP_USER) return
+  const dir = breachType === 'high' ? 'au-dessus' : 'en-dessous'
+  const seuil = breachType === 'high' ? `+${sensor.temp_max}°C` : `${sensor.temp_min}°C`
+  // Un mail « depuis 0 min » n'aurait aucun sens : quand c'est le plafond dur
+  // qui a parlé, c'est la température qui est l'information, pas la durée.
+  const sujet = critique
+    ? `🚨 HACCP — ${sensor.friendly_name} à ${peakValue}°C (seuil critique)`
+    : `⚠️ HACCP — ${sensor.friendly_name} hors plage depuis ${Math.round(durationMin)} min`
+  await mailer.sendMail({
+    from: process.env.SMTP_USER,
+    to: ALERT_MAIL_TO,
+    subject: sujet,
+    text: [
+      `Alerte température HACCP`,
+      ``,
+      `Sonde       : ${sensor.friendly_name} (${sensor.location || ''})`,
+      `Dépassement : ${dir} du seuil (${seuil})`,
+      `Température : ${peakValue}°C`,
+      `Durée       : ${Math.round(durationMin)} min`,
+      critique
+        ? `Déclenchée  : immédiatement, plafond critique (${sensor.temp_crit_max}°C) franchi`
+        : `Déclenchée  : après ${sensor.alert_delay_min} min hors plage`,
+      ``,
+      `Vérifier l'équipement dès que possible.`
+    ].join('\n')
+  })
+  console.log(`[${new Date().toISOString()}] Mail alerte envoyé → ${ALERT_MAIL_TO} (${sensor.friendly_name} ${breachType})`)
 }
 
+
 // ----------------------------------------------------------------------------
-// Conversion battery_state Tuya → pourcentage
+// Tuya ZT01 envoie battery_state (enum) plutôt qu'un % — on mappe.
 // ----------------------------------------------------------------------------
-// Les sondes Tuya ZT01 envoient un enum 'battery_state' (high/medium/low/critical)
-// plutôt qu'un % numérique. On mappe vers une valeur indicative pour pouvoir
-// l'afficher dans le dashboard live et tracer l'usure des piles dans le temps.
 function readBattery(msg) {
   if (typeof msg.battery === 'number') return Math.round(msg.battery)
   if (typeof msg.battery_state === 'string') {
@@ -65,6 +85,29 @@ function readBattery(msg) {
     }
   }
   return null
+}
+
+// ----------------------------------------------------------------------------
+// Cache des sondes (rechargé toutes les 5 min)
+// ----------------------------------------------------------------------------
+// friendlyName → { id, location, temp_min, temp_max, temp_crit_min, temp_crit_max, alert_delay_min }
+let sensorsByFriendlyName = new Map()
+
+async function reloadSensors() {
+  const { data, error } = await supabase
+    .from('haccp_sensors')
+    .select('id, friendly_name, location, temp_min, temp_max, temp_crit_min, temp_crit_max, alert_delay_min, active')
+    .eq('hotel_id', HOTEL_ID)
+    .eq('active', true)
+
+  if (error) {
+    console.error('reloadSensors failed:', error.message)
+    return
+  }
+  sensorsByFriendlyName = new Map(
+    data.map(s => [s.friendly_name, s])
+  )
+  console.log(`[${new Date().toISOString()}] Loaded ${data.length} active sensors`)
 }
 
 // ----------------------------------------------------------------------------
@@ -106,7 +149,27 @@ async function loadOpenAlerts() {
     console.error('loadOpenAlerts failed:', error.message)
     return
   }
-  for (const a of data) {
+  // `breachState` est indexé par sonde : on ne peut en suivre qu'une par sonde.
+  // Historiquement on écrasait sans le dire, et les alertes perdues n'étaient
+  // plus jamais ni mises à jour ni résolues — orphelines à vie. On garde la plus
+  // ancienne (c'est elle le vrai début de l'épisode) et on signale les autres
+  // au lieu de les avaler. L'index partiel `haccp_alerts_une_seule_ouverte`
+  // (migration 106) rend normalement ce cas impossible ; ce code reste le filet.
+  const parSonde = new Set()
+  const triees = [...data].sort(
+    (x, y) => new Date(x.triggered_at) - new Date(y.triggered_at)
+  )
+  let surnumeraires = 0
+  for (const a of triees) {
+    if (parSonde.has(a.sensor_id)) {
+      surnumeraires++
+      console.warn(
+        `[${new Date().toISOString()}] Alerte surnumeraire ouverte ${a.id} ` +
+        `sur ${a.sensor_id} — non suivie, a clore a la main`
+      )
+      continue
+    }
+    parSonde.add(a.sensor_id)
     breachState.set(a.sensor_id, {
       breachStartedAt: new Date(a.triggered_at),
       breachType: a.threshold_type,
@@ -114,7 +177,10 @@ async function loadOpenAlerts() {
       openAlertId: a.id
     })
   }
-  console.log(`[${new Date().toISOString()}] Restored ${data.length} open alerts`)
+  console.log(
+    `[${new Date().toISOString()}] Restored ${parSonde.size} open alerts` +
+    (surnumeraires ? ` (+${surnumeraires} surnumeraires ignorees)` : '')
+  )
 }
 
 // ----------------------------------------------------------------------------
@@ -148,24 +214,71 @@ async function checkThreshold(sensor, temperature) {
     }
 
     if (!state.openAlertId) {
-      // Pas encore d'alerte créée → check le délai
+      // Deux étages, et le second n'attend pas.
+      //
+      // Frigo Gauche dégivre automatiquement quatre fois par jour : il monte à
+      // 7-9 °C pendant ~35 min puis redescend en 12 min. Sur 21 jours c'est
+      // 106 dépassements dont la médiane dure 13 min — un délai de 30 min les
+      // laissait tous passer et noyait le registre de fausses dérives, ce qui
+      // dilue les vraies. Mais un délai plus long, seul, rendrait sourd à un
+      // accident franc : un frigo à 10 °C n'a pas besoin de 45 minutes pour
+      // être un problème. D'où le plafond dur, qui court-circuite le délai.
       const durationMin = (Date.now() - state.breachStartedAt.getTime()) / 60_000
-      if (durationMin >= sensor.alert_delay_min) {
+      const critique =
+        (breachType === 'high' && sensor.temp_crit_max !== null && temperature >= sensor.temp_crit_max) ||
+        (breachType === 'low'  && sensor.temp_crit_min !== null && temperature <= sensor.temp_crit_min)
+      if (critique || durationMin >= sensor.alert_delay_min) {
+        const raison = critique ? 'seuil_critique' : 'delai'
         const { data, error } = await supabase
           .from('haccp_alerts')
           .insert({
             sensor_id: sensor.id,
             threshold_type: breachType,
             triggered_at: state.breachStartedAt.toISOString(),
-            peak_value: state.peakValue
+            peak_value: state.peakValue,
+            trigger_reason: raison
           })
           .select('id')
           .single()
-        if (error) {
+        if (error && error.code === '23505') {
+          // Un index unique a parlé. Deux cas, et il faut les distinguer :
+          // soit une alerte est déjà OUVERTE sur cette sonde (index partiel de
+          // la 106) et on l'adopte — une alerte que plus personne ne pointe ne
+          // serait jamais résolue ; soit c'est l'épisode lui-même qui existe
+          // déjà, résolu (index (sensor_id, triggered_at) de la 107), et il
+          // n'y a rien à rouvrir : on décale d'une milliseconde le début pour
+          // ne pas retenter le même insert à chaque relevé, indéfiniment.
+          const { data: existante } = await supabase
+            .from('haccp_alerts')
+            .select('id, triggered_at, peak_value')
+            .eq('sensor_id', sensor.id)
+            .is('resolved_at', null)
+            .maybeSingle()
+          if (existante) {
+            state.openAlertId = existante.id
+            state.breachStartedAt = new Date(existante.triggered_at)
+            console.log(
+              `[${new Date().toISOString()}] ALERT adopted ${existante.id} ` +
+              `for ${sensor.id} (doublon evite)`
+            )
+          } else {
+            state.breachStartedAt = new Date(state.breachStartedAt.getTime() + 1)
+            console.warn(
+              `[${new Date().toISOString()}] Alert insert conflict for ${sensor.id} ` +
+              `sans alerte ouverte — episode deja enregistre, debut decale d'1 ms`
+            )
+          }
+        } else if (error) {
           console.error(`Alert insert failed for ${sensor.id}:`, error.message)
         } else {
           state.openAlertId = data.id
-          console.log(`[${new Date().toISOString()}] ALERT opened ${sensor.id} ${breachType} @ ${state.peakValue}°C`)
+          console.log(
+            `[${new Date().toISOString()}] ALERT opened ${sensor.id} ${breachType} ` +
+            `@ ${state.peakValue}°C (${raison})`
+          )
+          sendAlertMail(sensor, breachType, state.peakValue, durationMin, critique).catch(e =>
+            console.error(`sendAlertMail failed for ${sensor.id}:`, e.message)
+          )
         }
       }
     } else {
@@ -195,6 +308,31 @@ async function checkThreshold(sensor, temperature) {
   }
 
   breachState.set(sensor.id, state)
+}
+
+// ----------------------------------------------------------------------------
+// Sérialisation par sonde
+// ----------------------------------------------------------------------------
+// MQTT.js n'attend pas le handler `message`, et les Tuya ZT01 émettent par
+// bursts de 3-5 datapoints en <300 ms (cf. la dédup plus haut). Deux messages
+// du même burst traversaient donc `checkThreshold` en parallèle : tous deux
+// voyaient `openAlertId === null` de part et d'autre de l'`await` de l'insert,
+// et créaient chacun leur alerte. D'où des doublons au `triggered_at` identique
+// à la milliseconde, que `loadOpenAlerts` transformait ensuite en orphelines.
+//
+// Une file par sonde suffit : les sondes sont indépendantes, rien ne justifie
+// de sérialiser globalement.
+const filesParSonde = new Map()
+
+function checkThresholdSerialise(sensor, temperature) {
+  const precedent = filesParSonde.get(sensor.id) || Promise.resolve()
+  // `.catch` avant l'enchaînement : une erreur ne doit pas figer la file de
+  // cette sonde pour toujours. Elle est journalisée par l'appelant.
+  const suivant = precedent
+    .catch(() => {})
+    .then(() => checkThreshold(sensor, temperature))
+  filesParSonde.set(sensor.id, suivant)
+  return suivant
 }
 
 // ----------------------------------------------------------------------------
@@ -241,13 +379,9 @@ client.on('message', async (topic, payload) => {
     : (typeof msg.temperature === 'number' ? msg.temperature : null)
 
   if (temperature === null) return
-
-  // Filtrer les valeurs sentinel Tuya : quand la communication boîtier ↔ sonde inox
-  // déportée échoue ponctuellement, le ZT01 renvoie une valeur 16-bit non signée
-  // qui donne ±6553.5°C une fois divisée par 10. Tout ce qui sort de [-100, +100]°C
-  // est forcément du bruit pour notre usage (frigo / congel hôtellerie).
-  if (Math.abs(temperature) > 100) {
-    console.warn(`[${new Date().toISOString()}] Junk reading ignored for ${friendlyName}: ${temperature}°C`)
+  // Overflow Tuya au passage 0°C : valeurs physiquement impossibles pour des frigos/congélos
+  if (temperature < -100 || temperature > 100) {
+    console.log(`[${new Date().toISOString()}] ${friendlyName}: température aberrante ignorée (${temperature}°C)`)
     return
   }
 
@@ -255,7 +389,7 @@ client.on('message', async (topic, payload) => {
 
   // 1) Check seuil + gestion alerte (TOUJOURS, même si on dédup l'insert)
   try {
-    await checkThreshold(sensor, temperature)
+    await checkThresholdSerialise(sensor, temperature)
   } catch (e) {
     console.error(`checkThreshold failed for ${friendlyName}:`, e.message)
   }
